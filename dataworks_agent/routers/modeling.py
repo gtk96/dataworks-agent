@@ -85,6 +85,9 @@ async def create_task(
     if x_idempotency_key:
         _idempotency_cache[x_idempotency_key] = (task_id, time.monotonic() + _IDEMPOTENCY_TTL)
 
+    # T1: 新建任务后使列表缓存失效，否则新任务最多 30s 后才出现。
+    # （状态机内部会发 TASK_STATUS_CHANGED，dashboard 已实时刷新）
+    _invalidate_tasks_cache()
     return {"task_id": task_id, "status": "pending"}
 
 
@@ -103,6 +106,10 @@ async def list_tasks(
 
     client_ip = getattr(request.state, "client_ip", "127.0.0.1")
     cache = get_cache_manager()
+
+    # T5: 分页参数校验，避免负 offset / 过大批量拉取
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
 
     # 生成缓存键
     cache_key = f"tasks:{client_ip}:{scope}:{status or ''}:{layer or ''}:{node_type or ''}:{page}:{page_size}"
@@ -172,8 +179,9 @@ async def list_tasks(
             page_size=page_size,
         )
 
-        # 缓存结果（短 TTL，因为数据会变化）
-        cache.set(cache_key, result, ttl=30)
+        # 缓存结果（短 TTL，因为数据会变化）。T6: 存 dict 而非 pydantic 模型对象，
+        # 避免多请求共享同一对象引用（与仪表盘 R1 一致）。
+        cache.set(cache_key, result.model_dump(), ttl=30)
 
         return result
 
@@ -244,9 +252,15 @@ async def cancel_task(task_id: str, request: Request):
         task = db.get(ModelingTaskModel, task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
+        # T2: 终态任务不可取消，避免把已完成/失败/已取消的任务误标
+        if task.status in ("completed", "failed", "cancelled"):
+            raise HTTPException(status_code=400, detail=f"任务状态 {task.status} 不可取消")
         task.status = "cancelled"
         db.commit()
         audit_log("task_cancel", ip=client_ip, task_id=task_id, target_table=task.target_table)
+        # T1+T2: 失效任务列表缓存 + 发布状态变更事件(dashboard 实时刷新)
+        _invalidate_tasks_cache()
+        await _publish_task_status_changed(task_id, "cancelled")
         return {"task_id": task_id, "status": "cancelled"}
 
 
@@ -289,6 +303,9 @@ async def retry_task(task_id: str, request: Request):
 
     new_task_id = await engine.create_task(body, client_ip)
     audit_log("task_retry", ip=client_ip, old_task_id=task_id, new_task_id=new_task_id)
+    # T1+T3: 失效任务列表缓存 + 发布状态变更事件(dashboard 实时刷新)
+    _invalidate_tasks_cache()
+    await _publish_task_status_changed(new_task_id, "pending")
     return {"task_id": new_task_id, "status": "pending", "retried_from": task_id}
 
 

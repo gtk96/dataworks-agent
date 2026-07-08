@@ -151,14 +151,9 @@ async function cancelTask(taskId: string) {
   }
 }
 
-function displayNodeType(row: { node_type?: string; task_id?: string; target_layer?: string }) {
-  const explicit = (row.node_type || '').trim().toLowerCase()
-  if (explicit) return explicit
-  const id = row.task_id || ''
-  if (id.startsWith('holo_')) return 'holo'
-  if (id.startsWith('di_')) return 'di'
-  if ((row.target_layer || '').toUpperCase() === 'HOLO') return 'holo'
-  return 'odps-sql'
+// T7: 后端 list_tasks 已算好 node_type，前端直接采用，避免规则漂移产生不一致。
+function displayNodeType(row: { node_type?: string }) {
+  return (row.node_type || '').trim().toLowerCase() || 'odps-sql'
 }
 
 function statusType(s: string) {
