@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 import uuid
 from datetime import UTC
 from typing import Any
@@ -22,6 +23,30 @@ from dataworks_agent.state import app_state
 from dataworks_agent.task_engine.state_machine import TaskStateMachine
 
 logger = logging.getLogger(__name__)
+
+
+async def _publish_task_status(task_id: str, status: str) -> None:
+    """本地 publish helper — 驱动 dashboard WS 实时刷新 + cache 失效。
+
+    与 routers/modeling.py:_publish_task_status_changed 行为等价，独立实现避免
+    router/engine 的反向依赖。失败时记 debug（不影响主链路）。
+    """
+    try:
+        from dataworks_agent.cache.events import Event, EventType, get_event_bus
+
+        await get_event_bus().publish_async(
+            Event(
+                event_type=EventType.TASK_STATUS_CHANGED,
+                source="task",
+                data={
+                    "task_id": task_id,
+                    "status": status,
+                    "timestamp": time.time(),
+                },
+            )
+        )
+    except Exception as exc:
+        logger.debug("TASK_STATUS_CHANGED 异步发布失败（不影响主流程）: %s", exc)
 
 
 class ModelingEngine:
@@ -120,6 +145,10 @@ class ModelingEngine:
             db.add(model)
             db.commit()
 
+        # dashboard 实时刷新：create_task 同步写完 PENDING 后立即 publish（fire-and-forget）。
+        # 不阻塞主流程；publish_async 失败只记 debug 不抛。
+        await _publish_task_status(task_id, TaskStatus.PENDING.value)
+
         if request.dry_run:
             # DWD → 走专用生成器
             if request.target_layer.value == "DWD":
@@ -178,6 +207,7 @@ class ModelingEngine:
                             task.duration_seconds = 0.1
                             self._save_artifact(db, task)
                             db.commit()
+                    await _publish_task_status(task_id, TaskStatus.COMPLETED.value)
                     await self.ownership.record_table_creation(target_table, client_ip)
                     return task_id
 
@@ -206,6 +236,7 @@ class ModelingEngine:
                     task.duration_seconds = 0.1
                     self._save_artifact(db, task)
                     db.commit()
+            await _publish_task_status(task_id, TaskStatus.COMPLETED.value)
             await self.ownership.record_table_creation(target_table, client_ip)
             return task_id
 
@@ -227,6 +258,8 @@ class ModelingEngine:
                         t.error_message = f"流水线异常: {e}"
                         t.updated_at = datetime.now(UTC).isoformat()
                         db.commit()
+                        # dashboard 实时刷新：_safe_pipeline 异常回滚时 publish FAILED
+                        await _publish_task_status(task_id, "failed")
 
         # fire-and-forget pipeline；引用返回值避免 RUF006 dangling task warning
         background_task = asyncio.create_task(_safe_pipeline())
@@ -316,6 +349,9 @@ class ModelingEngine:
                     t.status = status
                     t.updated_at = datetime.now(UTC).isoformat()
                     db.commit()
+                    # dashboard 实时刷新：状态机每次 transition 后 publish
+                    # 用 fire-and-forget 防止 commit 链路被阻塞
+                    await _publish_task_status(task_id, status)
 
         # DWD 专用流程
         if request.target_layer.value == "DWD" and request.dwd_metadata:
@@ -403,6 +439,8 @@ class ModelingEngine:
                 if t.status == TaskStatus.COMPLETED.value:
                     self._save_artifact(db, t)
                 db.commit()
+                # dashboard 实时刷新：终态 publish
+                await _publish_task_status(task_id, t.status)
 
         from dataworks_agent.metrics import task_duration, task_total
 
@@ -475,6 +513,7 @@ class ModelingEngine:
             if t:
                 t.status = TaskStatus.DDL_GEN.value
                 db.commit()
+                await _publish_task_status(task_id, TaskStatus.DDL_GEN.value)
 
         try:
             ddl_text = ddl_gen.from_structured_metadata(request.dwd_metadata)
@@ -491,6 +530,7 @@ class ModelingEngine:
                 t.status = TaskStatus.TABLE_CRE.value
                 t.ddl_dev = ddl_text
                 db.commit()
+                await _publish_task_status(task_id, TaskStatus.TABLE_CRE.value)
 
         from dataworks_agent.services.ods_di.di_config import (
             inject_schema_prefix_in_ddl,
@@ -540,6 +580,7 @@ class ModelingEngine:
             if t:
                 t.status = TaskStatus.DML_WRITE.value
                 db.commit()
+                await _publish_task_status(task_id, TaskStatus.DML_WRITE.value)
 
         try:
             sql_text = sql_gen.generate(metadata)
@@ -565,6 +606,7 @@ class ModelingEngine:
             if t:
                 t.status = TaskStatus.SCHED_CFG.value
                 db.commit()
+                await _publish_task_status(task_id, TaskStatus.SCHED_CFG.value)
 
         node_uuid = await nodes.create_node(target_table, node_path, language="odps-sql")
         if node_uuid:
@@ -620,6 +662,8 @@ class ModelingEngine:
                 if t.status == TaskStatus.COMPLETED.value:
                     self._save_artifact(db, t)
                 db.commit()
+                # dashboard 实时刷新：_finalize_task 终态 publish
+                await _publish_task_status(task_id, t.status)
 
         from dataworks_agent.metrics import task_duration, task_total
 
