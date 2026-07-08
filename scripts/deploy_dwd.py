@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 from dataworks_agent.api_clients.bff_client import DataWorksClient
+from dataworks_agent.modeling.dwd.dependencies import find_ods_sources
 from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import DWD_SQL_PARAMETERS, generate_cron, get_cycle_type
 
@@ -98,9 +99,11 @@ async def deploy_dwd_table(
     mc_dev_project: str = "dataworks_dev",
     node_path: str = "业务流程/DWD/MaxCompute",
     schedule_minute: int = 1,
+    ods_uuids: dict[str, str] | None = None,
 ) -> dict:
     """部署单个 DWD 表。"""
     result = {"table": table_name, "success": True, "steps": {}, "error": ""}
+    ods_uuids = ods_uuids or {}
 
     # Step 1: 检查节点是否已存在
     node_path_full = generate_node_path(node_path, table_name)
@@ -141,6 +144,15 @@ async def deploy_dwd_table(
         uid = await bff.create_node(table_name, node_path_full, language="odps-sql")
         if uid:
             await bff.update_node(uid, dml)
+
+            # 从 DML 提取所有上游 ODS 表（1:N）
+            ods_sources = find_ods_sources(dml)
+            deps: list[dict] = [{"type": "CrossCycleDependsOnSelf"}]
+            for ods_src in ods_sources:
+                ods_uuid = ods_uuids.get(ods_src, "")
+                if ods_uuid:
+                    deps.insert(0, {"type": "Normal", "output": ods_uuid, "sourceType": "System"})
+
             await bff.update_vertex(
                 uid,
                 {
@@ -154,7 +166,7 @@ async def deploy_dwd_table(
                     },
                     "script": {"parameters": DWD_SQL_PARAMETERS},
                     "strategy": {"instanceMode": "Immediately"},
-                    "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
+                    "dependencies": deps,
                     "outputs": {
                         "nodeOutputs": [
                             {
@@ -168,7 +180,7 @@ async def deploy_dwd_table(
                     },
                 },
             )
-            result["steps"]["dwd_node"] = {"status": "ok", "uuid": uid}
+            result["steps"]["dwd_node"] = {"status": "ok", "uuid": uid, "ods_sources": ods_sources}
         else:
             result["steps"]["dwd_node"] = {"status": "failed", "error": bff.last_error}
 
@@ -213,6 +225,30 @@ async def deploy_batch(
                 dml_contents[dml_file.stem] = dml_file.read_text(encoding="utf-8")
 
     bff = DataWorksClient()
+
+    # 预抓取 ODS 节点 uuid（用于 1:N 依赖）
+    ods_uuids: dict[str, str] = {}
+    try:
+        ods_search = await bff._get(
+            "ide/searchFiles",
+            {
+                "projectId": bff.project_id,
+                "keyword": "ods_hl_",
+                "scene": "DATAWORKS_PROJECT",
+                "pageSize": 200,
+            },
+        )
+        for h in (ods_search.get("data") or {}).get("data", {}).get("hits", []) or []:
+            path = h.get("path", "")
+            if "00_ODS" in path:
+                name = h.get("name", "").replace(".sql", "")
+                v_uuid = (h.get("xattrs") or {}).get("vertexProperties", {}).get("uuid")
+                if v_uuid:
+                    ods_uuids[name] = v_uuid
+        logger.info("预抓取 ODS uuid: %d", len(ods_uuids))
+    except Exception as e:
+        logger.warning("预抓取 ODS uuid 失败（将使用 1:1 依赖）: %s", e)
+
     results = []
 
     for table_info in all_tables:
@@ -236,6 +272,7 @@ async def deploy_batch(
             mc_dev_project=mc_dev_project,
             node_path=node_path,
             schedule_minute=schedule_minute,
+            ods_uuids=ods_uuids,
         )
         results.append(result)
 

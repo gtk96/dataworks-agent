@@ -1003,9 +1003,10 @@ def _extract_dwd_dml(table_name: str, base_dir: str) -> str:
 
 
 def _find_ods_sources(dml: str) -> list[str]:
-    """从 DML 中解析上游 ODS 表引用（匹配 from/join dataworks.table_name）。"""
-    import re as _re
+    """从 DML 中解析所有上游 ODS 表引用（FROM + JOIN）。
 
-    return list(
-        set(_re.findall(r"(?:from|join)\s+dataworks\.(\S+)", dml, _re.IGNORECASE))
-    )  # \S+ matches table names with _ and t_ prefix, stops at space/alias
+    委托给 modeling/dwd/dependencies.find_ods_sources 以保持一致。
+    """
+    from dataworks_agent.modeling.dwd.dependencies import find_ods_sources
+
+    return find_ods_sources(dml)

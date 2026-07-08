@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 
 from dataworks_agent.api_clients.bff_client import DataWorksClient
+from dataworks_agent.modeling.dwd.dependencies import find_ods_sources
 from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import DWD_SQL_PARAMETERS, generate_cron, get_cycle_type
 
@@ -87,9 +88,16 @@ def extract_dml_for_table(dml_content: str, table_name: str) -> str | None:
     return dml_content[start:end].rstrip() + "\n"
 
 
-async def rebuild_one(bff: DataWorksClient, table_name: str, prod_ddl: str, dml: str) -> dict:
+async def rebuild_one(
+    bff: DataWorksClient,
+    table_name: str,
+    prod_ddl: str,
+    dml: str,
+    ods_uuids: dict[str, str] | None = None,
+) -> dict:
     """重建一张表 + 推送 DML + 挂调度。"""
     result = {"table": table_name, "success": True, "steps": {}, "error": ""}
+    ods_uuids = ods_uuids or {}
 
     # 1. dev DDL（drop+create dataworks_dev.xxx）
     dev_ddl = _replace_schema(prod_ddl, table_name)
@@ -134,9 +142,18 @@ async def rebuild_one(bff: DataWorksClient, table_name: str, prod_ddl: str, dml:
             return result
         result["steps"]["dml"] = "ok"
 
-    # 5. 调度参数 + 依赖 + 输出
+    # 5. 调度参数 + 多源依赖 + 输出
     cron = generate_cron("hour", minute=SCHEDULE_MINUTE)
     cycle_type = get_cycle_type("hour")
+
+    # 从 DML 提取所有上游 ODS 表（1:N）
+    ods_sources = find_ods_sources(dml) if dml else []
+    deps: list[dict] = [{"type": "CrossCycleDependsOnSelf"}]
+    for ods_src in ods_sources:
+        ods_u = ods_uuids.get(ods_src, "")
+        if ods_u:
+            deps.insert(0, {"type": "Normal", "output": ods_u, "sourceType": "System"})
+
     if not await bff.update_vertex(
         uuid,
         {
@@ -150,7 +167,7 @@ async def rebuild_one(bff: DataWorksClient, table_name: str, prod_ddl: str, dml:
             },
             "script": {"parameters": DWD_SQL_PARAMETERS},
             "strategy": {"instanceMode": "Immediately"},
-            "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
+            "dependencies": deps,
             "outputs": {
                 "nodeOutputs": [
                     {
@@ -168,7 +185,7 @@ async def rebuild_one(bff: DataWorksClient, table_name: str, prod_ddl: str, dml:
         result["success"] = False
         result["error"] = "调度参数更新失败"
         return result
-    result["steps"]["sched"] = "ok"
+    result["steps"]["sched"] = {"status": "ok", "ods_sources": ods_sources}
     return result
 
 
@@ -181,6 +198,30 @@ async def main():
     logger.info("源 DML 文件 %d 个", len(dml_contents))
 
     bff = DataWorksClient()
+
+    # 预抓取 ODS 节点 uuid（用于 1:N 依赖）
+    ods_uuids: dict[str, str] = {}
+    try:
+        ods_search = await bff._get(
+            "ide/searchFiles",
+            {
+                "projectId": bff.project_id,
+                "keyword": "ods_hl_",
+                "scene": "DATAWORKS_PROJECT",
+                "pageSize": 200,
+            },
+        )
+        for h in (ods_search.get("data") or {}).get("data", {}).get("hits", []) or []:
+            path = h.get("path", "")
+            if "00_ODS" in path:
+                name = h.get("name", "").replace(".sql", "")
+                v_uuid = (h.get("xattrs") or {}).get("vertexProperties", {}).get("uuid")
+                if v_uuid:
+                    ods_uuids[name] = v_uuid
+        logger.info("预抓取 ODS uuid: %d", len(ods_uuids))
+    except Exception as e:
+        logger.warning("预抓取 ODS uuid 失败: %s", e)
+
     results = []
     ok = fail = 0
     for ddl_file in ddl_files:
@@ -198,7 +239,7 @@ async def main():
                 break
 
         try:
-            r = await rebuild_one(bff, table_name, prod_ddl, dml)
+            r = await rebuild_one(bff, table_name, prod_ddl, dml, ods_uuids=ods_uuids)
         except Exception as e:
             logger.exception("[%s] 异常: %s", table_name, e)
             r = {"table": table_name, "success": False, "error": str(e), "steps": {}}

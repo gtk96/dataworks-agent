@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from dataworks_agent.api_clients.bff_client import DataWorksClient
 
@@ -38,14 +39,11 @@ async def fetch_uuids(bff: DataWorksClient, keyword: str, path_prefix: str) -> d
     return out
 
 
-def dwd_to_ods(dwd_table: str) -> str:
-    """dwd_ord_ofc_s_order_hour -> ods_hl_ofc__s_order_hour"""
-    import re as _re
+def extract_dml_sources(dml: str) -> list[str]:
+    """从 DML 正文提取所有上游 ODS 表名。"""
+    from dataworks_agent.modeling.dwd.dependencies import find_ods_sources
 
-    m = _re.match(r"^dwd_ord_(ofc|oms|ms)_(.+_hour)$", dwd_table)
-    if not m:
-        return ""
-    return f"ods_hl_{m.group(1)}__{m.group(2)}"
+    return find_ods_sources(dml)
 
 
 async def add_node_dependencies(bff: DataWorksClient, target_uuid: str, deps: list[dict]) -> bool:
@@ -69,14 +67,29 @@ async def main() -> None:
 
     ok_deps = ok_out = failed = 0
 
-    for dwd_table, dwd_uuid in dwd_uuids.items():
-        ods_table = dwd_to_ods(dwd_table)
-        ods_uuid = ods_uuids.get(ods_table, "")
+    # 加载 DML 文件以解析多源依赖
+    dml_dir = Path(r"E:\dw-modeling-template\sql\order-fulfillment\dwd\dml")
+    table_to_dml: dict[str, str] = {}
+    if dml_dir.exists():
+        for f in dml_dir.glob("*.sql"):
+            content = f.read_text(encoding="utf-8")
+            # 提取表名和 DML 正文
+            for table_name in dwd_uuids:
+                if table_name.lower() in f.name.lower():
+                    table_to_dml[table_name] = content
 
-        # 1. dependencies: 上游 ODS + 自依赖 (CrossCycleDependsOnSelf)
+    for dwd_table, dwd_uuid in dwd_uuids.items():
+        # 从 DML 提取所有上游 ODS 表（1:N）
+        dml_content = table_to_dml.get(dwd_table, "")
+        ods_sources = extract_dml_sources(dml_content) if dml_content else []
+
+        # 1. dependencies: 所有上游 ODS + 自依赖 (CrossCycleDependsOnSelf)
         deps: list[dict] = [{"type": "CrossCycleDependsOnSelf"}]
-        if ods_uuid:
-            deps.insert(0, {"type": "Normal", "output": ods_uuid, "sourceType": "System"})
+        for ods_src in ods_sources:
+            ods_uuid = ods_uuids.get(ods_src, "")
+            if ods_uuid:
+                deps.insert(0, {"type": "Normal", "output": ods_uuid, "sourceType": "System"})
+
         dep_ok = await add_node_dependencies(bff, dwd_uuid, deps)
 
         # 2. outputs: 节点产出
@@ -105,9 +118,9 @@ async def main() -> None:
             ok_out += 1
         if not (dep_ok and out_ok):
             failed += 1
-            print(f"  FAIL: {dwd_table} (dep={dep_ok}, out={out_ok}, ods={ods_table})")
+            print(f"  FAIL: {dwd_table} (dep={dep_ok}, out={out_ok}, ods_sources={ods_sources})")
         else:
-            print(f"  OK: {dwd_table} <- {ods_table}")
+            print(f"  OK: {dwd_table} <- {ods_sources}")
 
     await bff.close()
     print(

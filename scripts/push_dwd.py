@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from dataworks_agent.api_clients.bff_client import DataWorksClient
+from dataworks_agent.modeling.dwd.dependencies import find_ods_sources
 from dataworks_agent.naming.schedule import HOURLY_SQL_PARAMETERS, generate_cron, get_cycle_type
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -64,6 +65,29 @@ async def main() -> None:
                 table_to_dml[t] = extracted
     logger.info("解析到 %d 个 DWD 表", len(table_to_dml))
 
+    # 预抓取 ODS 节点 uuid（用于 1:N 依赖）
+    ods_uuids: dict[str, str] = {}
+    try:
+        ods_search = await bff._get(
+            "ide/searchFiles",
+            {
+                "projectId": bff.project_id,
+                "keyword": "ods_hl_",
+                "scene": "DATAWORKS_PROJECT",
+                "pageSize": 200,
+            },
+        )
+        for h in (ods_search.get("data") or {}).get("data", {}).get("hits", []) or []:
+            path = h.get("path", "")
+            if "00_ODS" in path:
+                name = h.get("name", "").replace(".sql", "")
+                v_uuid = (h.get("xattrs") or {}).get("vertexProperties", {}).get("uuid")
+                if v_uuid:
+                    ods_uuids[name] = v_uuid
+        logger.info("预抓取 ODS uuid: %d", len(ods_uuids))
+    except Exception as e:
+        logger.warning("预抓取 ODS uuid 失败: %s", e)
+
     cron = generate_cron("hour", minute=SCHEDULE_MINUTE)
     cycle_type = get_cycle_type("hour")
     parameters = HOURLY_SQL_PARAMETERS
@@ -83,6 +107,14 @@ async def main() -> None:
             failed += 1
             continue
 
+        # 从 DML 提取所有上游 ODS 表（1:N）
+        ods_sources = find_ods_sources(dml)
+        deps: list[dict] = [{"type": "CrossCycleDependsOnSelf"}]
+        for ods_src in ods_sources:
+            ods_u = ods_uuids.get(ods_src, "")
+            if ods_u:
+                deps.insert(0, {"type": "Normal", "output": ods_u, "sourceType": "System"})
+
         sched_ok = await bff.update_vertex(
             uuid,
             {
@@ -96,12 +128,12 @@ async def main() -> None:
                 },
                 "script": {"parameters": parameters},
                 "strategy": {"instanceMode": "Immediately"},
-                "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
+                "dependencies": deps,
             },
         )
 
         status = "OK" if sched_ok else f"FAIL(sched) ({bff.last_error or '?'})"
-        print(f"  {status}: {node_path} (uuid={uuid})")
+        print(f"  {status}: {node_path} (uuid={uuid}, ods_sources={ods_sources})")
         if sched_ok:
             ok += 1
         else:
