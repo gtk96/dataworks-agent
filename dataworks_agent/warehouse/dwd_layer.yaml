@@ -1,0 +1,89 @@
+# DWD 层数仓规范配置
+# 类型映射、主题域、更新方式、数据引用规则等通用配置见 common.yaml
+version: 1
+layer: DWD
+
+basic:
+  name_cn: "DWD 层"
+  name_en: "Data Warehouse Detail"
+  description: "明细数据层，以业务过程为驱动，对 ODS 层数据进行清洗、标准化、维度退化等加工，构建最细粒度的明细事实表。"
+
+naming:
+  table_prefix: "dwd_"
+  table_name_pattern: "dwd_{subject_domain}_{table_description}_{update_mode}"
+  naming_examples:
+    - "dwd_ord_order_detail_day — 交易域-订单明细-天增量"
+    - "dwd_scm_shipment_detail_all — 供应链域-发货明细-全量"
+
+# DIM 维度层（与 DWD 同级管理）
+dim:
+  table_prefix: "dim_"
+  table_name_pattern: "dim_{subject_domain}_{table_description}_{update_mode}"
+  description: "公共维度层，建立企业一致性维度，降低计算口径和算法不统一的风险"
+  naming_examples:
+    - "dim_pub_column_dictionary_static — 公共域-字段词根字典-静态"
+    - "dim_gds_product_info_all — 商品域-产品信息-全量"
+
+partitions:
+  required:
+    - name: "dt"
+      type: "STRING"
+      comment: "业务日期分区，格式 yyyy-MM-dd"
+  optional:
+    - name: "family"
+      type: "STRING"
+      comment: "家族分区（按业务需要增加）"
+    - name: "route"
+      type: "STRING"
+      comment: "路线分区（按业务需要增加）"
+  usage:
+    - id: "where_dt"
+      desc: "查询/写入必须带 dt 过滤条件"
+    - id: "extra_partition"
+      desc: "可按家族、路线等维度增加分区"
+
+columns:
+  naming_rules:
+    - id: "standardized_names"
+      desc: "字段名应标准化，优先使用词根字典中的标准词根"
+  null_handling:
+    - type: "字符类型"
+      rule: "空值默认填充 '-'"
+    - type: "金额/数量类型"
+      rule: "保留 NULL，不做填充"
+    - type: "日期类型"
+      rule: "空值默认填充 '1970-01-01'"
+  field_type_rules:
+    - field_type: "金额字段"
+      maxcompute_type: "decimal(24,6)"
+      note: "保留 6 位小数"
+    - field_type: "ID 字段"
+      maxcompute_type: "string"
+    - field_type: "日期字段"
+      maxcompute_type: "string"
+      note: "格式 yyyy-MM-dd"
+    - field_type: "时间字段"
+      maxcompute_type: "string"
+      note: "格式 yyyy-MM-dd HH:mm:ss"
+
+data_loading:
+  - id: "insert_overwrite"
+    desc: "写入采用 INSERT OVERWRITE 按分区重算"
+  - id: "no_view"
+    desc: "禁止创建视图"
+  - id: "hourly_caution"
+    desc: "慎重创建 hourly 粒度的表，需评估必要性和资源消耗"
+
+storage:
+  lifecycle: "永久保存"
+
+rules:
+  - id: "unique_prefix"
+    level: "error"
+    desc: "所有表必须以 dwd_ 前缀命名"
+  - id: "subject_domain_required"
+    level: "error"
+    desc: "表名必须包含主题域编码"
+  - id: "no_view"
+    level: "error"
+    desc: "禁止创建视图"

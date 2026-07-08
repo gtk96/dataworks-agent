@@ -1,0 +1,96 @@
+# 一致性维度属性定义
+# 用于构建字段级总线矩阵（标准 Kimball 格式）
+# match_fields: 字段名匹配规则（任一匹配即视为该维度存在）
+# type: dimension（维度）或 measure（度量/事实）
+version: 1
+
+conformed_dimensions:
+  # ── 店铺维度 ──
+  - code: "shop"
+    name_cn: "店铺"
+    category: "店铺维度"
+    type: "dimension"
+    match_fields:
+      - "third_shop_id"
+      - "plat_shop_code"
+      - "thirdshop_shop_acct"
+      - "shop_id"
+      - "shop_code"
+
+  # ── 仓库维度 ──
+  - code: "warehouse"
+    name_cn: "仓库"
+    category: "仓库维度"
+    type: "dimension"
+    match_fields:
+      - "plat_wh_id"
+      - "wh_id"
+      - "wh_name"
+      - "wh_code"
+      - "warehouse_id"
+
+  # ── 商品维度 ──
+  - code: "product"
+    name_cn: "商品"
+    category: "商品维度"
+    type: "dimension"
+    match_fields:
+      - "product_id"
+      - "global_plat_sale_code"
+      - "plat_sale_code"
+      - "plat_sale_name"
+      - "item_id"
+      - "product_name"
+
+  # ── SKU 维度 ──
+  - code: "sku"
+    name_cn: "SKU"
+    category: "商品维度"
+    type: "dimension"
+    match_fields:
+      - "global_plat_sku"
+      - "plat_sku"
+      - "plat_wh_sku"
+      - "sku"
+      - "sku_id"
+      - "global_plat_sku_name"
+
+  # ── 时间维度 ──
+  - code: "time"
+    name_cn: "时间"
+    category: "时间维度"
+    type: "dimension"
+    match_fields:
+      - "query_date"
+      - "statis_date"
+      - "biz_date"
+      - "order_date"
+
+  # ── 平台维度 ──
+  - code: "platform"
+    name_cn: "平台"
+    category: "平台维度"
+    type: "dimension"
+    match_fields:
+      - "platform"
+      - "plat_code"
+      - "platform_code"
+
+  # ── 履约模式 ──
+  - code: "fulfillment_mode"
+    name_cn: "履约模式"
+    category: "业务属性"
+    type: "dimension"
+    match_fields:
+      - "operate_map_mode"
+      - "fulfillment_mode"
+      - "ship_mode"
+
+# ── 排除字段（技术字段，不参与矩阵） ──
+exclude_fields:
+  - "unique_id"
+  - "create_time"
+  - "update_time"
+  - "update_pt"
+  - "dw_update_time"
+  - "id"

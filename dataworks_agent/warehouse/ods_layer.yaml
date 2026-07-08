@@ -1,0 +1,98 @@
+# ODS 层数仓规范配置
+# 类型映射、主题域、更新方式、数据引用规则等通用配置见 common.yaml
+version: 1
+layer: ODS
+
+basic:
+  name_cn: "ODS 层"
+  name_en: "Operational Data Store"
+  description: "贴源数据层，通过 DataWorks 数据集成工具原样抽取多源异构数据至 MaxCompute，仅进行必要的格式转换，不做业务清洗或逻辑加工，完整保留原始数据特征。"
+
+naming:
+  table_prefix: "ods_"
+  table_name_pattern: "ods_{src_system_type}_{src_db_name}__{table_name}_{update_mode}"
+
+  # 源数据库类型缩写映射
+  src_system_type_mapping:
+    mysql: "ms"
+    oss: "oss"
+    hologres: "hl"
+    maxcompute: "mc"
+    elasticsearch: "es"
+    ftp: "ftp"
+    mongodb: "mg"
+    polardb: "pl"
+
+  database_naming_rule: "与源库名一致，源库名中的 '-' 替换为 '_'，必要时增加业务域前缀"
+
+  naming_examples:
+    - "ods_ms_gimp__order_info_hour — MySQL-gimp库-order_info表-小时增量"
+    - "ods_ms_jky_thirdshop_ebay__j_shop_day — MySQL-jky_thirdshop_ebay库-j_shop表-天增量"
+
+extraction:
+  filter_rules:
+    - id: "use_create_update_time"
+      desc: "仅允许以 create/update_date 或 create/update_time 作为过滤条件"
+    - id: "replica_lag_safe_window"
+      desc: "从库抽取可适当扩大时间范围（向前回溯）以保障数据完整性"
+  uniqueness_rules:
+    - id: "no_duplicate_extract"
+      desc: "同一数据仅抽取一次，已按小时增量抽取的不得再做日级增量抽取"
+
+partitions:
+  required:
+    - name: "dt"
+      type: "STRING"
+      comment: "业务日期分区，格式 yyyy-MM-dd"
+    - name: "ht"
+      type: "STRING"
+      comment: "小时分区，00~23"
+  usage:
+    - id: "where_dt_ht"
+      desc: "查询/写入必须带 dt, ht 过滤条件，避免全表扫描"
+    - id: "insert_overwrite_by_partition"
+      desc: "写入采用 INSERT OVERWRITE，按 dt+ht 分区重算"
+
+columns:
+  naming_rules:
+    - id: "same_as_source"
+      desc: "字段名与字段注释需与源表完全一致，不做业务语义改造"
+    - id: "technical_columns_append"
+      desc: "仅追加技术字段（如 dw_update_time），不改动业务字段"
+  # ODS 层特殊：float/double 映射为 decimal（保留精度）
+  type_mapping_override:
+    float: "decimal"
+    double: "decimal"
+  technical_columns:
+    - name: "dw_update_time"
+      type: "DATETIME"
+      nullable: false
+      comment: "数据仓库层更新时间"
+
+storage:
+  default_lifecycle: "永久保留"
+  lifecycle_by_importance:
+    - level: "核心表"
+      lifecycle: "永久保留"
+    - level: "重要表"
+      lifecycle: 30
+    - level: "一般表"
+      lifecycle: 7
+    - level: "临时表"
+      lifecycle: 3
+    - level: "日志表"
+      lifecycle: 1
+
+reentry:
+  rule: "数据重入必须从数据源重新同步至 ODS 层，不允许从下游层回灌"
+
+rules:
+  - id: "unique_prefix"
+    level: "error"
+    desc: "所有表必须以 ods_ 前缀命名"
+  - id: "name_pattern"
+    level: "warn"
+    desc: "表名应符合 ods_{src_system_type}_{src_db_name}__{table_name}_{update_mode} 模式"
+  - id: "no_business_logic"
+    level: "error"
+    desc: "不做业务清洗或逻辑加工，仅进行必要的格式转换"

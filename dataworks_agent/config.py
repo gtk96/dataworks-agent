@@ -1,0 +1,108 @@
+"""配置管理 — pydantic-settings 从 .env 加载全部配置（ADR-008）。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """dataworks-agent 全局配置。"""
+
+    # ── 阿里云 AK/SK 鉴权 ──
+    aliyun_access_key_id: str = ""
+    aliyun_access_key_secret: str = ""
+
+    # ── DataWorks 项目 ──
+    # 注意：以下 ID 都是租户级内部标识符，禁止在仓库里写具体值。
+    # 本地部署请把真实值填入 .env（参考 .env.example）。
+    dataworks_project_id: int = 0
+    dataworks_datasource_id: int = 0
+    dataworks_resource_group: str = ""
+    dataworks_region: str = "cn-shenzhen"
+    dataworks_tenant_id: str = ""
+
+    # ── 数仓 Schema ──
+    dataworks_dev_schema: str = "dataworks_dev"
+    dataworks_prod_schema: str = "dataworks"
+    odps_datasource_name: str = "dataworks"
+    ddl_registry_project: str = "dataworks"
+    di_resource_group: str = ""
+    init_di_max_wait_seconds: int = 3600
+    sql_template_root: str = "E:/dw-modeling-template/sql"
+
+    # ── MaxCompute（pyodps）执行底座 ──
+    maxcompute_endpoint: str = "http://service.cn-shenzhen.maxcompute.aliyun.com/api"
+    maxcompute_project: str = "dataworks"
+
+    # ── LLM 服务（OpenAI 兼容网关，provider 无关） ──
+    llm_base_url: str = "https://opencode.ai/zen/v1"
+    llm_model: str = "deepseek-v4-flash-free"
+    llm_api_key: str = ""
+    # 分级路由可选档位；留空则回退到 llm_model（Requirement 7.4）
+    llm_model_light: str = ""
+    llm_model_normal: str = ""
+    llm_model_complex: str = ""
+
+    # ── Holo ──
+    holo_native_schemas: str = "ofc,oms,gimp,gorder,adapi_online,cda"
+    holo_instance_datasource: str = "cda_giiktok_hologres"
+    holo_node_datasource: str = (
+        "dataworks_holo"  # 建 Holo 数据开发节点时的 datasource 名（真机核实）
+    )
+
+    # ── 服务 ──
+    dw_modeling_port: int = 8085
+    dw_modeling_host: str = "127.0.0.1"
+    host: str = "127.0.0.1"
+    port: int = 8085
+    deploy_api_key: str = ""  # 写操作校验，为空时不校验
+
+    # ── IDE ──
+    ide_agent_dir: str = "dataworks_agent"
+    root_check_node_uuid: str = ""
+    dataworks_default_root_node_uuid: str = ""
+    smoke_test_node_uuid: str = ""
+
+    # ── DataWorks BFF ──
+    bff_base_url: str = "https://bff-cn-shenzhen.data.aliyun.com"
+
+    # ── Cookie 鉴权 ──
+    cookie_encryption_key: str = ""
+    cookie_keepalive_enabled: bool = False
+    cdp_url: str = "http://localhost:9222"
+
+    # ── 告警配置 ──
+    dingtalk_webhook: str = ""  # 钉钉机器人 Webhook URL
+    alert_enabled: bool = True  # 是否启用告警
+
+    # ── 派生属性 ──
+    @property
+    def dataworks_endpoint(self) -> str:
+        return f"dataworks.{self.dataworks_region}.aliyuncs.com"
+
+    @property
+    def db_path(self) -> str:
+        return str(Path(__file__).parent.parent / "data" / "dw_modeling.db")
+
+    @property
+    def data_dir(self) -> str:
+        return str(Path(__file__).parent.parent / "data")
+
+    @property
+    def log_dir(self) -> str:
+        return str(Path(__file__).parent.parent / "log")
+
+    @property
+    def archive_dir(self) -> str:
+        return str(Path(__file__).parent.parent / "data" / "sql_archive")
+
+    @property
+    def frontend_dir(self) -> str:
+        return str(Path(__file__).parent.parent / "frontend" / "dist")
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+
+settings = Settings()

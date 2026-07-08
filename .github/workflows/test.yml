@@ -1,0 +1,74 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          cache-python: true
+
+      - name: Install Python deps
+        run: uv sync --dev
+
+      - name: Ensure data dir for SQLite test DB
+        run: mkdir -p data log reports
+
+      - name: Run ruff check
+        run: uv run ruff check dataworks_agent/ tests/
+
+      - name: Run ruff format check
+        run: uv run ruff format --check dataworks_agent/ tests/
+
+      - name: Run all tests + coverage
+        run: |
+          uv run pytest tests/ \
+            --cov=dataworks_agent \
+            --cov-report=xml:reports/coverage.xml \
+            --cov-report=html:reports/coverage-html \
+            --cov-report=term
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: reports/coverage.xml
+          fail_ci_if_error: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+
+      - name: Run Vitest
+        run: cd frontend && npm run test:unit
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            reports/junit.xml
+            reports/coverage.xml
+            reports/coverage-html/
+          retention-days: 30

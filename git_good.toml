@@ -1,0 +1,49 @@
+[project]
+name = "dataworks-agent"
+version = "0.1.0"
+description = "智能数仓建模系统 - DataWorks 全流程自动化"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+    "sqlalchemy>=2.0.0",
+    "structlog>=24.0.0",
+    "playwright>=1.45.0",
+    "python-dotenv>=1.0.0",
+    "prometheus-client>=0.20.0",
+    "cryptography>=42.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "jinja2>=3.1.0",
+    "aiofiles>=24.0.0",
+    "websockets>=12.0",
+    "sqlglot>=26.31.1",
+]
+
+[project.scripts]
+dw-agent = "dataworks_agent.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.19",
+]

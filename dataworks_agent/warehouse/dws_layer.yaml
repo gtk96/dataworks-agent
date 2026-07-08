@@ -1,0 +1,81 @@
+# DWS 层数仓规范配置
+# 类型映射、主题域、更新方式、数据引用规则等通用配置见 common.yaml
+version: 1
+layer: DWS
+
+basic:
+  name_cn: "DWS 层"
+  name_en: "Data Warehouse Summary"
+  description: "汇总数据层，以分析主题对象为驱动，基于上层应用和产品的指标需求，构建公共粒度的汇总指标事实表。"
+
+naming:
+  table_prefix: "dws_"
+  table_name_pattern: "dws_{subject}_{table_description}_{update_mode}"
+  naming_examples:
+    - "dws_ord_order_summary_di — 交易主题-订单汇总-日增量"
+    - "dws_scm_shipment_stats_df — 供应链主题-发货统计-日全量"
+
+partitions:
+  required:
+    - name: "dt"
+      type: "STRING"
+      comment: "业务日期分区，格式 yyyy-MM-dd"
+  recommended:
+    - name: "family"
+      type: "STRING"
+      comment: "家族分区"
+    - name: "route"
+      type: "STRING"
+      comment: "路线分区"
+  usage:
+    - id: "where_dt"
+      desc: "查询/写入必须带 dt 过滤条件"
+    - id: "partition_by_family_route"
+      desc: "推荐按 '日期+家族+路线' 进行分区"
+
+columns:
+  naming_rules:
+    - id: "aggregated_names"
+      desc: "字段名应体现聚合语义，使用词根词典映射中文注释"
+    - id: "metric_comment"
+      desc: "指标字段必须在 COMMENT 中注明统计口径，如 '近7日GMV（含税）'"
+  null_handling:
+    - type: "数值型"
+      rule: "空值填充 0"
+    - type: "字符串型"
+      rule: "空值填充 '-'"
+    - type: "总体原则"
+      rule: "不允许存在空值（NULL），所有字段必须有默认值"
+  field_type_rules:
+    - field_type: "整数型指标"
+      maxcompute_type: "bigint"
+      note: "如订单数、件数"
+    - field_type: "带小数指标"
+      maxcompute_type: "decimal"
+      precision: "精度 ≥ 6 位小数"
+      note: "如金额、比率，decimal(20,6) 或更高"
+    - field_type: "ID/维度字段"
+      maxcompute_type: "string"
+    - field_type: "日期字段"
+      maxcompute_type: "string"
+      note: "格式 yyyy-MM-dd"
+    - field_type: "时间字段"
+      maxcompute_type: "string"
+      note: "格式 yyyy-MM-dd HH:mm:ss"
+
+storage:
+  lifecycle: "永久保存"
+
+rules:
+  - id: "unique_prefix"
+    level: "error"
+    desc: "所有表必须以 dws_ 前缀命名"
+  - id: "no_view"
+    level: "error"
+    desc: "禁止创建视图"
+  - id: "no_null"
+    level: "error"
+    desc: "不允许存在空值，数值型填 0，字符串型填 '-'"
+  - id: "metric_comment_required"
+    level: "warn"
+    desc: "指标字段必须在 COMMENT 中注明统计口径"

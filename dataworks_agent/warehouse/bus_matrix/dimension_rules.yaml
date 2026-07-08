@@ -1,0 +1,17 @@
+version: 1
+
+dimension:
+  prefixes:
+    - dim_
+  process_prefixes:
+    - dwd_
+  whitelist: []
+  blacklist: []
+
+temp_table:
+  prefixes:
+    - tmp_
+
+external:
+  exclude_relationship_types:
+    - EXTERNAL_TABLE_MAPPING

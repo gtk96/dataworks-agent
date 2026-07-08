@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-07-02T16:40:59+0800",
+  "batch_size": 100,
+  "batches": [
+    {
+      "idx": 11,
+      "size": 100,
+      "job_code": "unified-aeabddb3-53e1-461a-9c12-3a250e60e732",
+      "status": "ok"
+    },
+    {
+      "idx": 12,
+      "size": 100,
+      "job_code": "unified-886b3231-3884-493b-ae14-583174e5ea9c",
+      "status": "ok"
+    }
+  ],
+  "finished_at": "2026-07-02T16:41:14+0800",
+  "status": "all_done"
+}

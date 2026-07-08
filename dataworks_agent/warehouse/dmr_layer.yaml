@@ -1,0 +1,104 @@
+# DMR 层数仓规范配置
+# 类型映射、主题域、更新方式、数据引用规则等通用配置见 common.yaml
+version: 1
+layer: DMR
+
+basic:
+  name_cn: "DMR 层"
+  name_en: "Data Mart"
+  description: "应用数据层（数据集市），面向具体业务场景或报表需求，存放数据产品个性化的统计指标数据，可较为灵活地设计表结构。"
+
+naming:
+  table_prefix: "dmr_"
+  table_name_pattern: "dmr_{table_description}_{update_mode}"
+
+  # 表前缀规则
+  prefix_rules:
+    - prefix: "dmr_"
+      description: "DMR 公共数据集市"
+    - prefix: "dm{team_code}_"
+      description: "业务团队集市，如 dmA_（A 团队）、dmB_（B 团队）"
+
+  # 特殊任务命名
+  push_task_naming:
+    rule: "倒数第二个词根为 push"
+    example: "dmr_order_push_di"
+  alarm_task_naming:
+    rule: "倒数第二个词根为 alarm"
+    example: "dmr_stock_alarm_di"
+
+  # 视图命名
+  view_naming:
+    pattern: "{table_prefix}_{original_table_name}"
+
+  naming_examples:
+    - "dmr_order_summary_di — 公共集市-订单汇总-日增量"
+    - "dmA_sales_report_df — A 团队集市-销售报表-日全量"
+    - "dmr_stock_push_di — 推送任务"
+    - "dmr_delivery_alarm_di — 告警任务"
+
+partitions:
+  required:
+    - name: "dt"
+      type: "STRING"
+      comment: "业务日期分区，格式 yyyy-MM-dd"
+  optional:
+    - name: "ht"
+      type: "STRING"
+      comment: "小时分区，00~23（小时更新场景使用）"
+  usage:
+    - id: "where_dt"
+      desc: "查询/写入必须带 dt 过滤条件"
+    - id: "ht_for_hourly"
+      desc: "小时更新的 DMR 表需增加 ht 分区"
+
+columns:
+  naming_rules:
+    - id: "business_names"
+      desc: "字段名应面向业务语义，使用词根词典映射中文注释"
+    - id: "metric_comment"
+      desc: "指标字段必须在 COMMENT 中注明统计口径"
+  null_handling:
+    - type: "数值型"
+      rule: "空值填充 0"
+    - type: "字符串型"
+      rule: "空值填充 '-'"
+    - type: "总体原则"
+      rule: "不允许存在空值（NULL），与 DWS 层保持一致"
+  field_type_rules:
+    - field_type: "维度字段"
+      maxcompute_type: "string"
+    - field_type: "整数型指标"
+      maxcompute_type: "bigint"
+    - field_type: "带小数指标"
+      maxcompute_type: "decimal"
+      precision: "精度 ≥ 6 位小数"
+    - field_type: "日期字段"
+      maxcompute_type: "date"
+      note: "DMR 层转为 date 类型（非 string）"
+    - field_type: "时间字段"
+      maxcompute_type: "datetime"
+      note: "DMR 层转为 datetime 类型（非 string）"
+  # DMR 层类型映射覆盖（date/datetime 转为对应类型）
+  type_mapping_override:
+    date: "date"
+    datetime: "datetime"
+    timestamp: "datetime"
+
+storage:
+  default_lifecycle: 3
+  lifecycle_note: "DMR 层默认保留 3 天"
+
+rules:
+  - id: "prefix_required"
+    level: "error"
+    desc: "表必须以 dmr_ 或 dm{团队代码}_ 前缀命名"
+  - id: "no_null"
+    level: "error"
+    desc: "不允许存在空值，数值型填 0，字符串型填 '-'"
+  - id: "metric_comment_required"
+    level: "warn"
+    desc: "指标字段必须在 COMMENT 中注明统计口径"
+  - id: "date_type_conversion"
+    level: "warn"
+    desc: "date/datetime 字段应转为对应 MaxCompute 类型，不再使用 string"

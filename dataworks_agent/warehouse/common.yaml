@@ -1,0 +1,185 @@
+# 数仓通用规范配置（跨层共享）
+# 来源：《数据体系建设规范》V2.0
+version: 1
+
+# ============================================================
+# 主题域编码
+# ============================================================
+subject_domains:
+  - code: "ORD"
+    name_cn: "交易域"
+    description: "订单、交易相关"
+  - code: "GDS"
+    name_cn: "商品域"
+    description: "商品、SKU 相关"
+  - code: "EVT"
+    name_cn: "事件域"
+    description: "用户行为事件"
+  - code: "SCM"
+    name_cn: "供应链域"
+    description: "供应链、仓储、物流"
+  - code: "FIN"
+    name_cn: "财务域"
+    description: "财务、结算"
+  - code: "SVC"
+    name_cn: "服务域"
+    description: "客服、售后"
+  - code: "MKT"
+    name_cn: "营销域"
+    description: "营销、推广"
+  - code: "PTY"
+    name_cn: "会员域"
+    description: "用户、会员"
+  - code: "PUB"
+    name_cn: "公共域"
+    description: "公共维度、通用"
+
+# ============================================================
+# 更新方式编码（全局统一，各层共用）
+# ============================================================
+update_modes:
+  - code: "min"
+    name_cn: "分钟增量"
+  - code: "hour"
+    name_cn: "小时增量"
+  - code: "hourly"
+    name_cn: "小时全量"
+  - code: "day"
+    name_cn: "天增量"
+  - code: "week"
+    name_cn: "周增量"
+  - code: "mon"
+    name_cn: "月增量"
+  - code: "qtr"
+    name_cn: "季增量"
+  - code: "year"
+    name_cn: "年增量"
+  - code: "all"
+    name_cn: "全量"
+  - code: "his"
+    name_cn: "历史全量快照"
+  - code: "static"
+    name_cn: "静态（一次性加载）"
+
+# ============================================================
+# 通用类型映射（MySQL → MaxCompute，各层默认继承）
+# 各层如有差异可在自身 type_mapping_override 中覆盖
+# ============================================================
+type_mapping:
+  mysql_to_maxcompute:
+    # 整数类型
+    tinyint: "bigint"
+    smallint: "bigint"
+    mediumint: "bigint"
+    integer: "bigint"
+    int: "bigint"
+    bigint: "bigint"
+    bit: "bigint"
+    boolean: "bigint"
+    bool: "bigint"
+    # 浮点/定点类型
+    float: "double"
+    double: "double"
+    decimal: "decimal"
+    numeric: "decimal"
+    # 字符串类型
+    char: "string"
+    varchar: "string"
+    tinytext: "string"
+    text: "string"
+    mediumtext: "string"
+    longtext: "string"
+    enum: "string"
+    set: "string"
+    json: "string"
+    # 二进制类型
+    binary: "string"
+    varbinary: "string"
+    tinyblob: "string"
+    blob: "string"
+    mediumblob: "string"
+    longblob: "string"
+    # 日期时间类型（默认全部映射为 string）
+    date: "string"
+    datetime: "string"
+    timestamp: "string"
+    time: "string"
+    year: "string"
+
+# ============================================================
+# 特殊字段后缀 → 各层类型规范
+# ============================================================
+field_suffix_rules:
+  - suffix: "id"
+    type: "string"
+    note: "ID 类字段统一使用 string"
+  - suffix: "date"
+    ods_type: "string"
+    dwd_type: "string"
+    dws_type: "string"
+    dmr_type: "date"
+    note: "日期字段 ODS/DWD/DWS 用 string(yyyy-mm-dd)，DMR 转为 date"
+  - suffix: "time"
+    ods_type: "string"
+    dwd_type: "string"
+    dws_type: "string"
+    dmr_type: "datetime"
+    note: "时间字段 ODS/DWD/DWS 用 string，DMR 转为 datetime"
+  - suffix: "amt"
+    ods_type: "string"
+    dwd_type: "decimal(24,6)"
+    dws_type: "decimal"
+    dmr_type: "decimal"
+    note: "金额字段 ODS/DWD 用 string，DWS/DMR 用 decimal"
+  - suffix: "cost"
+    ods_type: "string"
+    dwd_type: "decimal(24,6)"
+    dws_type: "decimal"
+    dmr_type: "decimal"
+    note: "成本字段 ODS/DWD 用 string，DWS/DMR 用 decimal"
+  - suffix: "json"
+    type: "string"
+    note: "JSON 字段统一使用 string"
+  - suffix: "unixtime"
+    dwd_type: "string"
+    note: "Unix timestamp fields are preserved as string in DWD"
+  - suffix: "unixtimestamp"
+    dwd_type: "string"
+    note: "Unix timestamp fields are preserved as string in DWD"
+  - suffix: "hour"
+    dwd_type: "string"
+    note: "Hour fields are preserved as string in DWD"
+  - suffix: "minute"
+    dwd_type: "string"
+    note: "Minute fields are preserved as string in DWD"
+  - suffix: "mon"
+    dwd_type: "string"
+    note: "Month code fields are preserved as string in DWD"
+  - suffix: "qtr"
+    dwd_type: "string"
+    note: "Quarter code fields are preserved as string in DWD"
+
+# ============================================================
+# 数据引用规则（各层可引用的上游层）
+# ============================================================
+data_reference_rules:
+  ODS: []
+  DWD: ["ODS", "DIM", "DWD"]
+  DIM: ["ODS", "DIM"]
+  DWS: ["DWD", "DIM", "DWS"]
+  DMR: ["DWS", "DWD", "DIM"]
+
+# ============================================================
+# 编码规范
+# ============================================================
+coding_standards:
+  charset: "UTF-8"
+  sql_style:
+    - "SQL 关键字大写（SELECT, FROM, WHERE, JOIN 等）"
+    - "表名、字段名小写"
+    - "使用 4 空格缩进"
+    - "每个字段单独一行"
+  naming_style:
+    - "表名、字段名使用小写字母和下划线"
+    - "禁止使用中文、特殊字符"
+    - "字段名长度不超过 64 个字符"

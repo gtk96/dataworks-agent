@@ -1,0 +1,127 @@
+# 任务接力规则配置
+# Loop Engineering 的 Self-prompting 机制：
+# 上一轮跑完之后，不由人来想"下一步该问什么"，
+# 而是让系统根据已有进展，自己写下一轮要跑的 Prompt。
+
+chaining_rules:
+  # ODS 节点创建完成后
+  - id: ods_to_dml
+    trigger_task_type: ods_node_create
+    trigger_status: verified
+    next_task_type: dml_push
+    description: "ODS 节点创建完成后，自动触发 DML 推送"
+    enabled: true
+
+  - id: ods_dml_to_schedule
+    trigger_task_type: ods_dml_push
+    trigger_status: verified
+    next_task_type: schedule_config
+    description: "ODS DML 推送完成后，自动触发调度参数配置"
+    enabled: true
+
+  - id: ods_schedule_to_deps
+    trigger_task_type: ods_schedule_config
+    trigger_status: verified
+    next_task_type: dependency_config
+    description: "ODS 调度参数配置完成后，自动触发依赖配置"
+    enabled: true
+
+  - id: ods_deps_to_verify
+    trigger_task_type: ods_dependency_config
+    trigger_status: verified
+    next_task_type: verification
+    description: "ODS 依赖配置完成后，自动触发验证检查"
+    enabled: true
+
+  # DWD 节点创建完成后
+  - id: dwd_to_dml
+    trigger_task_type: dwd_node_create
+    trigger_status: verified
+    next_task_type: dml_push
+    description: "DWD 节点创建完成后，自动触发 DML 推送"
+    enabled: true
+
+  - id: dwd_dml_to_deps
+    trigger_task_type: dwd_dml_push
+    trigger_status: verified
+    next_task_type: dependency_config
+    description: "DWD DML 推送完成后，自动触发上游依赖配置"
+    enabled: true
+
+  - id: dwd_deps_to_schedule
+    trigger_task_type: dwd_dependency_config
+    trigger_status: verified
+    next_task_type: schedule_config
+    description: "DWD 依赖配置完成后，自动触发调度参数配置"
+    enabled: true
+
+  - id: dwd_schedule_to_verify
+    trigger_task_type: dwd_schedule_config
+    trigger_status: verified
+    next_task_type: verification
+    description: "DWD 调度参数配置完成后，自动触发验证检查"
+    enabled: true
+
+  # DIM 节点创建完成后
+  - id: dim_to_dml
+    trigger_task_type: dim_node_create
+    trigger_status: verified
+    next_task_type: dml_push
+    description: "DIM 节点创建完成后，自动触发 DML 推送"
+    enabled: true
+
+  - id: dim_dml_to_deps
+    trigger_task_type: dim_dml_push
+    trigger_status: verified
+    next_task_type: dependency_config
+    description: "DIM DML 推送完成后，自动触发上游依赖配置"
+    enabled: true
+
+  - id: dim_deps_to_schedule
+    trigger_task_type: dim_dependency_config
+    trigger_status: verified
+    next_task_type: schedule_config
+    description: "DIM 依赖配置完成后，自动触发调度参数配置"
+    enabled: true
+
+  - id: dim_schedule_to_verify
+    trigger_task_type: dim_schedule_config
+    trigger_status: verified
+    next_task_type: verification
+    description: "DIM 调度参数配置完成后，自动触发验证检查"
+    enabled: true
+
+  # DWS 节点创建完成后
+  - id: dws_to_dml
+    trigger_task_type: dws_node_create
+    trigger_status: verified
+    next_task_type: dml_push
+    description: "DWS 节点创建完成后，自动触发 DML 推送"
+    enabled: true
+
+  - id: dws_dml_to_deps
+    trigger_task_type: dws_dml_push
+    trigger_status: verified
+    next_task_type: dependency_config
+    description: "DWS DML 推送完成后，自动触发上游依赖配置"
+    enabled: true
+
+  - id: dws_deps_to_schedule
+    trigger_task_type: dws_dependency_config
+    trigger_status: verified
+    next_task_type: schedule_config
+    description: "DWS 依赖配置完成后，自动触发调度参数配置"
+    enabled: true
+
+  - id: dws_schedule_to_verify
+    trigger_task_type: dws_schedule_config
+    trigger_status: verified
+    next_task_type: verification
+    description: "DWS 调度参数配置完成后，自动触发验证检查"
+    enabled: true
+
+# 最大接力深度（防止循环依赖）
+max_chain_depth: 10
+
+# 接力延迟（秒）—— 给前置任务留时间完成持久化
+chain_delay_seconds: 0
