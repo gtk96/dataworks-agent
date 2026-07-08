@@ -1,4 +1,5 @@
 """把 gmtdate_last1d 调度参数推到 DWD 节点的 script.parameters。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,12 @@ SCHEDULE_MINUTE = 1
 async def fetch_dwd_uuids(bff: DataWorksClient) -> dict[str, str]:
     r = await bff._get(
         "ide/searchFiles",
-        {"projectId": bff.project_id, "keyword": "dwd_ord_", "scene": "DATAWORKS_PROJECT", "pageSize": 100},
+        {
+            "projectId": bff.project_id,
+            "keyword": "dwd_ord_",
+            "scene": "DATAWORKS_PROJECT",
+            "pageSize": 100,
+        },
     )
     out: dict[str, str] = {}
     for h in (r.get("data") or {}).get("data", {}).get("hits", []) or []:

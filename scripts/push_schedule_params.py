@@ -1,4 +1,5 @@
 """把更新后的调度参数(包含 gmtdate_last2h)推送到已部署的 ofc/oms ODS 节点。"""
+
 from __future__ import annotations
 
 import asyncio

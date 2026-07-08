@@ -65,12 +65,10 @@ def to_dev_ddl(prod_ddl: str, table_name: str) -> str:
 
 def _replace_schema(prod_ddl: str, table_name: str) -> str:
     """只替换本表名上的 schema 前缀，避免误伤其它字面量。"""
-    return (
-        prod_ddl.replace(f"drop table if exists {PROD_SCHEMA}.{table_name}",
-                         f"drop table if exists {DEV_SCHEMA}.{table_name}")
-        .replace(f"create table {PROD_SCHEMA}.{table_name}",
-                 f"create table {DEV_SCHEMA}.{table_name}")
-    )
+    return prod_ddl.replace(
+        f"drop table if exists {PROD_SCHEMA}.{table_name}",
+        f"drop table if exists {DEV_SCHEMA}.{table_name}",
+    ).replace(f"create table {PROD_SCHEMA}.{table_name}", f"create table {DEV_SCHEMA}.{table_name}")
 
 
 def extract_dml_for_table(dml_content: str, table_name: str) -> str | None:
@@ -80,8 +78,11 @@ def extract_dml_for_table(dml_content: str, table_name: str) -> str | None:
     if not m:
         return None
     start = m.start()
-    nxt = re.search(r"\ninsert\s+(?:overwrite\s+)?(?:into\s+)?(?:table\s+)?\S",
-                    dml_content[start + 1:], re.IGNORECASE)
+    nxt = re.search(
+        r"\ninsert\s+(?:overwrite\s+)?(?:into\s+)?(?:table\s+)?\S",
+        dml_content[start + 1 :],
+        re.IGNORECASE,
+    )
     end = start + 1 + nxt.start() if nxt else len(dml_content)
     return dml_content[start:end].rstrip() + "\n"
 
@@ -136,20 +137,33 @@ async def rebuild_one(bff: DataWorksClient, table_name: str, prod_ddl: str, dml:
     # 5. 调度参数 + 依赖 + 输出
     cron = generate_cron("hour", minute=SCHEDULE_MINUTE)
     cycle_type = get_cycle_type("hour")
-    if not await bff.update_vertex(uuid, {
-        "trigger": {
-            "type": "Scheduler", "cron": cron, "cycleType": cycle_type,
-            "startTime": "1970-01-01 00:00:00", "endTime": "9999-01-01 00:00:00",
-            "timezone": "Asia/Shanghai",
+    if not await bff.update_vertex(
+        uuid,
+        {
+            "trigger": {
+                "type": "Scheduler",
+                "cron": cron,
+                "cycleType": cycle_type,
+                "startTime": "1970-01-01 00:00:00",
+                "endTime": "9999-01-01 00:00:00",
+                "timezone": "Asia/Shanghai",
+            },
+            "script": {"parameters": DWD_SQL_PARAMETERS},
+            "strategy": {"instanceMode": "Immediately"},
+            "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
+            "outputs": {
+                "nodeOutputs": [
+                    {
+                        "data": uuid,
+                        "refTableName": table_name,
+                        "artifactType": "NodeOutput",
+                        "sourceType": "System",
+                        "isDefault": True,
+                    }
+                ]
+            },
         },
-        "script": {"parameters": DWD_SQL_PARAMETERS},
-        "strategy": {"instanceMode": "Immediately"},
-        "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
-        "outputs": {"nodeOutputs": [
-            {"data": uuid, "refTableName": table_name, "artifactType": "NodeOutput",
-             "sourceType": "System", "isDefault": True}
-        ]},
-    }):
+    ):
         result["steps"]["sched"] = "failed"
         result["success"] = False
         result["error"] = "调度参数更新失败"
@@ -201,7 +215,7 @@ async def main():
     print(f"\n总计: {ok} 成功 / {fail} 失败 / {len(results)} 处理")
     for r in results:
         s = "OK" if r["success"] else "FAIL"
-        print(f"  [{s}] {r['table']:<50} {r.get('error','')}")
+        print(f"  [{s}] {r['table']:<50} {r.get('error', '')}")
 
 
 if __name__ == "__main__":

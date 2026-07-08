@@ -2,6 +2,7 @@
 
 依赖通过 ide/addNodeDependencies 接口(PUT),不是 updateVertex。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +20,12 @@ ODS_BASE = "业务流程/100_订单信息/Hologres/数据开发/00_ODS"
 async def fetch_uuids(bff: DataWorksClient, keyword: str, path_prefix: str) -> dict[str, str]:
     r = await bff._get(
         "ide/searchFiles",
-        {"projectId": bff.project_id, "keyword": keyword, "scene": "DATAWORKS_PROJECT", "pageSize": 100},
+        {
+            "projectId": bff.project_id,
+            "keyword": keyword,
+            "scene": "DATAWORKS_PROJECT",
+            "pageSize": 100,
+        },
     )
     out: dict[str, str] = {}
     for h in (r.get("data") or {}).get("data", {}).get("hits", []) or []:
@@ -35,6 +41,7 @@ async def fetch_uuids(bff: DataWorksClient, keyword: str, path_prefix: str) -> d
 def dwd_to_ods(dwd_table: str) -> str:
     """dwd_ord_ofc_s_order_hour -> ods_hl_ofc__s_order_hour"""
     import re as _re
+
     m = _re.match(r"^dwd_ord_(ofc|oms|ms)_(.+_hour)$", dwd_table)
     if not m:
         return ""
@@ -103,7 +110,9 @@ async def main() -> None:
             print(f"  OK: {dwd_table} <- {ods_table}")
 
     await bff.close()
-    print(f"\n总计: deps={ok_deps}/{len(dwd_uuids)}, outputs={ok_out}/{len(dwd_uuids)}, failed={failed}")
+    print(
+        f"\n总计: deps={ok_deps}/{len(dwd_uuids)}, outputs={ok_out}/{len(dwd_uuids)}, failed={failed}"
+    )
 
 
 if __name__ == "__main__":

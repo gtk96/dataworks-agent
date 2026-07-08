@@ -1,4 +1,5 @@
 """更新已部署 ODS 节点的 DML。"""
+
 import asyncio
 import re
 from pathlib import Path
@@ -33,7 +34,9 @@ async def main():
     node_base = "业务流程/100_订单信息/Hologres/数据开发/00_ODS"
 
     # OFC
-    ofc_dml = Path(r"E:\dw-modeling-template\sql\order-fulfillment\ods\dml\ods_hl_ofc__order_fulfillment_hour_dml.sql").read_text(encoding="utf-8", errors="ignore")
+    ofc_dml = Path(
+        r"E:\dw-modeling-template\sql\order-fulfillment\ods\dml\ods_hl_ofc__order_fulfillment_hour_dml.sql"
+    ).read_text(encoding="utf-8", errors="ignore")
     ofc_dmls = extract_dmls(ofc_dml)
     print(f"OFC DML: {len(ofc_dmls)} 个")
 
@@ -41,7 +44,9 @@ async def main():
         await update_node_dml(bff, f"{node_base}/{table_name}", dml)
 
     # OMS
-    oms_dml = Path(r"E:\dw-modeling-template\sql\order-fulfillment\ods\dml\ods_hl_oms__order_fulfillment_hour_dml.sql").read_text(encoding="utf-8", errors="ignore")
+    oms_dml = Path(
+        r"E:\dw-modeling-template\sql\order-fulfillment\ods\dml\ods_hl_oms__order_fulfillment_hour_dml.sql"
+    ).read_text(encoding="utf-8", errors="ignore")
     oms_dmls = extract_dmls(oms_dml)
     print(f"OMS DML: {len(oms_dmls)} 个")
 
@@ -50,5 +55,6 @@ async def main():
 
     await bff.close()
     print("完成")
+
 
 asyncio.run(main())

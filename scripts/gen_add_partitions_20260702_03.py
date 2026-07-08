@@ -7,6 +7,7 @@
 - scripts/add_partitions_20260702_03.sql      按表拆，便于人工 review
 - scripts/add_partitions_20260702_03.json     给执行脚本消费的清单
 """
+
 from __future__ import annotations
 
 import json
@@ -16,34 +17,34 @@ DAYS = ("20260702", "20260703")
 
 TABLES = [
     # OFC 履约单
-    ("ods_hl_ofc__s_order_hour",            "OFC履约单主表ODS-小时增量"),
-    ("ods_hl_ofc__s_order_item_hour",        "OFC履约单商品明细ODS-小时增量"),
-    ("ods_hl_ofc__s_order_cost_hour",        "OFC履约单费用ODS-小时增量"),
-    ("ods_hl_ofc__s_order_receiver_hour",    "OFC履约单收货信息ODS-小时增量"),
-    ("ods_hl_ofc__s_order_pay_info_hour",    "OFC履约单支付信息ODS-小时增量"),
-    ("ods_hl_ofc__s_order_ext_hour",         "OFC履约单扩展ODS-小时增量"),
-    ("ods_hl_ofc__s_order_status_log_hour",  "OFC履约单状态日志ODS-小时增量"),
-    ("ods_hl_ofc__order_operate_log_hour",   "OFC订单操作日志ODS-小时增量"),
+    ("ods_hl_ofc__s_order_hour", "OFC履约单主表ODS-小时增量"),
+    ("ods_hl_ofc__s_order_item_hour", "OFC履约单商品明细ODS-小时增量"),
+    ("ods_hl_ofc__s_order_cost_hour", "OFC履约单费用ODS-小时增量"),
+    ("ods_hl_ofc__s_order_receiver_hour", "OFC履约单收货信息ODS-小时增量"),
+    ("ods_hl_ofc__s_order_pay_info_hour", "OFC履约单支付信息ODS-小时增量"),
+    ("ods_hl_ofc__s_order_ext_hour", "OFC履约单扩展ODS-小时增量"),
+    ("ods_hl_ofc__s_order_status_log_hour", "OFC履约单状态日志ODS-小时增量"),
+    ("ods_hl_ofc__order_operate_log_hour", "OFC订单操作日志ODS-小时增量"),
     # OFC 生产单
-    ("ods_hl_ofc__f_order_hour",             "OFC生产单ODS-小时增量"),
-    ("ods_hl_ofc__f_order_item_hour",        "OFC生产单明细ODS-小时增量"),
+    ("ods_hl_ofc__f_order_hour", "OFC生产单ODS-小时增量"),
+    ("ods_hl_ofc__f_order_item_hour", "OFC生产单明细ODS-小时增量"),
     ("ods_hl_ofc__f_order_cost_extend_hour", "OFC生产单费用扩展ODS-小时增量"),
-    ("ods_hl_ofc__f_order_item_cost_hour",   "OFC生产单明细费用ODS-小时增量"),
+    ("ods_hl_ofc__f_order_item_cost_hour", "OFC生产单明细费用ODS-小时增量"),
     # OFC 面单 / 退货
-    ("ods_hl_ofc__face_sheet_hour",          "OFC面单ODS-小时增量"),
-    ("ods_hl_ofc__return_order_hour",        "OFC退货单ODS-小时增量"),
-    ("ods_hl_ofc__return_order_sku_hour",    "OFC退货单SKU ODS-小时增量"),
+    ("ods_hl_ofc__face_sheet_hour", "OFC面单ODS-小时增量"),
+    ("ods_hl_ofc__return_order_hour", "OFC退货单ODS-小时增量"),
+    ("ods_hl_ofc__return_order_sku_hour", "OFC退货单SKU ODS-小时增量"),
     ("ods_hl_ofc__cancel_apply_record_hour", "OFC取消申请ODS-小时增量"),
-    ("ods_hl_ofc__s_order_cancel_hour",      "OFC履约单取消ODS-小时增量"),
+    ("ods_hl_ofc__s_order_cancel_hour", "OFC履约单取消ODS-小时增量"),
     # OMS 平台订单
-    ("ods_hl_oms__t_platform_order_hour",        "OMS平台订单ODS-小时增量"),
+    ("ods_hl_oms__t_platform_order_hour", "OMS平台订单ODS-小时增量"),
     ("ods_hl_oms__t_platform_order_expand_hour", "OMS平台订单扩展ODS-小时增量"),
-    ("ods_hl_oms__t_order_fulfillment_hour",     "OMS履约关系ODS-小时增量"),
-    ("ods_hl_oms__t_platform_order_item_hour",   "OMS平台订单明细ODS-小时增量"),
-    ("ods_hl_oms__t_order_markship_job_hour",    "OMS标发任务ODS-小时增量"),
-    ("ods_hl_oms__t_order_markship_log_hour",    "OMS标发日志ODS-小时增量"),
-    ("ods_hl_oms__t_mark_order_item_hour",       "OMS标发商品ODS-小时增量"),
-    ("ods_hl_oms__t_order_ad_hour",              "OMS订单广告归因ODS-小时增量"),
+    ("ods_hl_oms__t_order_fulfillment_hour", "OMS履约关系ODS-小时增量"),
+    ("ods_hl_oms__t_platform_order_item_hour", "OMS平台订单明细ODS-小时增量"),
+    ("ods_hl_oms__t_order_markship_job_hour", "OMS标发任务ODS-小时增量"),
+    ("ods_hl_oms__t_order_markship_log_hour", "OMS标发日志ODS-小时增量"),
+    ("ods_hl_oms__t_mark_order_item_hour", "OMS标发商品ODS-小时增量"),
+    ("ods_hl_oms__t_order_ad_hour", "OMS订单广告归因ODS-小时增量"),
 ]
 
 HOURS = [f"{h:02d}" for h in range(24)]
@@ -65,10 +66,7 @@ def main() -> None:
         sql_lines.append(f"-- {table} | {comment}")
         for day in DAYS:
             for hour in HOURS:
-                stmt = (
-                    f"alter table {fqtn} "
-                    f"add if not exists partition (dt='{day}', ht='{hour}');"
-                )
+                stmt = f"alter table {fqtn} add if not exists partition (dt='{day}', ht='{hour}');"
                 sql_lines.append(stmt)
                 plan.append({"table": fqtn, "dt": day, "ht": hour, "sql": stmt})
         sql_lines.append("")
@@ -77,8 +75,11 @@ def main() -> None:
     json_path = OUT_DIR / "add_partitions_20260702_03.json"
     sql_path.write_text("\n".join(sql_lines), encoding="utf-8")
     json_path.write_text(
-        json.dumps({"days": list(DAYS), "tables": [t for t, _ in TABLES], "plan": plan},
-                   ensure_ascii=False, indent=2),
+        json.dumps(
+            {"days": list(DAYS), "tables": [t for t, _ in TABLES], "plan": plan},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print(f"wrote {sql_path}  ({len(sql_lines)} lines)")

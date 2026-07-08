@@ -1,4 +1,5 @@
 """删除指定路径前缀下的所有 DIM 节点。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,8 +26,13 @@ async def main() -> None:
     while True:
         r = await bff._get(
             "ide/searchFiles",
-            {"projectId": bff.project_id, "keyword": "dim_ord_", "scene": "DATAWORKS_PROJECT",
-             "pageSize": 100, "pageNum": page},
+            {
+                "projectId": bff.project_id,
+                "keyword": "dim_ord_",
+                "scene": "DATAWORKS_PROJECT",
+                "pageSize": 100,
+                "pageNum": page,
+            },
         )
         hits = (r.get("data") or {}).get("data", {}).get("hits", []) or []
         if not hits:

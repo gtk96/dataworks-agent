@@ -30,13 +30,17 @@ def parse_ddl_file(ddl_content: str) -> list[dict]:
         line_stripped = line.strip()
 
         # 匹配 drop table if exists dwd_xxx 或 create table dwd_xxx
-        drop_match = re.match(r"drop\s+table\s+if\s+exists\s+\S+\.(dwd_\w+)", line_stripped, re.IGNORECASE)
+        drop_match = re.match(
+            r"drop\s+table\s+if\s+exists\s+\S+\.(dwd_\w+)", line_stripped, re.IGNORECASE
+        )
         if drop_match:
             if current_table and current_ddl_lines:
-                tables.append({
-                    "table_name": current_table,
-                    "ddl": "\n".join(current_ddl_lines).strip(),
-                })
+                tables.append(
+                    {
+                        "table_name": current_table,
+                        "ddl": "\n".join(current_ddl_lines).strip(),
+                    }
+                )
             current_table = drop_match.group(1)
             current_ddl_lines = [line]
             continue
@@ -45,18 +49,22 @@ def parse_ddl_file(ddl_content: str) -> list[dict]:
             current_ddl_lines.append(line)
             # 遇到分号结束当前表
             if line_stripped == ";":
-                tables.append({
-                    "table_name": current_table,
-                    "ddl": "\n".join(current_ddl_lines).strip(),
-                })
+                tables.append(
+                    {
+                        "table_name": current_table,
+                        "ddl": "\n".join(current_ddl_lines).strip(),
+                    }
+                )
                 current_table = None
                 current_ddl_lines = []
 
     if current_table and current_ddl_lines:
-        tables.append({
-            "table_name": current_table,
-            "ddl": "\n".join(current_ddl_lines).strip(),
-        })
+        tables.append(
+            {
+                "table_name": current_table,
+                "ddl": "\n".join(current_ddl_lines).strip(),
+            }
+        )
 
     return tables
 
@@ -133,21 +141,33 @@ async def deploy_dwd_table(
         uid = await bff.create_node(table_name, node_path_full, language="odps-sql")
         if uid:
             await bff.update_node(uid, dml)
-            await bff.update_vertex(uid, {
-                "trigger": {
-                    "type": "Scheduler", "cron": cron,
-                    "cycleType": cycle_type,
-                    "startTime": "1970-01-01 00:00:00", "endTime": "9999-01-01 00:00:00",
-                    "timezone": "Asia/Shanghai",
+            await bff.update_vertex(
+                uid,
+                {
+                    "trigger": {
+                        "type": "Scheduler",
+                        "cron": cron,
+                        "cycleType": cycle_type,
+                        "startTime": "1970-01-01 00:00:00",
+                        "endTime": "9999-01-01 00:00:00",
+                        "timezone": "Asia/Shanghai",
+                    },
+                    "script": {"parameters": DWD_SQL_PARAMETERS},
+                    "strategy": {"instanceMode": "Immediately"},
+                    "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
+                    "outputs": {
+                        "nodeOutputs": [
+                            {
+                                "data": uid,
+                                "refTableName": table_name,
+                                "artifactType": "NodeOutput",
+                                "sourceType": "System",
+                                "isDefault": True,
+                            }
+                        ]
+                    },
                 },
-                "script": {"parameters": DWD_SQL_PARAMETERS},
-                "strategy": {"instanceMode": "Immediately"},
-                "dependencies": [{"type": "CrossCycleDependsOnSelf"}],
-                "outputs": {"nodeOutputs": [
-                    {"data": uid, "refTableName": table_name, "artifactType": "NodeOutput",
-                     "sourceType": "System", "isDefault": True}
-                ]},
-            })
+            )
             result["steps"]["dwd_node"] = {"status": "ok", "uuid": uid}
         else:
             result["steps"]["dwd_node"] = {"status": "failed", "error": bff.last_error}
@@ -208,9 +228,14 @@ async def deploy_batch(
                 break
 
         result = await deploy_dwd_table(
-            bff, table_name, ddl, dml,
-            mc_project=mc_project, mc_dev_project=mc_dev_project,
-            node_path=node_path, schedule_minute=schedule_minute,
+            bff,
+            table_name,
+            ddl,
+            dml,
+            mc_project=mc_project,
+            mc_dev_project=mc_dev_project,
+            node_path=node_path,
+            schedule_minute=schedule_minute,
         )
         results.append(result)
 

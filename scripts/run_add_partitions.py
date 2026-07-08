@@ -10,6 +10,7 @@ scripts/add_partitions_progress.json。
     uv run python scripts/run_add_partitions.py --batch-size 80
     uv run python scripts/run_add_partitions.py --dry-run  # 不调 API，只打印
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,9 +32,13 @@ def chunked(items: list, size: int) -> list[list]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-async def _wait_with_retry(client: DataWorksClient, job: str,
-                            first_round: int = 60, second_round: int = 60,
-                            interval: int = 3) -> bool:
+async def _wait_with_retry(
+    client: DataWorksClient,
+    job: str,
+    first_round: int = 60,
+    second_round: int = 60,
+    interval: int = 3,
+) -> bool:
     """首轮用 first_round×interval；首轮返回 False 时再跑 second_round 复核，
     避免 RUNNING 被 180s 窗口误判成失败（DDL 在 MC 上排队偶尔 >3min）。"""
     ok = await client.wait_job(job, max_retry=first_round, interval=interval)
@@ -54,9 +59,7 @@ def load_progress() -> dict:
 
 
 def save_progress(progress: dict) -> None:
-    PROGRESS_PATH.write_text(
-        json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 async def run(batch_size: int, resume: bool, dry_run: bool) -> int:
@@ -69,21 +72,28 @@ async def run(batch_size: int, resume: bool, dry_run: bool) -> int:
     total = len(alters)
     started_batches = len(done_batches)
 
-    print(f"plan={total} alters, batch_size={batch_size}, batches={len(batches)}, "
-          f"resume={resume}, dry_run={dry_run}, already_done_batches={started_batches}")
+    print(
+        f"plan={total} alters, batch_size={batch_size}, batches={len(batches)}, "
+        f"resume={resume}, dry_run={dry_run}, already_done_batches={started_batches}"
+    )
 
     if dry_run:
         for idx, batch in enumerate(batches, 1):
             head = batch[0]
             tail = batch[-1]
-            print(f"  [dry-run] batch {idx}: {len(batch)} alters, "
-                  f"{head['table']} ({head['dt']}/{head['ht']}) → "
-                  f"{tail['table']} ({tail['dt']}/{tail['ht']})")
+            print(
+                f"  [dry-run] batch {idx}: {len(batch)} alters, "
+                f"{head['table']} ({head['dt']}/{head['ht']}) → "
+                f"{tail['table']} ({tail['dt']}/{tail['ht']})"
+            )
         return 0
 
     client = DataWorksClient()
-    summary = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-               "batch_size": batch_size, "batches": []}
+    summary = {
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "batch_size": batch_size,
+        "batches": [],
+    }
 
     try:
         for idx, batch in enumerate(batches, 1):
@@ -92,19 +102,26 @@ async def run(batch_size: int, resume: bool, dry_run: bool) -> int:
                 continue
 
             script = "\n".join(item["sql"] for item in batch)
-            print(f"  [submit] batch {idx}/{len(batches)}  ({len(batch)} alters, "
-                  f"{len(script)} chars)")
+            print(
+                f"  [submit] batch {idx}/{len(batches)}  ({len(batch)} alters, {len(script)} chars)"
+            )
 
             job = await client.execute_sql(script)
             if not job:
                 progress["failed_batch"] = idx
                 save_progress(progress)
                 print(f"  [FAIL] execute_sql 返回 None: {client.last_error}")
-                summary["batches"].append({"idx": idx, "size": len(batch),
-                                            "status": "submit_failed",
-                                            "error": client.last_error})
-                json.dump(summary, REPORT_PATH.open("w", encoding="utf-8"),
-                          ensure_ascii=False, indent=2)
+                summary["batches"].append(
+                    {
+                        "idx": idx,
+                        "size": len(batch),
+                        "status": "submit_failed",
+                        "error": client.last_error,
+                    }
+                )
+                json.dump(
+                    summary, REPORT_PATH.open("w", encoding="utf-8"), ensure_ascii=False, indent=2
+                )
                 return 1
 
             print(f"  [poll]   batch {idx} jobCode={job}")
@@ -114,23 +131,30 @@ async def run(batch_size: int, resume: bool, dry_run: bool) -> int:
                 save_progress(progress)
                 err = client.last_error
                 print(f"  [FAIL] job {job}: {err}")
-                summary["batches"].append({"idx": idx, "size": len(batch),
-                                            "job_code": job, "status": "job_failed",
-                                            "error": err})
-                json.dump(summary, REPORT_PATH.open("w", encoding="utf-8"),
-                          ensure_ascii=False, indent=2)
+                summary["batches"].append(
+                    {
+                        "idx": idx,
+                        "size": len(batch),
+                        "job_code": job,
+                        "status": "job_failed",
+                        "error": err,
+                    }
+                )
+                json.dump(
+                    summary, REPORT_PATH.open("w", encoding="utf-8"), ensure_ascii=False, indent=2
+                )
                 return 1
 
             progress["completed_batches"].append(idx)
             save_progress(progress)
-            summary["batches"].append({"idx": idx, "size": len(batch),
-                                        "job_code": job, "status": "ok"})
+            summary["batches"].append(
+                {"idx": idx, "size": len(batch), "job_code": job, "status": "ok"}
+            )
             print(f"  [OK]    batch {idx} done")
 
         summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         summary["status"] = "all_done"
-        json.dump(summary, REPORT_PATH.open("w", encoding="utf-8"),
-                  ensure_ascii=False, indent=2)
+        json.dump(summary, REPORT_PATH.open("w", encoding="utf-8"), ensure_ascii=False, indent=2)
         print("ALL DONE")
         return 0
     finally:
@@ -139,8 +163,12 @@ async def run(batch_size: int, resume: bool, dry_run: bool) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--batch-size", type=int, default=100,
-                   help="每批 ALTER 数量（默认 100，按 DataWorks IDE 通道经验值）")
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="每批 ALTER 数量（默认 100，按 DataWorks IDE 通道经验值）",
+    )
     p.add_argument("--resume", action="store_true", help="从 add_partitions_progress.json 继续")
     p.add_argument("--dry-run", action="store_true", help="只打印批次，不调 API")
     args = p.parse_args()

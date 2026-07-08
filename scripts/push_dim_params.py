@@ -1,4 +1,5 @@
 """把 Daily 调度参数(bizdate)推到 01_DIM 目录下已建的 DIM 节点。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,12 @@ DIM_BASE = "业务流程/100_订单信息/MaxCompute/数据开发/01_DIM"
 async def fetch_dim_uuids(bff: DataWorksClient) -> dict[str, str]:
     r = await bff._get(
         "ide/searchFiles",
-        {"projectId": bff.project_id, "keyword": "dim_ord_", "scene": "DATAWORKS_PROJECT", "pageSize": 100},
+        {
+            "projectId": bff.project_id,
+            "keyword": "dim_ord_",
+            "scene": "DATAWORKS_PROJECT",
+            "pageSize": 100,
+        },
     )
     out: dict[str, str] = {}
     for h in (r.get("data") or {}).get("data", {}).get("hits", []) or []:

@@ -1,4 +1,5 @@
 """把 DML 重新推到 01_DIM 目录下已建的 DIM 节点(只动 script.content, 不动调度/依赖/输出)。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +24,12 @@ def extract_dml_for_table(dml_content: str, table_name: str) -> str | None:
 async def fetch_dim_uuids(bff: DataWorksClient) -> dict[str, str]:
     r = await bff._get(
         "ide/searchFiles",
-        {"projectId": bff.project_id, "keyword": "dim_ord_", "scene": "DATAWORKS_PROJECT", "pageSize": 100},
+        {
+            "projectId": bff.project_id,
+            "keyword": "dim_ord_",
+            "scene": "DATAWORKS_PROJECT",
+            "pageSize": 100,
+        },
     )
     out: dict[str, str] = {}
     for h in (r.get("data") or {}).get("data", {}).get("hits", []) or []:

@@ -2,6 +2,7 @@
 
 依赖通过 ide/addNodeDependencies (PUT) 写, outputs 通过 ide/updateVertex (POST) 写。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,12 @@ DIM_TO_ODS: dict[str, str] = {
 async def fetch_uuids(bff: DataWorksClient, keyword: str, path_prefix: str) -> dict[str, str]:
     r = await bff._get(
         "ide/searchFiles",
-        {"projectId": bff.project_id, "keyword": keyword, "scene": "DATAWORKS_PROJECT", "pageSize": 100},
+        {
+            "projectId": bff.project_id,
+            "keyword": keyword,
+            "scene": "DATAWORKS_PROJECT",
+            "pageSize": 100,
+        },
     )
     out: dict[str, str] = {}
     for h in (r.get("data") or {}).get("data", {}).get("hits", []) or []:
@@ -101,7 +107,9 @@ async def main() -> None:
             print(f"  OK: {dim_table} <- {ods_table or '(no upstream)'}")
 
     await bff.close()
-    print(f"\n总计: deps={ok_deps}/{len(dim_uuids)}, outputs={ok_out}/{len(dim_uuids)}, failed={failed}")
+    print(
+        f"\n总计: deps={ok_deps}/{len(dim_uuids)}, outputs={ok_out}/{len(dim_uuids)}, failed={failed}"
+    )
 
 
 if __name__ == "__main__":

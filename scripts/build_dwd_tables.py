@@ -1,4 +1,5 @@
 """从 DDL 文件提取 CREATE TABLE,在 dataworks / dataworks_dev 两个 schema 下建表。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -71,14 +72,12 @@ async def main() -> None:
     ok = failed = 0
     for table_name, ddl in sorted(all_ddls.items()):
         for schema in (MC_DEV, MC_PROD):
-            ddl_s = (
-                ddl.replace(
-                    f"drop table if exists {table_name}",
-                    f"drop table if exists {schema}.{table_name}",
-                ).replace(
-                    f"create table {table_name}",
-                    f"create table {schema}.{table_name}",
-                )
+            ddl_s = ddl.replace(
+                f"drop table if exists {table_name}",
+                f"drop table if exists {schema}.{table_name}",
+            ).replace(
+                f"create table {table_name}",
+                f"create table {schema}.{table_name}",
             )
             success = await exec_ddl(bff, ddl_s)
             tag = "OK" if success else "FAIL"

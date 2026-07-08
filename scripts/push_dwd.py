@@ -3,6 +3,7 @@
 节点路径: 业务流程/DWD/MaxCompute/{table_name}
 参数:      HOURLY_SQL_PARAMETERS(已删除 gmtdate_last2h)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +40,9 @@ def extract_dml_for_table(dml_content: str, table_name: str) -> str | None:
         return None
     start = m.start()
     # 从 start 之后找下一个 insert
-    next_insert = re.search(r"\ninsert\s+overwrite\s+table", dml_content[start + 1:], re.IGNORECASE)
+    next_insert = re.search(
+        r"\ninsert\s+overwrite\s+table", dml_content[start + 1 :], re.IGNORECASE
+    )
     end = start + 1 + next_insert.start() if next_insert else len(dml_content)
     chunk = dml_content[start:end].rstrip() + "\n"
     return chunk.strip()

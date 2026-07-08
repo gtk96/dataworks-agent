@@ -1,4 +1,5 @@
 """删除指定路径前缀下的所有 DWD 节点。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,13 @@ async def main() -> None:
     while True:
         r = await bff._get(
             "ide/searchFiles",
-            {"projectId": bff.project_id, "keyword": "dwd_ord_", "scene": "DATAWORKS_PROJECT", "pageSize": 100, "pageNum": page},
+            {
+                "projectId": bff.project_id,
+                "keyword": "dwd_ord_",
+                "scene": "DATAWORKS_PROJECT",
+                "pageSize": 100,
+                "pageNum": page,
+            },
         )
         hits = (r.get("data") or {}).get("data", {}).get("hits", []) or []
         if not hits:
