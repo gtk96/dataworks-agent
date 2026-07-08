@@ -28,7 +28,7 @@ def _require_admin_token(request: Request, token: str) -> None:
     expected = hmac.new(
         settings.cookie_encryption_key.encode(), b"admin-access", "sha256"
     ).hexdigest()[:16]
-    if token != expected:
+    if not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=403, detail="无效的 Admin Token")
 
 

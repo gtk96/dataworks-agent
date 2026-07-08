@@ -160,9 +160,12 @@ class SyncEngine:
     def _generate_alter_sql(self, diff: list[dict], table_name: str = "TABLE_NAME") -> str:
         """从差异列表生成 ALTER TABLE 语句。"""
         from dataworks_agent.config import settings
+        from dataworks_agent.schemas import assert_safe_table_name
 
+        assert_safe_table_name(table_name)
         lines = [f"ALTER TABLE {settings.dataworks_prod_schema}.{table_name}"]
         for d in diff:
+            assert_safe_table_name(d["name"])
             if d["type"] == "add":
                 lines.append(f"  ADD COLUMNS ({d['name']} {d['dtype']})")
             elif d["type"] == "drop":

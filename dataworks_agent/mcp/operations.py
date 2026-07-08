@@ -92,6 +92,11 @@ async def get_current_user() -> dict:
 
 async def count_table(table_full_name: str) -> int:
     """统计表的行数。"""
+    from dataworks_agent.schemas import assert_safe_table_name
+
+    parts = table_full_name.split(".")
+    for part in parts:
+        assert_safe_table_name(part)
     sql = f"SELECT COUNT(*) AS cnt FROM {table_full_name}"
     result = await submit_query(sql)
     if result and isinstance(result, list):
