@@ -177,7 +177,7 @@
           <el-button @click="previewHoloDml" :loading="previewingHolo">预览 DML</el-button>
           <el-tag v-if="holoPreviewMeta.column_count" type="success" style="margin-left:8px">{{ holoPreviewMeta.column_count }} 列</el-tag>
         </div>
-        <pre v-if="holoPreviewText" class="code-block" style="max-height:360px;overflow:auto">{{ holoPreviewText }}</pre>
+        <CodeBlock v-if="holoPreviewText" style="margin-top:12px">{{ holoPreviewText }}</CodeBlock>
         <div v-if="holoPreviewParams.length" style="margin-top:12px">
           <div style="font-size:13px;color:#606266;margin-bottom:6px">调度参数（{{ holoPreviewParams.length }}）</div>
           <el-tag v-for="p in holoPreviewParams" :key="p.name" size="small" style="margin:0 6px 6px 0">{{ p.name }}</el-tag>
@@ -525,6 +525,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { request } from '@/utils/request'
 import { DataBoard, Connection, Coin, Upload, Timer } from '@element-plus/icons-vue'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const METADATA_SOURCE_LABEL: Record<string, string> = {
   snapshot: 'schema 快照',

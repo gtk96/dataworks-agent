@@ -78,13 +78,13 @@
         <el-card header="批次状态">
           <el-input v-model="batchId" placeholder="batch_id" style="width:360px;margin-right:8px" />
           <el-button type="primary" @click="loadBatch" :loading="loadingBatch">查询</el-button>
-          <pre v-if="batchDetail" class="code-block" style="margin-top:12px">{{ batchDetail }}</pre>
+          <CodeBlock v-if="batchDetail" style="margin-top:12px">{{ batchDetail }}</CodeBlock>
         </el-card>
       </el-tab-pane>
     </el-tabs>
 
     <el-alert v-if="message" :type="messageOk ? 'success' : 'error'" :title="message" :closable="false" style="margin-top:16px" />
-    <pre v-if="previewText" class="code-block" style="margin-top:12px">{{ previewText }}</pre>
+    <CodeBlock v-if="previewText" style="margin-top:12px">{{ previewText }}</CodeBlock>
   </div>
 </template>
 
@@ -92,6 +92,7 @@
 import { reactive, ref } from 'vue'
 import { request } from '@/utils/request'
 import RepositoryPathPicker from '@/components/RepositoryPathPicker.vue'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const activeTab = ref('oss')
 const ossForm = reactive({
@@ -229,17 +230,3 @@ async function loadBatch() {
   loadingBatch.value = false
 }
 </script>
-
-<style scoped>
-.code-block {
-  margin: 0;
-  padding: 12px;
-  background: #f6f8fa;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  max-height: 480px;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-</style>

@@ -44,7 +44,7 @@
           <el-descriptions v-if="output.meta" border :column="1" size="small" style="margin-bottom:8px">
             <el-descriptions-item v-for="(v, k) in output.meta" :key="k" :label="String(k)">{{ v }}</el-descriptions-item>
           </el-descriptions>
-          <pre v-if="output.text" class="code-block">{{ output.text }}</pre>
+          <CodeBlock v-if="output.text">{{ output.text }}</CodeBlock>
         </el-card>
       </el-col>
     </el-row>
@@ -54,6 +54,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { request } from '@/utils/request'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const SAMPLE = {
   targets: [
@@ -184,18 +185,3 @@ async function deployDwd() {
   loading.deploy = false
 }
 </script>
-
-<style scoped>
-.code-block {
-  margin: 0;
-  padding: 12px;
-  background: #f6f8fa;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  max-height: 400px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-</style>

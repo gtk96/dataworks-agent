@@ -53,19 +53,19 @@
         <el-alert v-if="detailTable.error" type="error" :title="detailTable.error" :closable="false" style="margin-bottom:12px" />
         <template v-if="!detailTable.error">
           <div style="margin-bottom:8px;font-size:13px;font-weight:600">DDL (DEV)</div>
-          <pre v-if="detailTable.ddl_dev" class="code-block" style="max-height:200px;margin-bottom:16px">{{ detailTable.ddl_dev }}</pre>
+          <CodeBlock v-if="detailTable.ddl_dev" style="margin-bottom:16px">{{ detailTable.ddl_dev }}</CodeBlock>
           <div v-else style="color:#999;font-size:12px;margin-bottom:16px">无</div>
 
           <div style="margin-bottom:8px;font-size:13px;font-weight:600">DDL (PROD)</div>
-          <pre v-if="detailTable.ddl_prod" class="code-block" style="max-height:200px;margin-bottom:16px">{{ detailTable.ddl_prod }}</pre>
+          <CodeBlock v-if="detailTable.ddl_prod" style="margin-bottom:16px">{{ detailTable.ddl_prod }}</CodeBlock>
           <div v-else style="color:#999;font-size:12px;margin-bottom:16px">无</div>
 
           <div style="margin-bottom:8px;font-size:13px;font-weight:600">DML</div>
-          <pre v-if="detailTable.dml" class="code-block" style="max-height:200px;margin-bottom:16px">{{ detailTable.dml }}</pre>
+          <CodeBlock v-if="detailTable.dml" style="margin-bottom:16px">{{ detailTable.dml }}</CodeBlock>
           <div v-else style="color:#999;font-size:12px;margin-bottom:16px">无</div>
 
           <div style="margin-bottom:8px;font-size:13px;font-weight:600">调度配置</div>
-          <pre v-if="detailTable.schedule_config" class="code-block" style="max-height:200px;margin-bottom:16px">{{ detailTable.schedule_config }}</pre>
+          <CodeBlock v-if="detailTable.schedule_config" style="margin-bottom:16px">{{ detailTable.schedule_config }}</CodeBlock>
           <div v-else style="color:#999;font-size:12px;margin-bottom:16px">无</div>
         </template>
       </template>
@@ -80,6 +80,7 @@
 import { ref, onMounted } from 'vue'
 import { request } from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const filter = ref({ table_name: '', layer: '' })
 const artifacts = ref<any[]>([])
@@ -137,30 +138,3 @@ function onPageChange(page: number) {
 
 onMounted(load)
 </script>
-
-<style scoped>
-.code-block {
-  background: #1e1e2e;
-  border: 1px solid #313240;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #cdd6f4;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin: 0;
-  overflow-y: auto;
-}
-.code-block::-webkit-scrollbar {
-  width: 6px;
-}
-.code-block::-webkit-scrollbar-thumb {
-  background: #45475a;
-  border-radius: 3px;
-}
-.code-block::-webkit-scrollbar-track {
-  background: transparent;
-}
-</style>

@@ -332,11 +332,3 @@ async function doSubmit() {
   submitting.value = false
 }
 </script>
-
-<style scoped>
-.code-block {
-  margin: 0; padding: 12px; background: #f6f8fa; border-radius: 4px;
-  font-size: 12px; line-height: 1.5; max-height: 400px; overflow: auto;
-  white-space: pre-wrap; word-break: break-all;
-}
-</style>

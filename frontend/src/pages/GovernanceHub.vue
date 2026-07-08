@@ -93,7 +93,7 @@ cust_nm" />
     </el-tabs>
 
     <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-top:16px" />
-    <pre v-if="resultText" class="code-block" style="margin-top:12px">{{ resultText }}</pre>
+    <CodeBlock v-if="resultText" style="margin-top:12px">{{ resultText }}</CodeBlock>
     <el-empty v-else-if="!loading && !error" description="切换 Tab 或修改选项后将自动加载" style="margin-top:24px" />
   </div>
 </template>
@@ -101,6 +101,7 @@ cust_nm" />
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { request } from '@/utils/request'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const tab = ref('sql')
 const sqlText = ref('')
@@ -354,17 +355,3 @@ watch(fieldsRaw, () => {
   if (tab.value === 'check-fields') delayInvoke(checkFields, 500)
 })
 </script>
-
-<style scoped>
-.code-block {
-  margin: 0;
-  padding: 12px;
-  background: #f6f8fa;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  max-height: 520px;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-</style>
