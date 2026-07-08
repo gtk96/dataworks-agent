@@ -31,14 +31,14 @@ export default defineConfig({
   webServer: [
     {
       command: 'node e2e/fake-server.mjs',
-      port: 8086,  // vite proxy /api → 8086, fake server 占用
+      port: 8086,  // fake-server 占用；vite proxy /api → 8086 由 VITE_PROXY_TARGET 注入
       timeout: 30000,
       reuseExistingServer: true,
       stdout: 'pipe',
       stderr: 'pipe',
     },
     {
-      command: 'npm run dev -- --port 3000 --host 127.0.0.1',
+      command: 'VITE_PROXY_TARGET=http://localhost:8086 npm run dev -- --port 3000 --host 127.0.0.1',
       port: 3000,
       timeout: 60000,
       reuseExistingServer: true,

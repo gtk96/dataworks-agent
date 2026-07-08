@@ -13,11 +13,13 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8085',
+        // 默认指向本地真后端 8085；Playwright e2e 通过 VITE_PROXY_TARGET
+        // 注入指向 fake-server(8086)，使 e2e 不依赖真机。
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8085',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://localhost:8085',
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8085',
         ws: true,
       },
     },
