@@ -277,3 +277,72 @@ class TestFirstIncrementalLookback:
         )
         assert res["status"] == "failed"
         bff.update_node.assert_not_called()
+
+
+class TestTargetTableIdentifierGuard:
+    """v9 §3.2 B3 同源债：target_table 入参必须走 _IDENTIFIER_RE 校验。"""
+
+    async def test_run_with_initialization_rejects_path_traversal(self, monkeypatch) -> None:
+        """target_table='../etc/passwd' 应在入口被 _assert_safe_table_name 拦截。"""
+        # 让下游 fake 不被调用，确认校验在入口早失败
+        async def _must_not_run(*_args, **_kwargs):
+            raise AssertionError("下游不应被调用")
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", _must_not_run)
+        monkeypatch.setattr(init_workflow, "infer_fields", _must_not_run)
+
+        bff = AsyncMock()
+        with pytest.raises(ValueError, match="非法的表名"):
+            await init_workflow.run_with_initialization(
+                bff,
+                AsyncMock(),
+                datasource_name="shop",
+                source_table="orders",
+                granularity="hour",
+                target_table="../etc/passwd",
+            )
+
+    async def test_run_with_initialization_rejects_sql_injection(self, monkeypatch) -> None:
+        """target_table 含分号应被 _IDENTIFIER_RE 拦截。"""
+        async def _must_not_run(*_args, **_kwargs):
+            raise AssertionError("下游不应被调用")
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", _must_not_run)
+        monkeypatch.setattr(init_workflow, "infer_fields", _must_not_run)
+
+        bff = AsyncMock()
+        with pytest.raises(ValueError, match="非法的表名"):
+            await init_workflow.run_with_initialization(
+                bff,
+                AsyncMock(),
+                datasource_name="shop",
+                source_table="orders",
+                granularity="hour",
+                target_table="ods_x; DROP TABLE y",
+            )
+
+    async def test_run_with_initialization_accepts_none_and_generated(self, monkeypatch) -> None:
+        """target_table=None 时不校验（依赖 generate_ods_di_table_name 产物）。"""
+        async def fake_run_four_phases(bff, mcp, **kwargs):
+            return {"success": True, "steps": {"create_node": {"uuid": "u"}}, "standard_ddl": ""}
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", fake_run_four_phases)
+        monkeypatch.setattr(init_workflow, "ensure_table", AsyncMock(return_value={"status": "exists"}))
+        monkeypatch.setattr(init_workflow, "infer_fields", AsyncMock(return_value={"status": "ok", "columns": ["id"]}))
+        monkeypatch.setattr(init_workflow, "manual_run_init_node", AsyncMock(return_value=True))
+        monkeypatch.setattr(init_workflow, "validate_init_partition", AsyncMock(return_value={"passed": True, "target_row_count": 1}))
+        monkeypatch.setattr(init_workflow, "query_partition_count", AsyncMock(return_value=(True, 1)))
+        bff = AsyncMock()
+        bff.execute_sql_ida = AsyncMock(return_value="job")
+        bff.wait_ida_job = AsyncMock(return_value=True)
+        bff.deploy_nodes = AsyncMock(return_value=True)
+
+        # target_table=None → 不校验，走生成
+        result = await init_workflow.run_with_initialization(
+            bff,
+            AsyncMock(),
+            datasource_name="shop",
+            source_table="orders",
+            granularity="hour",
+        )
+        assert result["target_table"] == "ods_hl_shop__orders_hour"

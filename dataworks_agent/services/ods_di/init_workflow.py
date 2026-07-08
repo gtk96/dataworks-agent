@@ -276,6 +276,14 @@ async def run_with_initialization(
     init_config: InitializationConfig | None = None,
 ) -> dict[str, Any]:
     """Full init → validate → copy → publish gate → incremental pipeline."""
+    # B3 同源债（v9 §3.2）：尊重 target_table 时校验标识符白名单，防止
+    # ../../../etc/passwd / 'ods_x; DROP TABLE y' 注入到 generate_node_path /
+    # create_di_node / ensure_table 的 SQL 拼接。
+    if target_table is not None:
+        from dataworks_agent.modeling.sync_engine import _assert_safe_table_name
+
+        _assert_safe_table_name(target_table)
+
     cfg = init_config or InitializationConfig()
     dev_project = cfg.dev_mc_project or settings.dataworks_dev_schema
     prod_project = cfg.prod_mc_project or settings.dataworks_prod_schema
