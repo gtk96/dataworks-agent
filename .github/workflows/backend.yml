@@ -1,4 +1,4 @@
-name: Test Suite
+name: Backend
 
 on:
   push:
@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  backend:
+    name: Python Lint + Test + Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -45,6 +46,9 @@ jobs:
             --cov-report=term \
             --cov-fail-under=55
 
+      - name: Verify package builds (pyproject.toml sanity)
+        run: uv run python -m build --outdir /tmp/dataworks-agent-build
+
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v4
@@ -52,57 +56,13 @@ jobs:
           files: reports/coverage.xml
           fail_ci_if_error: false
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install frontend deps
-        run: cd frontend && npm ci
-
-      - name: Run Vitest
-        run: cd frontend && npm run test:unit
-
-      - name: Frontend type check (vue-tsc)
-        run: cd frontend && npm run build
-
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: backend-reports
           path: |
             reports/junit.xml
             reports/coverage.xml
             reports/coverage-html/
           retention-days: 30
-
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install frontend deps
-        run: cd frontend && npm ci
-
-      - name: Install Playwright browsers
-        run: cd frontend && npx playwright install --with-deps chromium
-
-      - name: Run Playwright e2e (fake BFF, no real backend)
-        run: cd frontend && npm run test:e2e
-
-      - name: Upload e2e report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: |
-            frontend/playwright-report/
-            frontend/test-results/
-          retention-days: 7
