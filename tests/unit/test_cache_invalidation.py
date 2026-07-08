@@ -139,6 +139,25 @@ def test_set_without_min_epoch_backward_compatible(cache):
     assert cache.get(k) == "v2"
 
 
+def test_get_or_set_respects_epoch_on_stale_write(cache):
+    """v10 §4.1：get_or_set 在 factory 期间 epoch 被推进时不写入 stale 值。"""
+    k = _key("get_or_set")
+    calls = {"n": 0}
+
+    def factory():
+        calls["n"] += 1
+        # 模拟 factory 执行期间并发 invalidate：先占位再 delete 推进 epoch
+        cache.set(k, {"temp": True}, ttl=60)
+        cache.delete(k)
+        return {"v1": True}
+
+    result = cache.get_or_set(k, factory, ttl=60)
+    assert result == {"v1": True}
+    assert calls["n"] == 1
+    assert cache.get(k) is None
+    assert cache.get_stats()["stale_writes"] >= 1
+
+
 # ───────────────────────────────────────────────────────────
 # 3. 端到端：dashboard handler 防护模拟
 # ───────────────────────────────────────────────────────────

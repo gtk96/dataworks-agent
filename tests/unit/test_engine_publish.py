@@ -170,6 +170,7 @@ async def test_publish_to_dashboard_cache_invalidation_pipeline():
 
     cache_mock = MagicMock()
     cache_mock.delete = MagicMock(return_value=True)
+    cache_mock.invalidate_by_source = MagicMock(return_value=1)
 
     with patch("dataworks_agent.cache.get_cache_manager", return_value=cache_mock):
         event = Event(

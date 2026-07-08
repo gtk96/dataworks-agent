@@ -302,6 +302,70 @@ class TestFirstIncrementalLookback:
         assert res["status"] == "failed"
         bff.update_node.assert_not_called()
 
+    async def test_lookback_update_failure_blocks_deploy(self, monkeypatch) -> None:
+        """v10 §4.5：lookback update_node 失败时 fail-closed，禁止 deploy_nodes。"""
+
+        async def fake_run_four_phases(bff, mcp, **kwargs):
+            role = kwargs.get("task_role")
+            if role == "init":
+                return {
+                    "success": True,
+                    "steps": {"create_node": {"uuid": "init-u"}},
+                    "standard_ddl": "",
+                    "di_config": {"steps": [{}, {}, {}]},
+                }
+            return {
+                "success": True,
+                "steps": {"create_node": {"uuid": "incr-u"}},
+                "di_config": {"steps": [{}, {}, {}]},
+            }
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", fake_run_four_phases)
+        monkeypatch.setattr(
+            init_workflow, "ensure_table", AsyncMock(return_value={"status": "exists"})
+        )
+        monkeypatch.setattr(
+            init_workflow,
+            "infer_fields",
+            AsyncMock(
+                return_value={
+                    "status": "ok",
+                    "columns": ["id"],
+                    "where_field": "update_time",
+                    "where_type": "datetime",
+                }
+            ),
+        )
+        monkeypatch.setattr(init_workflow, "manual_run_init_node", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            init_workflow,
+            "validate_init_partition",
+            AsyncMock(return_value={"passed": True, "target_row_count": 1}),
+        )
+        monkeypatch.setattr(
+            init_workflow,
+            "apply_first_incremental_lookback",
+            AsyncMock(return_value={"status": "failed", "error": "update_node 失败"}),
+        )
+
+        bff = AsyncMock()
+        bff.execute_sql_ida = AsyncMock(return_value="job")
+        bff.wait_ida_job = AsyncMock(return_value=True)
+        bff.deploy_nodes = AsyncMock(return_value=True)
+
+        cfg = init_workflow.InitializationConfig(first_incremental_lookback_hours=12)
+        result = await init_workflow.run_with_initialization(
+            bff,
+            AsyncMock(),
+            datasource_name="shop",
+            source_table="orders",
+            granularity="hour",
+            init_config=cfg,
+        )
+        assert result["success"] is False
+        assert result["incremental"]["first_run_lookback"]["status"] == "failed"
+        bff.deploy_nodes.assert_not_called()
+
 
 class TestTargetTableIdentifierGuard:
     """v9 §3.2 B3 同源债：target_table 入参必须走 _IDENTIFIER_RE 校验。"""

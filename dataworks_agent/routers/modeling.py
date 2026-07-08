@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -19,6 +20,8 @@ from dataworks_agent.schemas import (
     TaskListResponse,
     TaskResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 engine = ModelingEngine()
@@ -44,16 +47,32 @@ async def _publish_task_status_changed(task_id: str, status: str) -> None:
     使用 publish_async 以正确 await 订阅回调（_broadcast_task_status 是 async）。
     """
     import time
+    import uuid
 
     from dataworks_agent.cache.events import Event, EventType, get_event_bus
 
-    await get_event_bus().publish_async(
-        Event(
-            event_type=EventType.TASK_STATUS_CHANGED,
-            source="task",
-            data={"task_id": task_id, "status": status, "timestamp": time.time()},
+    request_id = uuid.uuid4().hex[:12]
+    try:
+        await get_event_bus().publish_async(
+            Event(
+                event_type=EventType.TASK_STATUS_CHANGED,
+                source="task",
+                data={
+                    "task_id": task_id,
+                    "status": status,
+                    "timestamp": time.time(),
+                    "request_id": request_id,
+                },
+            )
         )
-    )
+    except Exception as exc:
+        logger.warning(
+            "TASK_STATUS_CHANGED publish failed: task=%s status=%s request_id=%s err=%s",
+            task_id,
+            status,
+            request_id,
+            exc,
+        )
 
 
 @router.post("/tasks", status_code=202)

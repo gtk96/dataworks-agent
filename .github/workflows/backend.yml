@@ -12,6 +12,8 @@ jobs:
     name: Python Lint + Test + Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COOKIE_ENCRYPTION_KEY: test-cookie-key-for-ci-min16
 
     steps:
       - uses: actions/checkout@v4

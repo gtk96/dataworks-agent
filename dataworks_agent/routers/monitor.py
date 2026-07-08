@@ -137,10 +137,23 @@ async def _broadcast_task_status(event: Event) -> None:
 
     R1 修复：状态一变更就失效 dashboard 聚合缓存，否则 WS 触发的刷新
     会命中 60s 旧缓存、"实时"名存实亡；失效后 WS/轮询都能拿到最新数据。
+    v10 §4.2：同步失效 tasks:* 列表缓存（engine 内部 transition 不经过
+    modeling._invalidate_tasks_cache 手动调用）。
     """
     from dataworks_agent.cache import get_cache_manager
 
-    get_cache_manager().delete("dashboard")
+    cache = get_cache_manager()
+    try:
+        cache.delete("dashboard")
+        cache.invalidate_by_source("tasks")
+    except Exception as exc:
+        logger.warning(
+            "TASK_STATUS_CHANGED 缓存失效失败 task=%s status=%s err=%s",
+            event.data.get("task_id") if event.data else None,
+            event.data.get("status") if event.data else None,
+            exc,
+        )
+        return
 
     if not _ws_clients:
         return
@@ -151,6 +164,7 @@ async def _broadcast_task_status(event: Event) -> None:
             "task_id": event.data.get("task_id") if event.data else None,
             "status": event.data.get("status") if event.data else None,
             "timestamp": event.data.get("timestamp") if event.data else None,
+            "request_id": event.data.get("request_id") if event.data else None,
         }
     )
 
@@ -159,8 +173,16 @@ async def _broadcast_task_status(event: Event) -> None:
     for ws in list(_ws_clients):
         try:
             await ws.send_text(payload)
-        except Exception:
+        except Exception as exc:
+            logger.debug("WS send 失败，踢出死连接: %s", exc)
             dead.append(ws)
+    if dead:
+        logger.debug(
+            "WS fanout 踢出 %d/%d 死连接 task=%s",
+            len(dead),
+            len(_ws_clients) + len(dead),
+            event.data.get("task_id") if event.data else None,
+        )
     for ws in dead:
         _ws_clients.discard(ws)
 

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -18,6 +19,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from dataworks_agent.cache.events import Event, EventType, get_event_bus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,6 +72,7 @@ class CacheManager:
         # 统计
         self._hits = 0
         self._misses = 0
+        self._stale_writes = 0
 
         # 订阅缓存失效事件
         self._setup_event_subscriptions()
@@ -119,6 +123,13 @@ class CacheManager:
             if min_epoch is not None:
                 current_epoch = self._epochs.get(key, 0)
                 if current_epoch > min_epoch:
+                    self._stale_writes += 1
+                    logger.debug(
+                        "cache stale-write 丢弃 key=%s min_epoch=%s current=%s",
+                        key,
+                        min_epoch,
+                        current_epoch,
+                    )
                     return False
 
             # 如果已存在，删除旧条目
@@ -176,13 +187,18 @@ class CacheManager:
         factory: Callable[[], Any],
         ttl: float | None = None,
     ) -> Any:
-        """获取缓存值，不存在则调用工厂函数生成。"""
+        """获取缓存值，不存在则调用工厂函数生成。
+
+        v10 §4.1：factory 执行前 peek epoch，set 时带 min_epoch，避免与
+        delete 竞态导致 stale-write（与 dashboard handler 同款模式）。
+        """
         value = self.get(key)
         if value is not None:
             return value
 
+        min_epoch = self.peek_invalidation_epoch(key)
         value = factory()
-        self.set(key, value, ttl)
+        self.set(key, value, ttl, min_epoch=min_epoch)
         return value
 
     @property
@@ -206,6 +222,7 @@ class CacheManager:
             "hits": self._hits,
             "misses": self._misses,
             "hit_rate": self.hit_rate,
+            "stale_writes": self._stale_writes,
         }
 
     def cleanup_expired(self) -> int:

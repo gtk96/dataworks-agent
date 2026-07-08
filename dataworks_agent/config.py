@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -75,6 +76,15 @@ class Settings(BaseSettings):
 
     # ── Cookie 鉴权 ──
     cookie_encryption_key: str = ""
+
+    @field_validator("cookie_encryption_key")
+    @classmethod
+    def _cookie_encryption_key_min_length(cls, v: str) -> str:
+        """v10 §6.1：禁止空密钥派生 Fernet（OWASP 弱密钥风险）。"""
+        if len(v) < 16:
+            raise ValueError("COOKIE_ENCRYPTION_KEY 未设置或长度不足 16 字符，请在 .env 中配置")
+        return v
+
     cookie_keepalive_enabled: bool = False
     cdp_url: str = "http://localhost:9222"
 

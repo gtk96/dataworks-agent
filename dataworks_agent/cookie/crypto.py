@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import base64
-import contextlib
+import logging
 import os
 from pathlib import Path
 
@@ -18,6 +18,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from dataworks_agent.config import settings
+
+logger = logging.getLogger(__name__)
 
 COOKIE_FILE = Path(settings.data_dir) / "cookie.dat"
 SALT_FILE = Path(settings.data_dir) / "cookie.salt"
@@ -33,9 +35,11 @@ def _get_or_create_salt() -> bytes:
     SALT_FILE.parent.mkdir(parents=True, exist_ok=True)
     SALT_FILE.write_bytes(salt)
 
-    # 设置文件权限为 0o600（仅所有者可读写；Windows 不支持则忽略）
-    with contextlib.suppress(OSError):
+    # 设置文件权限为 0o600（仅所有者可读写；Windows 可能不支持）
+    try:
         os.chmod(str(SALT_FILE), 0o600)
+    except OSError as exc:
+        logger.error("无法设置 cookie.salt 文件权限 0o600: %s", exc)
 
     return salt
 
@@ -82,9 +86,11 @@ def save_cookie(cookie_string: str) -> None:
         fh.write(encrypted)
     os.replace(tmp_path, COOKIE_FILE)
 
-    # 设置文件权限为 0o600（仅所有者可读写；Windows 不支持则忽略）
-    with contextlib.suppress(OSError):
+    # 设置文件权限为 0o600（仅所有者可读写；Windows 可能不支持）
+    try:
         os.chmod(str(COOKIE_FILE), 0o600)
+    except OSError as exc:
+        logger.error("无法设置 cookie.dat 文件权限 0o600: %s", exc)
 
 
 def has_cookie() -> bool:

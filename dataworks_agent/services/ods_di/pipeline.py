@@ -53,9 +53,9 @@ class DIPipeline:
         # 分支（with_initialization=False）也走 ensure_table/create_di_node，
         # 同样需要早失败。init 分支的校验在 run_with_initialization 内部完成。
         if target_table is not None:
-            from dataworks_agent.modeling.sync_engine import _assert_safe_table_name
+            from dataworks_agent.schemas import assert_safe_table_name
 
-            _assert_safe_table_name(target_table)
+            assert_safe_table_name(target_table)
 
         if with_initialization:
             cfg = InitializationConfig(**(init_config or {}))

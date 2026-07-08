@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
+# 须在 import dataworks_agent 前注入，满足 Settings cookie_encryption_key 校验（v10 §6.1）
+os.environ.setdefault("COOKIE_ENCRYPTION_KEY", "test-cookie-key-for-ci-min16")
+
 import uuid
 from pathlib import Path
 

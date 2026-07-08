@@ -15,6 +15,18 @@ from dataworks_agent.config import settings
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def assert_safe_table_name(table_name: str) -> None:
+    """防止 table_name 被原样拼进 DDL/SQL 造成注入（B3）。
+
+    统一入口：sync_engine、ods_di pipeline/init_workflow 等均应 import 此函数，
+    勿在业务模块复制 _IDENTIFIER_RE。
+    """
+    if not table_name or not _IDENTIFIER_RE.match(table_name):
+        raise ValueError(
+            f"非法的表名: {table_name!r}（仅允许字母/数字/下划线，且以字母或下划线开头）"
+        )
+
+
 def require_write_access(x_api_key: str = Header(default="", alias="X-API-Key")):
     """写操作鉴权依赖：检查 X-API-Key header 是否匹配配置。
 

@@ -29,8 +29,9 @@ async def _publish_task_status(task_id: str, status: str) -> None:
     """本地 publish helper — 驱动 dashboard WS 实时刷新 + cache 失效。
 
     与 routers/modeling.py:_publish_task_status_changed 行为等价，独立实现避免
-    router/engine 的反向依赖。失败时记 debug（不影响主链路）。
+    router/engine 的反向依赖。失败时记 warning（不影响主链路，v10 §5.1）。
     """
+    request_id = uuid.uuid4().hex[:12]
     try:
         from dataworks_agent.cache.events import Event, EventType, get_event_bus
 
@@ -42,11 +43,18 @@ async def _publish_task_status(task_id: str, status: str) -> None:
                     "task_id": task_id,
                     "status": status,
                     "timestamp": time.time(),
+                    "request_id": request_id,
                 },
             )
         )
     except Exception as exc:
-        logger.debug("TASK_STATUS_CHANGED 异步发布失败（不影响主流程）: %s", exc)
+        logger.warning(
+            "TASK_STATUS_CHANGED publish failed: task=%s status=%s request_id=%s err=%s",
+            task_id,
+            status,
+            request_id,
+            exc,
+        )
 
 
 class ModelingEngine:

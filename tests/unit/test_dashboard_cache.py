@@ -89,6 +89,7 @@ async def test_ws_event_invalidates_dashboard_cache():
     """
     cache_mock = MagicMock()
     cache_mock.delete = MagicMock(return_value=True)
+    cache_mock.invalidate_by_source = MagicMock(return_value=1)
 
     # monitor 在 _broadcast_task_status 内函数级 import get_cache_manager
     # patch 真正的 import path "dataworks_agent.cache.get_cache_manager"
@@ -101,6 +102,7 @@ async def test_ws_event_invalidates_dashboard_cache():
         await _broadcast_task_status(event)
 
     cache_mock.delete.assert_called_once_with("dashboard")
+    cache_mock.invalidate_by_source.assert_called_once_with("tasks")
 
 
 # ───────────────────────────────────────────────────────────

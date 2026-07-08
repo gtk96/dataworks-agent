@@ -280,9 +280,9 @@ async def run_with_initialization(
     # ../../../etc/passwd / 'ods_x; DROP TABLE y' 注入到 generate_node_path /
     # create_di_node / ensure_table 的 SQL 拼接。
     if target_table is not None:
-        from dataworks_agent.modeling.sync_engine import _assert_safe_table_name
+        from dataworks_agent.schemas import assert_safe_table_name
 
-        _assert_safe_table_name(target_table)
+        assert_safe_table_name(target_table)
 
     cfg = init_config or InitializationConfig()
     dev_project = cfg.dev_mc_project or settings.dataworks_dev_schema
@@ -450,7 +450,7 @@ async def run_with_initialization(
     if incr_uuid:
         lookback = cfg.first_incremental_lookback_hours
         if lookback:
-            result["incremental"]["first_run_lookback"] = await apply_first_incremental_lookback(
+            lb_result = await apply_first_incremental_lookback(
                 bff,
                 incr_uuid=str(incr_uuid),
                 di_config=incr_run.get("di_config", {}),
@@ -459,6 +459,11 @@ async def run_with_initialization(
                 granularity=granularity,
                 lookback_hours=lookback,
             )
+            result["incremental"]["first_run_lookback"] = lb_result
+            # v10 §4.5 fail-closed：lookback 改写失败则禁止 deploy，避免漏采无回滚
+            if lb_result.get("status") == "failed":
+                result["success"] = False
+                return result
         deployed = await bff.deploy_nodes([str(incr_uuid)], comment=f"auto deploy {ods_table}")
         result["incremental"]["deploy"] = {"status": "ok" if deployed else "failed"}
 
