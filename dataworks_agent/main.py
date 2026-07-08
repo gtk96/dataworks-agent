@@ -74,7 +74,11 @@ async def lifespan(app: FastAPI):
     from dataworks_agent.middleware.client_ip import is_loopback
 
     bind_host = settings.host or settings.dw_modeling_host
-    if not settings.trusted_proxies and bind_host not in ("127.0.0.1", "localhost") and not is_loopback(bind_host):
+    if (
+        not settings.trusted_proxies
+        and bind_host not in ("127.0.0.1", "localhost")
+        and not is_loopback(bind_host)
+    ):
         logger.warning(
             "服务绑定 %s 但 TRUSTED_PROXIES 为空：反代部署下请配置受信代理 IP，"
             "否则多用户 IP 隔离会塌缩为单一 UserContext（v11 §3.3）",
