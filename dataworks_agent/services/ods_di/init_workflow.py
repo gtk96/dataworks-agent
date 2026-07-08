@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,9 +13,11 @@ from dataworks_agent.naming import generate_node_path, generate_ods_di_table_nam
 from dataworks_agent.services.ods_di.create_node import build_config, create_di_node
 from dataworks_agent.services.ods_di.di_config import (
     build_copy_init_partition_sql,
+    build_first_incremental_where_clause,
     build_node_name,
     evaluate_publish_gate,
     partition_where_clause,
+    replace_reader_where,
 )
 from dataworks_agent.services.ods_di.ensure_table import ensure_table
 from dataworks_agent.services.ods_di.field_infer import infer_fields
@@ -224,6 +227,40 @@ async def run_four_phases(
     }
 
 
+async def apply_first_incremental_lookback(
+    bff: Any,
+    *,
+    incr_uuid: str,
+    di_config: dict[str, Any],
+    where_field: str,
+    where_type: str,
+    granularity: str,
+    lookback_hours: int,
+) -> dict[str, Any]:
+    """改写 incremental 节点首跑 Reader.where 为 lookback 兜底窗口。
+
+    init 跑完后、首次增量调度前，标准增量窗口(bizdate/gmtdate_last2h)可能漏采
+    init 与首跑之间的数据。用 first_incremental_lookback_hours 把首跑窗口向前
+    扩展 lookback_hours，重写并落库到 incremental 节点脚本。
+
+    仅改写首跑窗口：调度系统此后每次运行仍按节点自身 cron 走标准增量窗口，
+    故只在建节点后、发布前执行一次。
+    """
+    if not where_field:
+        return {"status": "skipped", "reason": "no where_field"}
+    try:
+        where_clause = build_first_incremental_where_clause(
+            where_type, where_field, granularity, lookback_hours
+        )
+    except ValueError as e:
+        return {"status": "failed", "error": str(e)}
+    updated = replace_reader_where(di_config, where_clause)
+    ok = await bff.update_node(incr_uuid, json.dumps(updated, ensure_ascii=False))
+    if not ok:
+        return {"status": "failed", "error": bff.last_error or "update_node 失败"}
+    return {"status": "ok", "where": where_clause}
+
+
 async def run_with_initialization(
     bff: Any,
     mcp: Any,
@@ -235,6 +272,7 @@ async def run_with_initialization(
     schedule_minute: int = 1,
     resource_group: str = "",
     source_type: str | None = "hologres",
+    target_table: str | None = None,
     init_config: InitializationConfig | None = None,
 ) -> dict[str, Any]:
     """Full init → validate → copy → publish gate → incremental pipeline."""
@@ -243,7 +281,7 @@ async def run_with_initialization(
     prod_project = cfg.prod_mc_project or settings.dataworks_prod_schema
     rg = resource_group or settings.dataworks_resource_group
 
-    ods_table = generate_ods_di_table_name(
+    ods_table = target_table or generate_ods_di_table_name(
         datasource_name, source_table, granularity, source_type=source_type
     )
     init_node_name = build_node_name(ods_table, "init")
@@ -402,6 +440,17 @@ async def run_with_initialization(
 
     incr_uuid = incr_run.get("steps", {}).get("create_node", {}).get("uuid")
     if incr_uuid:
+        lookback = cfg.first_incremental_lookback_hours
+        if lookback:
+            result["incremental"]["first_run_lookback"] = await apply_first_incremental_lookback(
+                bff,
+                incr_uuid=str(incr_uuid),
+                di_config=incr_run.get("di_config", {}),
+                where_field=field_info.get("where_field", ""),
+                where_type=field_info.get("where_type", "none"),
+                granularity=granularity,
+                lookback_hours=lookback,
+            )
         deployed = await bff.deploy_nodes([str(incr_uuid)], comment=f"auto deploy {ods_table}")
         result["incremental"]["deploy"] = {"status": "ok" if deployed else "failed"}
 

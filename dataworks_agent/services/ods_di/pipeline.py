@@ -61,6 +61,7 @@ class DIPipeline:
                 schedule_minute=schedule_minute,
                 resource_group=resource_group,
                 source_type=source_type,
+                target_table=target_table,
                 init_config=cfg,
             )
 

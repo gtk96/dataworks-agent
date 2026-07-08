@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 
+from dataworks_agent.services.ods_di import init_workflow
 from dataworks_agent.services.ods_di.create_node import build_config
 from dataworks_agent.services.ods_di.di_config import (
     build_copy_init_partition_sql,
@@ -154,3 +158,122 @@ class TestReplaceReaderWhere:
         )["di_config"]
         updated = replace_reader_where(cfg, "update_time >= 1")
         assert updated["steps"][0]["parameter"]["where"] == "update_time >= 1"
+
+
+class TestTargetTablePassthrough:
+    """Bug 2: init 流程必须尊重调用方传入的 target_table，而非静默重算。"""
+
+    async def test_init_flow_honors_explicit_target_table(self, monkeypatch) -> None:
+        captured: dict = {}
+
+        async def fake_run_four_phases(bff, mcp, **kwargs):
+            captured.update(kwargs)
+            return {"success": True, "steps": {"create_node": {"uuid": "u"}}, "standard_ddl": ""}
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", fake_run_four_phases)
+        monkeypatch.setattr(init_workflow, "ensure_table", AsyncMock(return_value={"status": "exists"}))
+        monkeypatch.setattr(init_workflow, "infer_fields", AsyncMock(return_value={"status": "ok", "columns": ["id"]}))
+        monkeypatch.setattr(init_workflow, "manual_run_init_node", AsyncMock(return_value=True))
+        monkeypatch.setattr(init_workflow, "validate_init_partition", AsyncMock(return_value={"passed": True, "target_row_count": 1}))
+        monkeypatch.setattr(init_workflow, "query_partition_count", AsyncMock(return_value=(True, 1)))
+        bff = AsyncMock()
+        bff.execute_sql_ida = AsyncMock(return_value="job")
+        bff.wait_ida_job = AsyncMock(return_value=True)
+        bff.deploy_nodes = AsyncMock(return_value=True)
+
+        await init_workflow.run_with_initialization(
+            bff,
+            AsyncMock(),
+            datasource_name="shop",
+            source_table="orders",
+            granularity="hour",
+            target_table="custom_ods_name_hour",
+        )
+        assert captured["ods_table"] == "custom_ods_name_hour"
+
+    async def test_init_flow_falls_back_to_generated_name(self, monkeypatch) -> None:
+        captured: dict = {}
+
+        async def fake_run_four_phases(bff, mcp, **kwargs):
+            captured.update(kwargs)
+            return {"success": True, "steps": {"create_node": {"uuid": "u"}}, "standard_ddl": ""}
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", fake_run_four_phases)
+        monkeypatch.setattr(init_workflow, "ensure_table", AsyncMock(return_value={"status": "exists"}))
+        monkeypatch.setattr(init_workflow, "infer_fields", AsyncMock(return_value={"status": "ok", "columns": ["id"]}))
+        monkeypatch.setattr(init_workflow, "manual_run_init_node", AsyncMock(return_value=True))
+        monkeypatch.setattr(init_workflow, "validate_init_partition", AsyncMock(return_value={"passed": True, "target_row_count": 1}))
+        monkeypatch.setattr(init_workflow, "query_partition_count", AsyncMock(return_value=(True, 1)))
+        bff = AsyncMock()
+        bff.execute_sql_ida = AsyncMock(return_value="job")
+        bff.wait_ida_job = AsyncMock(return_value=True)
+        bff.deploy_nodes = AsyncMock(return_value=True)
+
+        await init_workflow.run_with_initialization(
+            bff,
+            AsyncMock(),
+            datasource_name="shop",
+            source_table="orders",
+            granularity="hour",
+        )
+        assert captured["ods_table"] == "ods_hl_shop__orders_hour"
+
+
+class TestFirstIncrementalLookback:
+    """首跑增量 lookback 兜底：改写 incremental 节点首跑 Reader.where。"""
+
+    async def test_rewrites_reader_where_with_lookback(self) -> None:
+        bff = AsyncMock()
+        bff.update_node = AsyncMock(return_value=True)
+        di_config = {
+            "steps": [
+                {"category": "reader", "parameter": {"where": "${bizdate} window"}},
+                {"category": "processor"},
+                {"category": "writer"},
+            ]
+        }
+        res = await init_workflow.apply_first_incremental_lookback(
+            bff,
+            incr_uuid="u1",
+            di_config=di_config,
+            where_field="update_time",
+            where_type="datetime",
+            granularity="day",
+            lookback_hours=12,
+        )
+        assert res["status"] == "ok"
+        # update_node 被调用且写入的 where 含 lookback 表达式
+        assert bff.update_node.await_count == 1
+        written = json.loads(bff.update_node.call_args.args[1])
+        assert "from_unixtime(unix_timestamp(" in written["steps"][0]["parameter"]["where"]
+        assert "update_time >=" in written["steps"][0]["parameter"]["where"]
+
+    async def test_skips_when_no_where_field(self) -> None:
+        bff = AsyncMock()
+        bff.update_node = AsyncMock(return_value=True)
+        res = await init_workflow.apply_first_incremental_lookback(
+            bff,
+            incr_uuid="u1",
+            di_config={"steps": [{"category": "reader", "parameter": {}}]},
+            where_field="",
+            where_type="none",
+            granularity="day",
+            lookback_hours=12,
+        )
+        assert res["status"] == "skipped"
+        bff.update_node.assert_not_called()
+
+    async def test_fails_on_nonpositive_lookback(self) -> None:
+        bff = AsyncMock()
+        bff.update_node = AsyncMock(return_value=True)
+        res = await init_workflow.apply_first_incremental_lookback(
+            bff,
+            incr_uuid="u1",
+            di_config={"steps": [{"category": "reader", "parameter": {}}]},
+            where_field="update_time",
+            where_type="datetime",
+            granularity="day",
+            lookback_hours=0,
+        )
+        assert res["status"] == "failed"
+        bff.update_node.assert_not_called()

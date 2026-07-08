@@ -80,6 +80,23 @@ class TestBuildDiTaskConfig:
         assert writer["parameter"]["partition"] == "dt=${gmtdate},ht=${hour_last1h}"
         assert config["extend"]["mode"] == "wizard"
 
+    def test_writer_always_couples_partition_with_truncate(self) -> None:
+        # DataX ODPS Writer：truncate 仅清空 partition 指定的分区（非整表）。
+        # Writer 必须始终带 partition，否则 truncate 会清空整表 → 数据丢失。
+        for granularity in ("hour", "day"):
+            config = build_di_task_config(
+                datasource_name="mydb",
+                source_table_name="orders",
+                ods_table_name="ods_ms_mydb__orders_hour",
+                columns=["id"],
+                odps_datasource_name="dataworks_dev",
+                granularity=granularity,
+                task_role="incremental",
+            )
+            writer = config["steps"][2]["parameter"]
+            assert writer["truncate"] is True
+            assert writer["partition"], "Writer 必须带 partition，否则 truncate 会清空整表"
+
     def test_init_config_has_no_where(self) -> None:
         config = build_di_task_config(
             datasource_name="mydb",
