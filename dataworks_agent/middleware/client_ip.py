@@ -14,9 +14,20 @@ def is_loopback(ip: str) -> bool:
     return ip in ("127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1")
 
 
-def resolve_client_ip(request: Request, trusted_proxies: frozenset[str]) -> str:
-    """解析用于隔离/限流的客户端 IP。
+def effective_client_ip(request: Request) -> str:
+    """当前请求的有效客户端 IP。
 
+    若 ``main.create_app`` 已按 ``settings.trusted_proxies`` 挂载
+    ``ProxyHeadersMiddleware``，此处为经代理解析后的 ``request.client.host``；
+    否则为 TCP 对端（不受 X-Forwarded-For 伪造影响）。
+    """
+    return request.client.host if request.client else "127.0.0.1"
+
+
+def resolve_client_ip(request: Request, trusted_proxies: frozenset[str]) -> str:
+    """解析用于隔离/限流的客户端 IP（无 ProxyHeadersMiddleware 时的回退逻辑）。
+
+    生产路径应优先挂载 ``ProxyHeadersMiddleware`` 并改用 ``effective_client_ip``。
     仅当 TCP 对端在 trusted_proxies 内时才读取 X-Forwarded-For 最左值；
     否则使用对端 IP，避免远程攻击者伪造 XFF 绕过本机校验（v9 §2.2）。
     """

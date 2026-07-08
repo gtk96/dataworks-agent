@@ -44,6 +44,83 @@ def _read_sql_file(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _find_columns_block_end(stmt: str, start: int) -> int:
+    """定位 CREATE TABLE (...) 列定义块的顶层右括号（v11 §4.3 五态 tokenizer）。"""
+    depth = 1
+    i = start
+    n = len(stmt)
+    state = "normal"  # normal | sq | dq | line | block
+
+    while i < n:
+        ch = stmt[i]
+        if state == "normal":
+            if ch == "'":
+                state = "sq"
+            elif ch == '"':
+                state = "dq"
+            elif ch == "-" and i + 1 < n and stmt[i + 1] == "-":
+                state = "line"
+            elif ch == "/" and i + 1 < n and stmt[i + 1] == "*":
+                state = "block"
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return i
+        elif state == "sq":
+            if ch == "'" and i + 1 < n and stmt[i + 1] == "'":
+                i += 1
+            elif ch == "'":
+                state = "normal"
+        elif state == "dq":
+            if ch == '"':
+                state = "normal"
+        elif state == "line":
+            if ch == "\n":
+                state = "normal"
+        elif state == "block" and ch == "*" and i + 1 < n and stmt[i + 1] == "/":
+            state = "normal"
+            i += 1
+        i += 1
+    return start
+
+
+_LAYER_COMMENT_RE = re.compile(r"^\s*--\s*layer:\s*(ods|dwd|dim|dws)\s*$", re.IGNORECASE)
+
+
+def _layer_from_table_prefix(bare_name: str) -> str:
+    name = bare_name.lower()
+    if name.startswith("dwd_"):
+        return "DWD"
+    if name.startswith("dim_"):
+        return "DIM"
+    if name.startswith("dws_"):
+        return "DWS"
+    return "ODS"
+
+
+def _infer_layer(stmt: str, bare_name: str) -> str:
+    """识别分层：优先 stmt 顶部 `-- layer: xxx` 注释，否则表名前缀（v11 §4.4）。"""
+    comment_layer: str | None = None
+    for line in stmt.splitlines()[:5]:
+        m = _LAYER_COMMENT_RE.match(line.strip())
+        if m:
+            comment_layer = m.group(1).upper()
+            break
+    prefix_layer = _layer_from_table_prefix(bare_name)
+    if comment_layer:
+        if comment_layer != prefix_layer:
+            logger.warning(
+                "DDL 层注释 %s 与表名前缀推断 %s 冲突，以注释为准: %s",
+                comment_layer,
+                prefix_layer,
+                bare_name,
+            )
+        return comment_layer
+    return prefix_layer
+
+
 def parse_ddl_file(content: str) -> list[dict]:
     """从 SQL 文件中提取所有 CREATE TABLE 语句。
 
@@ -65,8 +142,15 @@ def parse_ddl_file(content: str) -> list[dict]:
     )
 
     for stmt in statements:
-        stmt = stmt.strip()
-        if not stmt or stmt.startswith("--"):
+        stmt_raw = stmt.strip()
+        if not stmt_raw:
+            continue
+        # 剥离顶部空行与 -- 注释后再匹配 CREATE（保留 stmt_raw 供层注释推断）
+        lines = stmt_raw.splitlines()
+        while lines and (not lines[0].strip() or lines[0].strip().startswith("--")):
+            lines.pop(0)
+        stmt = "\n".join(lines).strip()
+        if not stmt:
             continue
 
         m = re.match(
@@ -80,22 +164,7 @@ def parse_ddl_file(content: str) -> list[dict]:
             # 定位列定义块的顶层右括号：按括号深度计数，支持 STRUCT<>/ARRAY<>/DECIMAL(,)
             # 等嵌套括号，避免贪婪正则把 PARTITIONED BY(...) 等内容吞进列块导致重建 DDL 错位（I3）。
             start = m.end()
-            depth = 1
-            i = start
-            n = len(stmt)
-            in_str = False
-            while i < n:
-                ch = stmt[i]
-                if ch == "'":
-                    in_str = not in_str
-                elif not in_str:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                i += 1
+            i = _find_columns_block_end(stmt, start)
             columns_block = stmt[start:i]
             after = stmt[i + 1 :]
 
@@ -112,15 +181,8 @@ def parse_ddl_file(content: str) -> list[dict]:
                 for p in re.findall(r"(\w+)\s+string", part_str, re.IGNORECASE):
                     partitions.append(p)
 
-            # 识别层（按前缀匹配，避免 ods_dwd_x 被误判为 DWD，I5）
-            name_for_layer = bare_name.lower()
-            layer = "ODS"
-            if name_for_layer.startswith("dwd_"):
-                layer = "DWD"
-            elif name_for_layer.startswith("dim_"):
-                layer = "DIM"
-            elif name_for_layer.startswith("dws_"):
-                layer = "DWS"
+            # 识别层（注释优先，否则表名前缀，I5 + v11 §4.4）
+            layer = _infer_layer(stmt_raw, bare_name)
 
             # 识别更新方式
             update_method = "all"
@@ -266,7 +328,7 @@ async def import_sql_files(
     if not files:
         raise HTTPException(status_code=404, detail=f"目录 {req.path} 下未找到 SQL 文件")
 
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = getattr(request.state, "client_ip", "127.0.0.1")
     result = ImportResult(total_files=len(files))
 
     # 1) 解析全部 DDL

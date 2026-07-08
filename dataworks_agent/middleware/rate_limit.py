@@ -61,7 +61,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     BUCKET = "per_user"
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = getattr(request.state, "client_ip", None) or (
+            request.client.host if request.client else "unknown"
+        )
         if not await rate_limiter.acquire(f"{self.BUCKET}:{client_ip}"):
             return JSONResponse(
                 status_code=429,

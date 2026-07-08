@@ -284,3 +284,38 @@ async def test_ip_isolation_ignores_xff_without_trusted_proxy(monkeypatch):
 
     result = await mw.dispatch(req, call_next)
     assert result == "ok"
+
+
+@pytest.mark.asyncio
+async def test_proxy_headers_middleware_updates_scope_client():
+    """ProxyHeadersMiddleware 在受信代理解析 X-Forwarded-For（v11 §3.3）。"""
+    from dataworks_agent.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    seen: dict[str, str] = {}
+
+    async def inner_app(scope, receive, send):
+        seen["client"] = scope["client"][0]
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = ProxyHeadersMiddleware(inner_app, trusted_hosts=["10.0.0.1"])
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [(b"x-forwarded-for", b"203.0.113.55, 10.0.0.2")],
+        "client": ("10.0.0.1", 443),
+        "server": ("0.0.0.0", 8085),
+        "scheme": "http",
+        "root_path": "",
+        "query_string": b"",
+    }
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        return None
+
+    await mw(scope, receive, send)
+    assert seen["client"] == "203.0.113.55"

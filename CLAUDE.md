@@ -130,6 +130,11 @@ Import / 节点 / 表名三条链路统一加固，评审见 `reports/REVIEW.md`
 相关 v10 项：`middleware/client_ip.py`（Cookie 本机端点用 TCP peer 防 XFF 伪造）、
 `require_write_access` 覆盖 import 写端点、`COOKIE_ENCRYPTION_KEY` 启动强制 ≥16 字符。
 
+**v11 反代部署**：配置 `TRUSTED_PROXIES`（如 `10.0.0.1`）后挂载
+`middleware/proxy_headers.ProxyHeadersMiddleware`，`IPIsolationMiddleware` 使用
+解析后的 `request.client.host`；未配置时不信 X-Forwarded-For。绑定非 loopback 且
+`TRUSTED_PROXIES` 为空时启动 WARNING。
+
 ### SDK 接入骨架（**待 region / endpoint 落定后填具体值**；包名/类名按
 官方 SDK 文档校正后再用）
 

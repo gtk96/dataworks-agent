@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from dataworks_agent.config import settings
-from dataworks_agent.middleware.client_ip import resolve_client_ip
+from dataworks_agent.middleware.client_ip import effective_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +36,7 @@ class IPIsolationMiddleware(BaseHTTPMiddleware):
         self._contexts: dict[str, UserContext] = {}
 
     async def dispatch(self, request: Request, call_next):
-        trusted = frozenset(settings.trusted_proxies or [])
-        client_ip = resolve_client_ip(request, trusted)
+        client_ip = effective_client_ip(request)
 
         # 获取或创建用户上下文
         if client_ip not in self._contexts:

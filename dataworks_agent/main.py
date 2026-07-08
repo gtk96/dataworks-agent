@@ -71,6 +71,18 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("SQLite 数据库就绪: %s", settings.db_path)
 
+    from dataworks_agent.middleware.client_ip import is_loopback
+
+    bind_host = settings.host or settings.dw_modeling_host
+    if not settings.trusted_proxies and bind_host not in ("127.0.0.1", "localhost") and not is_loopback(bind_host):
+        logger.warning(
+            "服务绑定 %s 但 TRUSTED_PROXIES 为空：反代部署下请配置受信代理 IP，"
+            "否则多用户 IP 隔离会塌缩为单一 UserContext（v11 §3.3）",
+            bind_host,
+        )
+    elif settings.trusted_proxies:
+        logger.info("受信反向代理: %s（ProxyHeadersMiddleware 已启用）", settings.trusted_proxies)
+
     from dataworks_agent.services.task_backfill import backfill_node_types
 
     backfilled = backfill_node_types()
@@ -211,6 +223,11 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware)
     # IP 隔离要在 Idempotency 之前,让 Idempotency 拿到正确的 request.state.client_ip
     app.add_middleware(IPIsolationMiddleware)
+    # v11 §3.3：仅当配置了 trusted_proxies 才信任 X-Forwarded-For（Starlette 官方实现）
+    if settings.trusted_proxies:
+        from dataworks_agent.middleware.proxy_headers import ProxyHeadersMiddleware
+
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
 
     # CORS（仅允许本地开发）
     app.add_middleware(
