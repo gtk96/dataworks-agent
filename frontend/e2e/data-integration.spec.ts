@@ -4,8 +4,8 @@ import { test, expect } from '@playwright/test'
 test('DataIntegration 加载 — ODS DI tab 展示数据源列表', async ({ page }) => {
   await page.goto('/di')
 
-  // 默认 tab 为 ODS Holo；切到 ODS DI 以验证数据源加载链路
-  await page.getByRole('radio', { name: 'ODS DI' }).click()
+  // Element Plus el-radio-button：用文本定位，避免 inner span 拦截 pointer events
+  await page.locator('.el-radio-button').filter({ hasText: 'ODS DI' }).click()
 
   // fake-server 的 /api/workspace/datasources 返回 dataworks / dataworks_holo 数据源
   await expect(page.getByText('dataworks', { exact: false }).first()).toBeVisible({ timeout: 10000 })
@@ -14,9 +14,10 @@ test('DataIntegration 加载 — ODS DI tab 展示数据源列表', async ({ pag
 test('DataIntegration 批量部署 tab — 渲染表单 + 提交按钮', async ({ page }) => {
   await page.goto('/di')
 
-  await page.getByRole('radio', { name: '批量部署' }).click()
+  await page.locator('.el-radio-button').filter({ hasText: '批量部署' }).click()
 
-  // 批量部署 tab 含 DDL 目录输入与「批量部署」按钮
-  await expect(page.getByText('批量部署 ODS/DWD 表')).toBeVisible()
-  await expect(page.getByRole('button', { name: '批量部署' })).toBeVisible()
+  const card = page.locator('.el-card').filter({ hasText: '批量部署 ODS/DWD 表' })
+  await expect(card).toBeVisible()
+  // 避免与 tab 上的「批量部署」radio 冲突，只断言表单内 primary 按钮
+  await expect(card.locator('.el-form .el-button--primary')).toHaveText('批量部署')
 })

@@ -38,10 +38,10 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      command: 'VITE_PROXY_TARGET=http://localhost:8086 npm run dev -- --port 3000 --host 127.0.0.1',
+      command: 'node e2e/start-vite.mjs',
       port: 3000,
       timeout: 60000,
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
     },

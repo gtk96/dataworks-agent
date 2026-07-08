@@ -99,7 +99,7 @@ def parse_ddl_file(content: str) -> list[dict]:
                             break
                 i += 1
             columns_block = stmt[start:i]
-            after = stmt[i + 1:]
+            after = stmt[i + 1 :]
 
             # MCP 自动加 dataworks. 前缀，所以去掉原 SQL 中的 schema 前缀
             bare_name = re.sub(r"^(dataworks|dataworks_dev|cda|cda_dev)\.", "", table_name)
@@ -221,9 +221,8 @@ def _resolve_import_root(path: str) -> Path:
 
     roots = settings.import_allowed_roots or [settings.sql_template_root]
     norm_roots = [Path(r).resolve() for r in roots]
-    if (
-        not any(candidate == root or _is_within(candidate, root) for root in norm_roots)
-        and not (fixture_root.exists() and _is_within(candidate, fixture_root))
+    if not any(candidate == root or _is_within(candidate, root) for root in norm_roots) and not (
+        fixture_root.exists() and _is_within(candidate, fixture_root)
     ):
         raise HTTPException(
             status_code=400,

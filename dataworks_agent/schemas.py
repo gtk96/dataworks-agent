@@ -302,9 +302,7 @@ class SyncExecuteRequest(BaseModel):
         # 标识符白名单：防止 table_name 被原样拼进 DDL 造成注入（B3）。
         # ODPS/Holo 表名仅允许字母/数字/下划线，且以字母或下划线开头。
         if not v or not _IDENTIFIER_RE.match(v):
-            raise ValueError(
-                f"非法的表名: {v!r}（仅允许字母/数字/下划线，且以字母或下划线开头）"
-            )
+            raise ValueError(f"非法的表名: {v!r}（仅允许字母/数字/下划线，且以字母或下划线开头）")
         return v
 
 

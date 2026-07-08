@@ -46,11 +46,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { request } from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
-const router = useRouter()
 const filter = ref({ table_name: '', layer: '' })
 const artifacts = ref<any[]>([])
 const total = ref(0)
