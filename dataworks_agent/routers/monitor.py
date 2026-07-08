@@ -28,17 +28,34 @@ _ws_clients: set[WebSocket] = set()
 
 @router.get("/dashboard")
 async def dashboard():
-    """仪表盘统计: 成功率、平均耗时、24h 趋势、按层分布。"""
-    from sqlalchemy import func
+    """仪表盘统计: 成功率、平均耗时、24h 趋势、按层分布。
 
+    R18 stale-write 修复：cache 读取前先 peek_invalidation_epoch 拿到"开始算时"的 epoch，
+    SQL 跑完后用 set(..., min_epoch=epoch) 写入。若 SQL 期间 cache 被 delete 过
+    （engine publish TASK_STATUS_CHANGED → _broadcast_task_status → cache.delete），
+    set 会返回 False 且不写入，避免把"算到一半时的旧数据"覆盖到 cache。
+    """
     from dataworks_agent.cache import get_cache_manager
 
     cache = get_cache_manager()
 
-    # 尝试从缓存获取
+    # 先拿 epoch（"开始算时"的失效序号），再做 cache hit 判断
+    min_epoch = cache.peek_invalidation_epoch("dashboard")
     cached = cache.get("dashboard")
     if cached is not None:
         return cached
+
+    # 跑 SQL aggregation（耗时操作，可能被 delete 中断）
+    result = await _compute_dashboard_stats()
+
+    # 写入 cache，校验 epoch：SQL 期间被 delete 则丢弃 stale write
+    cache.set("dashboard", result, ttl=60, min_epoch=min_epoch)
+    return result
+
+
+async def _compute_dashboard_stats() -> dict:
+    """仪表盘聚合 SQL — 从 /dashboard 抽出来便于测试 + epoch 校验。"""
+    from sqlalchemy import func
 
     running_statuses = {
         "running",
@@ -91,26 +108,21 @@ async def dashboard():
 
         type_breakdown = aggregate_type_breakdown(db)
 
-        # 注：v10 收敛掉 5 个未使用字段（today_completed/today_failed/
-        # type_breakdown_labeled/type_labels/queue_backlog）+ 1 个语义
-        # 重叠字段（finished = completed + failed，前端按完成/失败分开统计）。
-        # active_tasks 与 running 重复也删，running 即活跃任务数。
-        result = {
-            "total_tasks": total,
-            "completed": completed,
-            "failed": failed,
-            "pending": pending,
-            "running": running,
-            "success_rate": round(success_rate, 1),
-            "avg_duration_seconds": round(float(avg_dur), 1),
-            "layer_breakdown": layer_counts,
-            "type_breakdown": type_breakdown,
-        }
-
-        # 缓存结果（短 TTL，因为数据会变化）
-        cache.set("dashboard", result, ttl=60)
-
-        return result
+    # 注：v10 收敛掉 5 个未使用字段（today_completed/today_failed/
+    # type_breakdown_labeled/type_labels/queue_backlog）+ 1 个语义
+    # 重叠字段（finished = completed + failed，前端按完成/失败分开统计）。
+    # active_tasks 与 running 重复也删，running 即活跃任务数。
+    return {
+        "total_tasks": total,
+        "completed": completed,
+        "failed": failed,
+        "pending": pending,
+        "running": running,
+        "success_rate": round(success_rate, 1),
+        "avg_duration_seconds": round(float(avg_dur), 1),
+        "layer_breakdown": layer_counts,
+        "type_breakdown": type_breakdown,
+    }
 
 
 # WebSocket 订阅式实时推送（v10 重构）

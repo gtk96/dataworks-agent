@@ -61,6 +61,11 @@ class CacheManager:
         self._default_ttl = default_ttl
         self._lock = threading.RLock()
 
+        # 删除序号 — key 每次 delete 递增；set(min_epoch=) 时校验。
+        # 用于消除"cache miss → 跑 SQL → delete → set 旧数据"stale-write race。
+        # 与 _cache 同步：在 _lock 内读写。
+        self._epochs: dict[str, int] = {}
+
         # 统计
         self._hits = 0
         self._misses = 0
@@ -91,13 +96,31 @@ class CacheManager:
             return entry.value
 
     def set(
-        self, key: str, value: Any, ttl: float | None = None, tags: list[str] | None = None
-    ) -> None:
-        """设置缓存值。"""
+        self,
+        key: str,
+        value: Any,
+        ttl: float | None = None,
+        tags: list[str] | None = None,
+        min_epoch: int | None = None,
+    ) -> bool:
+        """设置缓存值。
+
+        min_epoch（默认 None = 不校验）：调用方传入"开始计算时的 epoch"，若 cache 当前
+        epoch 大于该值则丢弃本次写入（避免 stale-write race）。返回 True 实际写入，
+        False 被丢弃。
+
+        不传 min_epoch → 旧调用点行为完全不变（向后兼容）。
+        """
         if ttl is None:
             ttl = self._default_ttl
 
         with self._lock:
+            # min_epoch 校验：cache 在我开始算之后被 delete 过了 → 丢弃
+            if min_epoch is not None:
+                current_epoch = self._epochs.get(key, 0)
+                if current_epoch > min_epoch:
+                    return False
+
             # 如果已存在，删除旧条目
             if key in self._cache:
                 del self._cache[key]
@@ -115,14 +138,32 @@ class CacheManager:
                 ttl=ttl,
                 tags=tags or [],
             )
+            return True
 
     def delete(self, key: str) -> bool:
-        """删除缓存条目。"""
+        """删除缓存条目（递增 epoch 序号，供后续 set 校验用）。
+
+        epoch 仅在 key 原本存在时递增（避免对从未设置的 key 调 delete 也产生 epoch 噪音）。
+        返回值：key 是否原本存在（与旧实现兼容）。
+        """
         with self._lock:
-            if key in self._cache:
-                del self._cache[key]
-                return True
-            return False
+            existed = key in self._cache
+            self._cache.pop(key, None)
+            if existed:
+                self._epochs[key] = self._epochs.get(key, 0) + 1
+            return existed
+
+    def peek_invalidation_epoch(self, key: str) -> int:
+        """返回当前 key 的 epoch 序号（用于调用方在 set 校验 stale-write）。
+
+        用法：
+            min_epoch = cache.peek_invalidation_epoch("dashboard")
+            result = expensive_compute()
+            cache.set("dashboard", result, ttl=60, min_epoch=min_epoch)
+        若 expensive_compute 期间 cache 被 delete 过一次，set 返回 False 且不写入。
+        """
+        with self._lock:
+            return self._epochs.get(key, 0)
 
     def clear(self) -> None:
         """清空缓存。"""

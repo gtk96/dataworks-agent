@@ -118,7 +118,11 @@ async def test_broadcast_subscribed_via_event_bus():
 
 
 def test_dashboard_response_no_dead_fields():
-    """v10 收敛掉 5 个未使用字段 + 1 个语义重叠字段（仅检查返回契约）。"""
+    """v10 收敛掉 5 个未使用字段 + 1 个语义重叠字段（仅检查返回契约）。
+
+    R18: result 字典字面量抽到 _compute_dashboard_stats helper（便于测试 + epoch 校验），
+    所以这里解析 _compute_dashboard_stats 而不是 dashboard 函数。
+    """
     import ast
 
     from dataworks_agent.routers import monitor
@@ -127,22 +131,16 @@ def test_dashboard_response_no_dead_fields():
         src = f.read()
     tree = ast.parse(src)
 
-    # 找到 dashboard 函数体里对 result 的最后一次赋值
+    # R18: result 字典字面量在 _compute_dashboard_stats helper 里
     result_keys: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "dashboard":
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_compute_dashboard_stats":
             for sub in ast.walk(node):
-                if isinstance(sub, ast.Assign):
-                    for tgt in sub.targets:
-                        if (
-                            isinstance(tgt, ast.Name)
-                            and tgt.id == "result"
-                            and isinstance(sub.value, ast.Dict)
-                        ):
-                            for k in sub.value.keys:
-                                if isinstance(k, ast.Constant) and isinstance(k.value, str):
-                                    result_keys.add(k.value)
-    assert result_keys, "应能解析到 result = { ... } 字典字面量"
+                if isinstance(sub, ast.Return) and isinstance(sub.value, ast.Dict):
+                    for k in sub.value.keys:
+                        if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                            result_keys.add(k.value)
+    assert result_keys, "应能解析到 _compute_dashboard_stats 里的 return {...} 字典字面量"
 
     forbidden = {
         "today_completed",
