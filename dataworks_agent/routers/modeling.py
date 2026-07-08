@@ -27,6 +27,35 @@ _idempotency_cache: dict[str, tuple[str, float]] = {}
 _IDEMPOTENCY_TTL = 600.0  # 10 分钟过期
 
 
+def _invalidate_tasks_cache() -> None:
+    """T1: 任务列表写操作后使 tasks:* 缓存失效，避免最多 30s 陈旧。
+
+    缓存键形如 tasks:{client_ip}:scope:...，invalidate_by_source("tasks")
+    按 "tasks:" 前缀批量清除（见 cache/manager.py:invalidate_by_source）。
+    """
+    from dataworks_agent.cache import get_cache_manager
+
+    get_cache_manager().invalidate_by_source("tasks")
+
+
+async def _publish_task_status_changed(task_id: str, status: str) -> None:
+    """发布任务状态变更事件，驱动 dashboard WS 实时刷新（与状态机链路一致）。
+
+    使用 publish_async 以正确 await 订阅回调（_broadcast_task_status 是 async）。
+    """
+    import time
+
+    from dataworks_agent.cache.events import Event, EventType, get_event_bus
+
+    await get_event_bus().publish_async(
+        Event(
+            event_type=EventType.TASK_STATUS_CHANGED,
+            source="task",
+            data={"task_id": task_id, "status": status, "timestamp": time.time()},
+        )
+    )
+
+
 @router.post("/tasks", status_code=202)
 async def create_task(
     request: Request,

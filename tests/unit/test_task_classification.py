@@ -108,3 +108,26 @@ class TestInferNodeTypeSql:
         assert "where" in compiled
         assert "case" in compiled
         assert "holo" in compiled
+
+    def test_sql_uses_or_for_imp_task_prefixes(self) -> None:
+        """imp_/task_ 前缀必须用 OR 联合（护栏：防止 SQLAlchemy 退化把 or_ 编译成 AND）。
+
+        R17 自审确认 v15 写法正确后固化此断言：未来 SQLAlchemy 版本升级、
+        or_ 在 case.when 条件语义若变，此测试会先红。
+        """
+        sql = str(
+            select(ModelingTaskModel.task_id, infer_node_type_sql().label("n")).compile(
+                dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+        lower = sql.lower()
+        # 必须含 OR（imp_ 与 task_ 前缀条件用 OR 连接）
+        assert "or" in lower, f"应含 OR（imp_/task_ 前缀用 OR），实际 SQL：{sql}"
+        # 断言 'imp_%' 和 'task_%' 之间必须用 'OR' 而非 'AND'。
+        # 实际 SQL 是 "LIKE 'imp_%' OR modeling_tasks.task_id LIKE 'task_%'"，
+        # LIKE 与 'imp_%' 中间夹 modeling_tasks.task_id 列前缀。
+        import re
+
+        match = re.search(r"like\s+'imp_%'\s+(or|and)\s+\S+\.\S+\s+like\s+'task_%'", lower)
+        assert match is not None, f"imp_/task_ LIKE 模式未紧邻出现：{sql}"
+        assert match.group(1) == "or", f"imp_/task_ 必须用 OR，实际用 {match.group(1)}"

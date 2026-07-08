@@ -117,7 +117,10 @@ class TaskStateMachine:
         try:
             from dataworks_agent.cache.events import Event, EventType, get_event_bus
 
-            event = Event(
+            # 注意：参数 event: str 是事件名（"start"/"step"/"progress"/"error"/"done"）。
+            # 这里用 evt 命名 Event 对象，避免与参数 event 冲突（否则 data["event"] 会
+            # 拿到 Event 对象而非字符串，破坏下游 broadcast 契约）。
+            evt = Event(
                 event_type=EventType.TASK_STATUS_CHANGED,
                 source=self.task_id,
                 data={
@@ -131,7 +134,7 @@ class TaskStateMachine:
 
             async def _publish() -> None:
                 try:
-                    await get_event_bus().publish_async(event)
+                    await get_event_bus().publish_async(evt)
                 except Exception as e:
                     logger.debug("TASK_STATUS_CHANGED 异步发布失败: %s", e)
 
