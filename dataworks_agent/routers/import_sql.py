@@ -71,14 +71,33 @@ def parse_ddl_file(content: str) -> list[dict]:
 
         m = re.match(
             r"(?:DROP\s+TABLE\s+IF\s+EXISTS\s+\S+\s*;\s*)?\s*"
-            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`([^`]+)`|(\S+))\s*\((.*)\)\s*(.*)",
+            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`([^`]+)`|(\S+))\s*\(",
             stmt,
             re.IGNORECASE | re.DOTALL,
         )
         if m:
             table_name = (m.group(1) or m.group(2)).strip()
-            columns_block = m.group(3)
-            after = m.group(4)
+            # 定位列定义块的顶层右括号：按括号深度计数，支持 STRUCT<>/ARRAY<>/DECIMAL(,)
+            # 等嵌套括号，避免贪婪正则把 PARTITIONED BY(...) 等内容吞进列块导致重建 DDL 错位（I3）。
+            start = m.end()
+            depth = 1
+            i = start
+            n = len(stmt)
+            in_str = False
+            while i < n:
+                ch = stmt[i]
+                if ch == "'":
+                    in_str = not in_str
+                elif not in_str:
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                i += 1
+            columns_block = stmt[start:i]
+            after = stmt[i + 1:]
 
             # MCP 自动加 dataworks. 前缀，所以去掉原 SQL 中的 schema 前缀
             bare_name = re.sub(r"^(dataworks|dataworks_dev|cda|cda_dev)\.", "", table_name)
@@ -93,13 +112,14 @@ def parse_ddl_file(content: str) -> list[dict]:
                 for p in re.findall(r"(\w+)\s+string", part_str, re.IGNORECASE):
                     partitions.append(p)
 
-            # 识别层
+            # 识别层（按前缀匹配，避免 ods_dwd_x 被误判为 DWD，I5）
+            name_for_layer = bare_name.lower()
             layer = "ODS"
-            if "dwd_" in table_name.lower():
+            if name_for_layer.startswith("dwd_"):
                 layer = "DWD"
-            elif "dim_" in table_name.lower():
+            elif name_for_layer.startswith("dim_"):
                 layer = "DIM"
-            elif "dws_" in table_name.lower():
+            elif name_for_layer.startswith("dws_"):
                 layer = "DWS"
 
             # 识别更新方式

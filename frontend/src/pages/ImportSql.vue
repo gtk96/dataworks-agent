@@ -28,7 +28,7 @@
       </el-row>
       <el-form-item>
         <el-button type="primary" @click="doPreview" :loading="loading">预览</el-button>
-        <el-button type="success" @click="doImport" :loading="loading" :disabled="mode==='dry_run'">执行导入</el-button>
+        <el-button type="success" @click="doImport" :loading="loading">执行导入</el-button>
       </el-form-item>
     </el-form>
 
