@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from typing import Any, Literal
 
 from fastapi import Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from dataworks_agent.config import settings
+
+# 表名/标识符白名单正则（B3）：字母/数字/下划线，且以字母或下划线开头。
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def require_write_access(x_api_key: str = Header(default="", alias="X-API-Key")):
@@ -291,6 +295,17 @@ class SyncDiffResponse(BaseModel):
 class SyncExecuteRequest(BaseModel):
     table_name: str
     project_id: int = 0
+
+    @field_validator("table_name")
+    @classmethod
+    def _validate_table_name(cls, v: str) -> str:
+        # 标识符白名单：防止 table_name 被原样拼进 DDL 造成注入（B3）。
+        # ODPS/Holo 表名仅允许字母/数字/下划线，且以字母或下划线开头。
+        if not v or not _IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"非法的表名: {v!r}（仅允许字母/数字/下划线，且以字母或下划线开头）"
+            )
+        return v
 
 
 # ═══════════════════════════════════════════════════════════════

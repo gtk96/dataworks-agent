@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from dataworks_agent.config import settings
 from dataworks_agent.schemas import SyncDiffResponse
 
 logger = logging.getLogger(__name__)
+
+# 表名标识符白名单（B3）：与 schemas._IDENTIFIER_RE 同源约束。
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _assert_safe_table_name(table_name: str) -> None:
+    """防止 table_name 被原样拼进 DDL 造成注入（B3）。"""
+    if not table_name or not _IDENTIFIER_RE.match(table_name):
+        raise ValueError(
+            f"非法的表名: {table_name!r}（仅允许字母/数字/下划线，且以字母或下划线开头）"
+        )
 
 
 class SyncCatastrophicError(Exception):
@@ -27,6 +39,7 @@ class SyncEngine:
 
     async def sync_table(self, table_name: str, project_id: int | None = None) -> SyncDiffResponse:
         """获取 dev/prod 差异对比。"""
+        _assert_safe_table_name(table_name)
         from dataworks_agent.mcp.operations import get_table_ddl
 
         dev_guid = f"odps.{settings.dataworks_dev_schema}.{table_name}"
@@ -81,7 +94,7 @@ class SyncEngine:
             # 回滚 ALTER
             try:
                 rollback_ddl = self._generate_rollback_ddl(prod_ddl_snapshot, table_name)
-                await execute_ddl(rollback_ddl)
+                await execute_ddl(rollback_ddl, guarded=False)  # 受控恢复操作，放行 DROP TABLE
                 logger.error("同步失败，表结构已回滚: %s", e)
                 raise SyncRollbackError(f"数据同步失败(已回滚DDL): {e}")
             except SyncRollbackError:

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     di_resource_group: str = ""
     init_di_max_wait_seconds: int = 3600
     sql_template_root: str = "E:/dw-modeling-template/sql"
+    # 导入 SQL 的可信根目录白名单；为空时回退到 sql_template_root。
+    # 用于阻止 /api/import、/api/preview、/api/deploy 的路径遍历（B1）。
+    import_allowed_roots: list[str] = []
 
     # ── MaxCompute（pyodps）执行底座 ──
     maxcompute_endpoint: str = "http://service.cn-shenzhen.maxcompute.aliyun.com/api"

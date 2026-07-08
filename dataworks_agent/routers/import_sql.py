@@ -168,13 +168,45 @@ def _save_task_record(table_info: dict, source_file: str, client_ip: str = "127.
         logger.warning("写入任务记录失败: %s (table=%s)", e, table_info.get("table_name"))
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    """判断 path 是否位于 root（含恰好等于 root）之下。"""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_import_root(path: str) -> Path:
+    """校验并解析导入根目录，防止路径遍历（B1）。
+
+    仅允许位于配置白名单根目录（settings.import_allowed_roots，缺省回退到
+    sql_template_root）之下；拒绝 '..' 逃逸与越界绝对路径。
+    """
+    from dataworks_agent.config import settings
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    candidate = candidate.resolve()
+
+    roots = settings.import_allowed_roots or [settings.sql_template_root]
+    norm_roots = [Path(r).resolve() for r in roots]
+    if not any(candidate == root or _is_within(candidate, root) for root in norm_roots):
+        raise HTTPException(
+            status_code=400,
+            detail=f"导入目录越权：{path!r} 不在允许的根目录内",
+        )
+    return candidate
+
+
 def scan_sql_files(
     base_path: str,
     layer: str = "all",
     exclude_patterns: tuple[str, ...] = ("maintenance", "_meta_probe"),
 ) -> list[Path]:
     """扫描目录下的 SQL 文件。"""
-    base = Path(base_path)
+    base = _resolve_import_root(base_path)
     if not base.exists():
         raise FileNotFoundError(f"目录不存在: {base_path}")
 
@@ -841,7 +873,7 @@ async def _deploy_dwd_openapi(dwd_tables, req, node_client, result, ods_uuids, s
 
 def _extract_ods_dml(table_name: str, base_dir: str) -> str:
     """从 ODS DML 文件中提取指定表的 INSERT 段。"""
-    base = Path(base_dir)
+    base = _resolve_import_root(base_dir)
     sys = "ofc" if "ofc" in table_name else "oms"
     f = base / "ods" / "dml" / f"ods_hl_{sys}__order_fulfillment_hour_dml.sql"
     if not f.exists():
@@ -865,7 +897,7 @@ def _extract_ods_dml(table_name: str, base_dir: str) -> str:
 
 def _extract_dwd_dml(table_name: str, base_dir: str) -> str:
     """从 DWD DML 文件中提取指定表的完整内容（精确匹配表名）。"""
-    base = Path(base_dir)
+    base = _resolve_import_root(base_dir)
     for f in sorted((base / "dwd" / "dml").glob("*.sql")):
         if table_name in f.name.lower():
             return f.read_text(encoding="utf-8").strip()

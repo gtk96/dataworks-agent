@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from dataworks_agent.api_clients.destructive_guard import guard_sql
 from dataworks_agent.state import app_state
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,15 @@ async def _mcp() -> Any:
     return pool
 
 
-async def execute_ddl(ddl: str) -> dict:
-    """直接在 MC 执行 CREATE TABLE / ALTER TABLE。"""
+async def execute_ddl(ddl: str, guarded: bool = True) -> dict:
+    """直接在 MC 执行 CREATE TABLE / ALTER TABLE。
+
+    guarded=True 时先经 DestructiveOpGuard 拦截破坏性操作（与 MaxComputeClient
+    对齐，修复 B2：此前 MCP 热路径绕过 guard）。回滚等受控恢复操作可传
+    guarded=False。
+    """
+    if guarded:
+        guard_sql(ddl)
     pool = await _mcp()
     result = await pool.call_tool("execute_ddl", {"ddl_sql": ddl})
     # MCP 可能返回纯文本结果
@@ -47,6 +55,7 @@ async def list_tables(project: str, keyword: str = "") -> list[dict]:
 
 async def submit_query(sql: str) -> list[dict]:
     """ODPS SELECT 查询（IDA 接口，全账号有权限）。"""
+    guard_sql(sql)  # 拦截 DELETE/TRUNCATE/DROP 等注入（修复 B2 绕过 guard）
     pool = await _mcp()
     return await pool.call_tool("submit_query", {"sql": sql})
 
