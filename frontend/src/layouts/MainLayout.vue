@@ -65,6 +65,18 @@
           <el-icon><Setting /></el-icon>
           <span>系统设置</span>
         </el-menu-item>
+        <el-menu-item index="/dwd">
+          <el-icon><EditPen /></el-icon>
+          <span>DWD JSON 建模</span>
+        </el-menu-item>
+        <el-menu-item index="/pipeline">
+          <el-icon><Connection /></el-icon>
+          <span>管道队列</span>
+        </el-menu-item>
+        <el-menu-item index="/tasks/create-wizard">
+          <el-icon><Plus /></el-icon>
+          <span>任务创建向导</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -85,7 +97,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { request } from '@/utils/request'
-import { DataBoard } from '@element-plus/icons-vue'
+import { DataBoard, EditPen } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
@@ -105,6 +117,9 @@ const pageTitle = computed(() => {
     '/artifacts': '产物管理',
     '/import': '批量导入',
     '/settings': '系统设置',
+    '/dwd': 'DWD JSON 建模',
+    '/pipeline': '管道队列',
+    '/tasks/create-wizard': '任务创建向导',
   }
   // 子路由前缀匹配（如 /tasks/:id → 任务列表）
   for (const [prefix, title] of Object.entries(map)) {
