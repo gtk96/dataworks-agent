@@ -21,6 +21,8 @@ mcp.local.json
 .coverage
 .coverage.*
 htmlcov/
+# 测试/CI 产物 xml（junit / coverage 等）：v9 评审 §6.4 修复，避免 stale 产物误导 reviewer
+reports/*.xml
 .pytest-basetmp/
 .pytest-tmp/
 .pytest-fresh*/
