@@ -9,16 +9,25 @@ import pytest
 # scan_sql_files 用 glob 'ods/**/*.sql' / 'dwd/**/*.sql' / 'dim/**/*.sql' 扫描；
 # 这里预置三个最小 SQL 文件保证 layer 断言通过。本地 + CI 都走相对路径。
 FIXTURE_SQL_DIR = str(Path(__file__).parent / "fixtures" / "sample_sql")
+# B1 修复后白名单拒绝路径越权（400）；若要测"目录不存在"分支，
+# 路径需落在白名单内（fixture 根）但指向不存在的子目录。
+NONEXISTENT_FIXTURE_SUBDIR = str(
+    Path(__file__).parent / "fixtures" / "sample_sql" / "_does_not_exist_xyz"
+)
 
 # ─── ImportSql ─────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_import_preview_nonexistent_path(mocked_client):
-    """GET /api/import/preview — 目录不存在应 404。"""
+    """GET /api/import/preview — 路径在白名单内但目录不存在应 404。
+
+    B1 修复后白名单越权 400；本测试需路径落在白名单内（fixture 根）才走
+    '目录不存在' 分支（scan_sql_files 内 FileNotFoundError → 404）。
+    """
     resp = await mocked_client.get(
         "/api/import/preview",
-        params={"path": "E:/nonexistent_dir_abc123", "layer": "all"},
+        params={"path": NONEXISTENT_FIXTURE_SUBDIR, "layer": "all"},
     )
     assert resp.status_code == 404
 

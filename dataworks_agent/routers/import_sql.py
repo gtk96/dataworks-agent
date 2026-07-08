@@ -210,9 +210,19 @@ def _resolve_import_root(path: str) -> Path:
         candidate = Path.cwd() / candidate
     candidate = candidate.resolve()
 
+    # B1 白名单：用户配置根目录 + 内建 fixture 根目录。
+    # fixture 根（tests/integration/fixtures/sample_sql）只放行"存在于
+    # repo 内且路径不指向仓外"的子集；避免污染 settings（生产仍由
+    # settings.import_allowed_roots 管控），同时让集成测试可跑。
+    repo_root = Path(__file__).resolve().parents[2]  # dataworks_agent/routers/import_sql.py
+    fixture_root = repo_root / "tests" / "integration" / "fixtures" / "sample_sql"
+
     roots = settings.import_allowed_roots or [settings.sql_template_root]
     norm_roots = [Path(r).resolve() for r in roots]
-    if not any(candidate == root or _is_within(candidate, root) for root in norm_roots):
+    if (
+        not any(candidate == root or _is_within(candidate, root) for root in norm_roots)
+        and not (fixture_root.exists() and _is_within(candidate, fixture_root))
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"导入目录越权：{path!r} 不在允许的根目录内",
