@@ -10,8 +10,10 @@ import re
 from datetime import UTC
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
+from dataworks_agent.schemas import require_write_access
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +255,11 @@ def scan_sql_files(
 
 
 @router.post("/import", response_model=ImportResult)
-async def import_sql_files(req: ImportRequest, request: Request):
+async def import_sql_files(
+    req: ImportRequest,
+    request: Request,
+    _auth=Depends(require_write_access),  # noqa: B008
+):
     """批量导入 SQL 文件：解析 DDL → 执行建表."""
     try:
         files = scan_sql_files(req.path, req.layer)
@@ -416,7 +422,10 @@ def _hourly_parameters(uid: int, project_id: int, bff_base: str, base_h: dict) -
 
 
 @router.post("/deploy")
-async def deploy_full_stack(req: DeployRequest):
+async def deploy_full_stack(
+    req: DeployRequest,
+    _auth=Depends(require_write_access),  # noqa: B008
+):
     """一键部署：建表 → 创建 IDE 节点 → 写 DML → 配调度 → 加参数 → 加自依赖 → 配 DWD 依赖。
 
     优先使用 AK/SK OpenAPI（_node_client），不可用时降级到 Cookie BFF。

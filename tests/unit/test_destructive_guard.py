@@ -81,3 +81,26 @@ class TestNodeOps:
     @pytest.mark.parametrize("op", ["CREATE_NODE", "UPDATE_NODE", "DEPLOY", "GET_NODE"])
     def test_allowed_node_ops(self, op):
         guard_node_op(op)  # 不抛
+
+
+@pytest.mark.asyncio
+async def test_bff_delete_package_blocked_by_guard(monkeypatch):
+    """delete_package 经 guard_node_op 拦截，不发起 BFF 请求（v9 §3.1）。"""
+    from dataworks_agent.api_clients.bff_client import DataWorksClient
+
+    client = DataWorksClient.__new__(DataWorksClient)
+    client.project_id = 1
+    client.last_error = None
+
+    called = False
+
+    async def fake_post(*_a, **_k):
+        nonlocal called
+        called = True
+        return {"code": 200}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    ok = await client.delete_package("uuid-123")
+    assert ok is False
+    assert called is False
+    assert client.last_error

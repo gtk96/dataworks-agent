@@ -381,6 +381,17 @@ class DataWorksOpenAPIClient:
         object_ids 为待发布的节点 id 列表；deploy_type 发布类型（Online/Offline，
         真实取值以 OpenAPI 调试器为准）。**发布前须经人工授权。**
         """
+        from dataworks_agent.api_clients.destructive_guard import (
+            DestructiveOpBlockedError,
+            guard_node_op,
+        )
+
+        if str(deploy_type).strip().upper() in ("OFFLINE", "OFFLINE_NODE", "UNDEPLOY"):
+            try:
+                guard_node_op("OFFLINE_NODE")
+            except DestructiveOpBlockedError:
+                raise
+
         from alibabacloud_dataworks_public20240518 import models as m
 
         req = m.CreateDeploymentRequest(

@@ -38,11 +38,7 @@ async def main() -> None:
             if not vertex_uuid:
                 print(f"  SKIP: {path} (no vertex uuid)")
                 continue
-            resp = await bff._post(
-                "ide/deletePackage",
-                {"projectId": bff.project_id, "uuid": vertex_uuid},
-            )
-            ok = resp.get("code") == 200
+            ok = await bff.delete_package(vertex_uuid)
             print(f"  {'OK' if ok else 'FAIL'}: {path} (uuid={vertex_uuid})")
             if ok:
                 deleted += 1

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
+from dataworks_agent.config import settings
+from dataworks_agent.middleware.client_ip import resolve_client_ip
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,15 +37,8 @@ class IPIsolationMiddleware(BaseHTTPMiddleware):
         self._contexts: dict[str, UserContext] = {}
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "127.0.0.1"
-
-        # T4: 反向代理(nginx 等)后取真实客户端 IP。
-        # 仅当直连客户端是受信代理(本机/网关)时才信任 X-Forwarded-For，
-        # 否则该头可被伪造。取最前一个 IP 即真实客户端。
-        if client_ip in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
-            forwarded = request.headers.get("X-Forwarded-For")
-            if forwarded:
-                client_ip = forwarded.split(",")[0].strip()
+        trusted = frozenset(settings.trusted_proxies or [])
+        client_ip = resolve_client_ip(request, trusted)
 
         # 获取或创建用户上下文
         if client_ip not in self._contexts:

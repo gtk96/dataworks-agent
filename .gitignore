@@ -36,6 +36,10 @@ reports/*.xml
 frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
+frontend/reports/
+# 误入库的外部 README 解码副本（v9 §3.6）
+readme_decoded.md
+*decoded.md
 .mimocode/
 chk_*.py
 fix_*.py

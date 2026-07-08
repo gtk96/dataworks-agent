@@ -442,6 +442,25 @@ class _NodeLifecycleMixin:
             self.last_error = str(exc)
             return None
 
+    async def delete_package(self, vertex_uuid: str) -> bool:
+        """删除 IDE 节点包（ide/deletePackage）。执行层拦截破坏性操作（v9 §3.1）。"""
+        from dataworks_agent.api_clients.destructive_guard import (
+            DestructiveOpBlockedError,
+            guard_node_op,
+        )
+
+        try:
+            guard_node_op("DELETE_NODE")
+        except DestructiveOpBlockedError as exc:
+            self.last_error = str(exc)
+            return False
+
+        resp = await self._post(
+            "ide/deletePackage",
+            {"projectId": self.project_id, "uuid": str(vertex_uuid)},
+        )
+        return resp.get("code") == 200
+
 
 class _ScheduleMixin:
     """调度 / 工作流依赖 / 部署发布。"""

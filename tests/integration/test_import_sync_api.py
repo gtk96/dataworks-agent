@@ -108,6 +108,29 @@ async def test_import_import_dry_run(mocked_client):
 
 
 @pytest.mark.asyncio
+async def test_import_write_requires_api_key_when_configured(mocked_client):
+    """POST /api/import/import — deploy_api_key 配置后须 X-API-Key（v10 §6.2）。"""
+    from dataworks_agent.config import settings
+
+    original = settings.deploy_api_key
+    settings.deploy_api_key = "test-write-key"
+    try:
+        resp = await mocked_client.post(
+            "/api/import/import",
+            json={"path": FIXTURE_SQL_DIR, "layer": "all", "dry_run": True},
+        )
+        assert resp.status_code == 403
+        resp_ok = await mocked_client.post(
+            "/api/import/import",
+            json={"path": FIXTURE_SQL_DIR, "layer": "all", "dry_run": True},
+            headers={"X-API-Key": "test-write-key"},
+        )
+        assert resp_ok.status_code in (200, 422, 500, 503)
+    finally:
+        settings.deploy_api_key = original
+
+
+@pytest.mark.asyncio
 async def test_import_deploy_validation(mocked_client):
     """POST /api/import/deploy — 缺参数应 422。"""
     resp = await mocked_client.post("/api/import/deploy", json={})

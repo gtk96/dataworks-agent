@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8085
     deploy_api_key: str = ""  # 写操作校验，为空时不校验
+    # 受信反向代理对端 IP（如 nginx 127.0.0.1 / 10.0.0.1）；仅这些 peer 才解析 X-Forwarded-For
+    trusted_proxies: list[str] = []
 
     # ── IDE ──
     ide_agent_dir: str = "dataworks_agent"

@@ -262,3 +262,25 @@ async def test_ip_isolation_keeps_active_context():
     await mw.dispatch(req, call_next)
     mw._cleanup_expired()
     assert "10.0.0.2" in mw._contexts, "刚活动的 IP 不应被清理"
+
+
+@pytest.mark.asyncio
+async def test_ip_isolation_ignores_xff_without_trusted_proxy(monkeypatch):
+    """loopback peer 时忽略 X-Forwarded-For，避免伪造本机 IP（v10 §2.2）。"""
+    from dataworks_agent.config import settings
+    from dataworks_agent.middleware.ip_isolation import IPIsolationMiddleware
+
+    monkeypatch.setattr(settings, "trusted_proxies", [])
+    mw = IPIsolationMiddleware(app=None)
+    req = _make_request(
+        method="GET",
+        client_ip="127.0.0.1",
+        headers={"X-Forwarded-For": "203.0.113.99"},
+    )
+
+    async def call_next(r):
+        assert r.state.client_ip == "127.0.0.1"
+        return "ok"
+
+    result = await mw.dispatch(req, call_next)
+    assert result == "ok"

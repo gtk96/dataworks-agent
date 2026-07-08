@@ -3,30 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 
 from fastapi import APIRouter, HTTPException, Request
 
 from dataworks_agent.cookie.crypto import decrypt_cookie, has_cookie, save_cookie
 from dataworks_agent.cookie.verify import full_cookie_health_check
+from dataworks_agent.middleware.client_ip import is_loopback, peer_ip
 from dataworks_agent.schemas import CookieSaveRequest, CookieStatusResponse
 
 router = APIRouter()
 
 
-def _client_ip(request: Request) -> str:
-    return getattr(request.state, "client_ip", "127.0.0.1")
-
-
-def _require_local(request: Request):
-    """仅允许本机访问敏感端点，避免凭据/流量被远程读取。"""
-    if _client_ip(request) not in ("127.0.0.1", "localhost", "::1"):
+def _require_local(request: Request) -> None:
+    """仅允许本机 TCP 直连访问敏感端点（v9 §2.2：不信任 X-Forwarded-For）。"""
+    if not is_loopback(peer_ip(request)):
         raise HTTPException(status_code=403, detail="仅限本机访问")
 
 
-def _require_admin_token(request: Request, token: str):
+def _require_admin_token(request: Request, token: str) -> None:
     """校验 Admin Token（HMAC over COOKIE_ENCRYPTION_KEY），用于程序化访问。"""
-    import hmac
-
     from dataworks_agent.config import settings
 
     expected = hmac.new(
@@ -36,16 +32,19 @@ def _require_admin_token(request: Request, token: str):
         raise HTTPException(status_code=403, detail="无效的 Admin Token")
 
 
+def _audit_cookie(action: str, request: Request, **kwargs) -> None:
+    from dataworks_agent.services.audit import audit_log
+
+    audit_log(action, ip=peer_ip(request), **kwargs)
+
+
 @router.post("")
 async def save_cookie_endpoint(body: CookieSaveRequest, request: Request):
     """保存 DataWorks Cookie（加密存储）。"""
-    from dataworks_agent.services.audit import audit_log
-
     if not body.cookie_string or len(body.cookie_string) < 20:
         raise HTTPException(status_code=400, detail="Cookie 字符串无效")
     save_cookie(body.cookie_string)
-    client_ip = getattr(request.state, "client_ip", "127.0.0.1")
-    audit_log("cookie_save", ip=client_ip, length=len(body.cookie_string))
+    _audit_cookie("cookie_save", request, length=len(body.cookie_string))
     return {"message": "Cookie 已加密保存", "length": len(body.cookie_string)}
 
 
@@ -86,17 +85,19 @@ async def get_cookie_full(request: Request, token: str = ""):
     cookie = decrypt_cookie()
     if not cookie:
         raise HTTPException(status_code=404, detail="Cookie 未配置")
+    _audit_cookie("cookie_full", request, length=len(cookie))
     return {"cookie": cookie}
 
 
 @router.get("/copy")
 async def copy_cookie(request: Request):
-    """复制 Cookie 明文（仅本机，供设置页"复制 Cookie"按钮使用，无需 Admin Token）。"""
+    """复制 Cookie 明文（仅本机 TCP 直连，供设置页"复制 Cookie"按钮使用）。"""
     _require_local(request)
 
     cookie = decrypt_cookie()
     if not cookie:
         raise HTTPException(status_code=404, detail="Cookie 未配置")
+    _audit_cookie("cookie_copy", request, length=len(cookie))
     return {"cookie": cookie}
 
 
@@ -110,15 +111,16 @@ async def auto_fetch_cookie(request: Request):
         raise HTTPException(status_code=503, detail="CDP 客户端不可用")
 
     try:
-        # 使用 CDP Network.getCookies 提取所有 Cookie（含 httpOnly）
         cookie_str = await cdp.extract_cookies_via_cdp()
         if cookie_str and len(cookie_str) > 20:
             save_cookie(cookie_str)
+            _audit_cookie("cookie_auto_fetch", request, length=len(cookie_str))
             return {"message": "Cookie 已自动提取", "length": len(cookie_str)}
-        else:
-            raise HTTPException(
-                status_code=400, detail="未能提取到有效 Cookie，请确保 Chrome 已登录 DataWorks"
-            )
+        raise HTTPException(
+            status_code=400, detail="未能提取到有效 Cookie，请确保 Chrome 已登录 DataWorks"
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"自动提取失败: {e}") from e
 
@@ -133,17 +135,18 @@ async def wait_for_login(request: Request):
         raise HTTPException(status_code=503, detail="CDP 客户端不可用")
 
     try:
-        # 确保 Chrome 在运行
         await cdp.ensure_chrome(auto_launch=True)
         logged_in = await cdp.wait_for_login(timeout=120)
         if logged_in:
             cookie_str = await cdp.extract_cookies_via_cdp()
             if cookie_str:
                 save_cookie(cookie_str)
+                _audit_cookie("cookie_wait_login", request, length=len(cookie_str))
                 return {
                     "status": "ok",
                     "message": f"登录成功，已提取 Cookie ({len(cookie_str)} 字符)",
                 }
+            _audit_cookie("cookie_wait_login", request, length=0, detail="empty_cookie")
             return {"status": "ok", "message": "登录成功但 Cookie 提取为空"}
         raise HTTPException(
             status_code=408, detail="登录等待超时，请在浏览器中手动扫码后点击'自动提取'"
@@ -156,8 +159,9 @@ async def wait_for_login(request: Request):
 
 @router.get("/scan-uuids")
 async def scan_uuids(request: Request):
-    """通过 CDP 抓取 IDE 页面所有网络请求（15 秒窗口，仅本机）。"""
+    """通过 CDP 抓取 IDE 页面所有网络请求（15 秒窗口，仅本机 TCP 直连）。"""
     _require_local(request)
+    _audit_cookie("cookie_scan_uuids", request)
 
     from dataworks_agent.state import app_state
 
@@ -174,12 +178,11 @@ async def scan_uuids(request: Request):
 
     captured: list[str] = []
 
-    def on_request(request):
-        url = request.url
-        method = request.method
-        # Capture ALL requests to dataworks BFF
+    def on_request(req):
+        url = req.url
+        method = req.method
         if "data.aliyun.com" in url or "dataworks" in url:
-            post_data = request.post_data or ""
+            post_data = req.post_data or ""
             captured.append(f"{method} {url.split('?')[0].split('/')[-1]} {post_data[:120]}")
 
     page.on("request", on_request)
@@ -203,6 +206,7 @@ async def launch_browser(request: Request):
     if cdp:
         try:
             await cdp.navigate_to_ide()
+            _audit_cookie("cookie_launch_browser", request)
             return {"message": "已导航到 DataWorks IDE"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"导航失败: {e}") from e
