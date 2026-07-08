@@ -1,13 +1,13 @@
 <template>
   <div>
-    <el-alert type="info" title="批量导入 SQL 建表" description="从本地 .sql 文件批量解析 CREATE TABLE 并执行建表" show-icon style="margin-bottom:20px" />
+    <el-alert type="info" title="批量导入 SQL 建表" description="从本地 .sql 文件批量解析 CREATE TABLE 并执行建表。本页仅创建表结构，不会配置调度/节点/依赖；调度请在「批量部署」页完成。" show-icon style="margin-bottom:20px" />
 
     <el-form label-position="top" style="max-width:600px">
       <el-form-item label="SQL 目录路径">
         <el-input v-model="path" placeholder="E:/dw-modeling-template/sql/order-fulfillment" />
       </el-form-item>
       <el-row :gutter="12">
-        <el-col :span="8">
+        <el-col :span="12">
           <el-form-item label="导入层级">
             <el-select v-model="layer">
               <el-option value="all" label="全部" />
@@ -17,17 +17,7 @@
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="8">
-          <el-form-item label="调度周期">
-            <el-select v-model="schedule">
-              <el-option value="auto" label="自动识别" />
-              <el-option value="hour" label="小时" />
-              <el-option value="day" label="天" />
-              <el-option value="none" label="不配置" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
+        <el-col :span="12">
           <el-form-item label="模式">
             <el-radio-group v-model="mode">
               <el-radio value="dry_run">仅预览</el-radio>
@@ -71,16 +61,6 @@
         <el-table-column prop="error" label="错误" />
       </el-table>
     </el-card>
-
-    <!-- 调度配置摘要 -->
-    <el-card v-if="scheduleConfigs.length" header="已生成调度配置" style="margin-top:20px">
-      <el-table :data="scheduleConfigs" size="small">
-        <el-table-column prop="table" label="表名" width="300" />
-        <el-table-column prop="cycle" label="周期" width="80" />
-        <el-table-column prop="cron" label="Cron" width="180" />
-        <el-table-column prop="params" label="参数" />
-      </el-table>
-    </el-card>
   </div>
 </template>
 
@@ -91,12 +71,10 @@ import { ElMessage } from 'element-plus'
 
 const path = ref('E:/dw-modeling-template/sql/order-fulfillment')
 const layer = ref('all')
-const schedule = ref('auto')
 const mode = ref('dry_run')
 const loading = ref(false)
 const preview = ref<any>(null)
 const result = ref<any>(null)
-const scheduleConfigs = ref<any[]>([])
 
 async function doPreview() {
   loading.value = true; result.value = null
@@ -104,23 +82,8 @@ async function doPreview() {
     const params = new URLSearchParams({ path: path.value, layer: layer.value })
     const r = await request<{ tables: { table: string; update_method: string }[] }>(`/api/import/preview?${params}`)
     preview.value = r
-    if (schedule.value !== 'none') {
-      scheduleConfigs.value = (r.tables || []).map(t => buildSchedule(t.table, t.update_method))
-    } else {
-      scheduleConfigs.value = []
-    }
   } catch (e: any) { ElMessage.error(e.message) }
   loading.value = false
-}
-
-function buildSchedule(table: string, updateMethod: string) {
-  const isHour = updateMethod === 'hour'
-  const cron = isHour ? '00 01 00-23/1 * * ?' : '00 01 03 * * ?'
-  const cycle = isHour ? 'NotDaily' : 'Daily'
-  const params = isHour
-    ? 'bizdate, gmtdate, gmtdate_last1h, hour_last1h, hour_last2h'
-    : 'bizdate'
-  return { table, cycle, cron, params }
 }
 
 async function doImport() {
