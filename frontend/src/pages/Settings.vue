@@ -144,7 +144,7 @@ async function launchBrowser() {
 async function copyCookie() {
   copying.value = true
   try {
-    const r = await request<{ cookie: string }>('/api/cookie/full')
+    const r = await request<{ cookie: string }>('/api/cookie/copy')
     if (r.cookie) {
       await navigator.clipboard.writeText(r.cookie)
       ElMessage.success(`已复制 Cookie (${r.cookie.length} 字符)`)
@@ -154,7 +154,7 @@ async function copyCookie() {
   } catch (e: any) {
     // 降级: 用 textarea
     try {
-      const r = await request<{ cookie: string }>('/api/cookie/full')
+      const r = await request<{ cookie: string }>('/api/cookie/copy')
       const ta = document.createElement('textarea')
       ta.value = r.cookie
       ta.style.position = 'fixed'

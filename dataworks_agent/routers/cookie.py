@@ -13,6 +13,29 @@ from dataworks_agent.schemas import CookieSaveRequest, CookieStatusResponse
 router = APIRouter()
 
 
+def _client_ip(request: Request) -> str:
+    return getattr(request.state, "client_ip", "127.0.0.1")
+
+
+def _require_local(request: Request):
+    """仅允许本机访问敏感端点，避免凭据/流量被远程读取。"""
+    if _client_ip(request) not in ("127.0.0.1", "localhost", "::1"):
+        raise HTTPException(status_code=403, detail="仅限本机访问")
+
+
+def _require_admin_token(request: Request, token: str):
+    """校验 Admin Token（HMAC over COOKIE_ENCRYPTION_KEY），用于程序化访问。"""
+    import hmac
+
+    from dataworks_agent.config import settings
+
+    expected = hmac.new(
+        settings.cookie_encryption_key.encode(), b"admin-access", "sha256"
+    ).hexdigest()[:16]
+    if token != expected:
+        raise HTTPException(status_code=403, detail="无效的 Admin Token")
+
+
 @router.post("")
 async def save_cookie_endpoint(body: CookieSaveRequest, request: Request):
     """保存 DataWorks Cookie（加密存储）。"""
@@ -56,22 +79,20 @@ async def verify_cookie(request: Request):
 
 @router.get("/full")
 async def get_cookie_full(request: Request, token: str = ""):
-    """获取完整 Cookie 明文（需要 IP 白名单 + Admin Token）。"""
-    import hmac
+    """获取完整 Cookie 明文（需要 IP 白名单 + Admin Token，供程序化调用）。"""
+    _require_local(request)
+    _require_admin_token(request, token)
 
-    from dataworks_agent.config import settings
+    cookie = decrypt_cookie()
+    if not cookie:
+        raise HTTPException(status_code=404, detail="Cookie 未配置")
+    return {"cookie": cookie}
 
-    client_ip = getattr(request.state, "client_ip", "127.0.0.1")
-    if client_ip not in ("127.0.0.1", "localhost", "::1"):
-        raise HTTPException(status_code=403, detail="仅限本机访问")
 
-    # 验证 Admin Token (HMAC over COOKIE_ENCRYPTION_KEY)
-    expected = hmac.new(
-        settings.cookie_encryption_key.encode(), b"admin-access", "sha256"
-    ).hexdigest()[:16]
-
-    if token != expected:
-        raise HTTPException(status_code=403, detail="无效的 Admin Token")
+@router.get("/copy")
+async def copy_cookie(request: Request):
+    """复制 Cookie 明文（仅本机，供设置页"复制 Cookie"按钮使用，无需 Admin Token）。"""
+    _require_local(request)
 
     cookie = decrypt_cookie()
     if not cookie:
@@ -135,7 +156,9 @@ async def wait_for_login(request: Request):
 
 @router.get("/scan-uuids")
 async def scan_uuids(request: Request):
-    """通过 CDP 抓取 IDE 页面所有网络请求（15 秒窗口）。"""
+    """通过 CDP 抓取 IDE 页面所有网络请求（15 秒窗口，仅本机）。"""
+    _require_local(request)
+
     from dataworks_agent.state import app_state
 
     cdp = getattr(app_state, "_cdp_client", None)
