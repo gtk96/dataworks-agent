@@ -1,6 +1,6 @@
 # dataworks-agent
 
-> 智能数仓建模系统 — DataWorks 全流程自动化 (v0.1.0)
+> 智能数仓建模系统 — DataWorks 全流程自动化 (v0.1.1)
 
 把 DataWorks 上的数仓建模工作(ODS/DWD/DWS/DIM/DMR 各层)从"手工建表 + 手工配调度 + 手工 SQL 推送"自动化,前端可视化操作,后端调 BFF + MCP + CDP 完成。
 

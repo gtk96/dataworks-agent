@@ -6,6 +6,7 @@ import time
 
 from fastapi import APIRouter, HTTPException
 
+from dataworks_agent import __version__
 from dataworks_agent.config import settings
 from dataworks_agent.schemas import HealthChecks, HealthResponse
 from dataworks_agent.state import app_state
@@ -58,7 +59,7 @@ async def health():
 
     return HealthResponse(
         status=status,
-        version="0.1.0",
+        version=__version__,
         uptime_seconds=uptime,
         checks=checks,
     )

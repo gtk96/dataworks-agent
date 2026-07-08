@@ -48,8 +48,8 @@
 | §3.3 ProxyHeadersMiddleware | high | `trusted_proxies` 已有字段，中间件仍自写 |
 | §4.3 DDL 五态 tokenizer | medium | `import_sql` 单引号 in_str |
 | §4.4 I5 层识别注释源 | medium | `-- layer:` 注释优先 |
-| §5.3 schedule_cycle dead code | medium | `ImportRequest` 遗留字段 |
-| §5.5 CLAUDE.md 文档漂移 | medium | R17/R18/B1-B3 未写入 §5/§6 |
+| §5.3 schedule_cycle dead code | medium | ~~`ImportRequest` 遗留字段~~ → **v0.1.1 已删** |
+| §5.5 CLAUDE.md 文档漂移 | medium | ~~R17/R18/B1-B3 未写入~~ → **v0.1.1 已补 §6 + §7.9/7.10** |
 | §6.5 Admin Token 时序/长度 | low | compare_digest + header 传参 |
 | §6.6 count_table 标识符 | low | MCP f-string |
 | §6.7 pre-commit pytest hook | low | 仅 ruff |

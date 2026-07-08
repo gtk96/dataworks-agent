@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from dataworks_agent import __version__
 from dataworks_agent.config import settings
 from dataworks_agent.metrics import get_metrics
 from dataworks_agent.state import app_state
@@ -62,7 +63,7 @@ class NoCacheStaticFiles(StaticFiles):
 async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
     # ── 启动阶段 ──
-    logger.info("dataworks-agent v0.1.0 启动中...")
+    logger.info("dataworks-agent v%s 启动中...", __version__)
 
     # 1. 初始化数据库
     from dataworks_agent.db.database import init_db
@@ -197,7 +198,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="dataworks-agent",
         description="智能数仓建模系统 — DataWorks 全流程自动化",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 

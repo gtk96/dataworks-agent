@@ -24,8 +24,6 @@ class ImportRequest(BaseModel):
     path: str  # 目录路径，如 E:/dw-modeling-template/sql/order-fulfillment
     layer: str = "all"  # ods | dwd | dim | all
     dry_run: bool = False  # True = 只解析不执行
-    schedule_cycle: str = ""  # 留空自动识别 (hour→NotDaily, 否则 Daily)
-    schedule_hour: int = 3  # 小时任务的调度时间
 
 
 class ImportResult(BaseModel):

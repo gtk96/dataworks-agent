@@ -1,6 +1,6 @@
 [project]
 name = "dataworks-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "智能数仓建模系统 - DataWorks 全流程自动化"
 requires-python = ">=3.12"
 dependencies = [
