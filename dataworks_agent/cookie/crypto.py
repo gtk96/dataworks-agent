@@ -13,7 +13,7 @@ import logging
 import os
 from pathlib import Path
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -73,7 +73,13 @@ def decrypt_cookie() -> str:
         token_b64 = fh.read()
     token = base64.urlsafe_b64decode(token_b64)
     f = _get_fernet()
-    return f.decrypt(token).decode("utf-8")
+    try:
+        return f.decrypt(token).decode("utf-8")
+    except InvalidToken:
+        logger.warning(
+            "cookie.dat 解密失败（COOKIE_ENCRYPTION_KEY 与加密时密钥不一致），需重新提取 Cookie"
+        )
+        return ""
 
 
 def save_cookie(cookie_string: str) -> None:

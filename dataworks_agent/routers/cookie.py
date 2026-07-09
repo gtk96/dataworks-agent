@@ -8,6 +8,7 @@ import hmac
 from fastapi import APIRouter, HTTPException, Request
 
 from dataworks_agent.cookie.crypto import decrypt_cookie, has_cookie, save_cookie
+from dataworks_agent.cookie.sync import apply_cookie_update
 from dataworks_agent.cookie.verify import full_cookie_health_check
 from dataworks_agent.middleware.client_ip import is_loopback, peer_ip
 from dataworks_agent.schemas import CookieSaveRequest, CookieStatusResponse
@@ -44,6 +45,7 @@ async def save_cookie_endpoint(body: CookieSaveRequest, request: Request):
     if not body.cookie_string or len(body.cookie_string) < 20:
         raise HTTPException(status_code=400, detail="Cookie 字符串无效")
     save_cookie(body.cookie_string)
+    await apply_cookie_update(body.cookie_string)
     _audit_cookie("cookie_save", request, length=len(body.cookie_string))
     return {"message": "Cookie 已加密保存", "length": len(body.cookie_string)}
 
@@ -101,23 +103,37 @@ async def copy_cookie(request: Request):
     return {"cookie": cookie}
 
 
+@router.get("/bg-poll")
+async def cookie_bg_poll_status():
+    """后台 Cookie 轮询状态。"""
+    from dataworks_agent.config import settings
+    from dataworks_agent.state import app_state
+
+    poll = dict(app_state.cookie_bg_poll)
+    poll["auto_refresh_enabled"] = bool(
+        settings.auto_login_enabled and settings.cookie_refresh_configured
+    )
+    poll["poll_seconds"] = settings.cookie_refresh_poll_seconds
+    return poll
+
+
 @router.post("/auto-fetch")
 async def auto_fetch_cookie(request: Request):
     """通过 CDP Network.getCookies 提取全部 Cookie（含 httpOnly）。"""
-    from dataworks_agent.state import app_state
-
-    cdp = getattr(app_state, "_cdp_client", None)
-    if not cdp:
-        raise HTTPException(status_code=503, detail="CDP 客户端不可用")
+    from dataworks_agent.cookie.background_refresh import cdp_extract_and_apply
 
     try:
-        cookie_str = await cdp.extract_cookies_via_cdp()
-        if cookie_str and len(cookie_str) > 20:
-            save_cookie(cookie_str)
-            _audit_cookie("cookie_auto_fetch", request, length=len(cookie_str))
-            return {"message": "Cookie 已自动提取", "length": len(cookie_str)}
+        result = await cdp_extract_and_apply()
+        if result["status"] == "success":
+            detail = result.get("detail", "")
+            length = int(detail.split()[0]) if detail.split() and detail.split()[0].isdigit() else 0
+            _audit_cookie("cookie_auto_fetch", request, length=length)
+            return {"message": "Cookie 已自动提取", "length": length or detail}
+        if result["status"] == "skipped":
+            raise HTTPException(status_code=429, detail=result.get("detail", "退避中"))
         raise HTTPException(
-            status_code=400, detail="未能提取到有效 Cookie，请确保 Chrome 已登录 DataWorks"
+            status_code=400,
+            detail=result.get("detail", "未能提取到有效 Cookie"),
         )
     except HTTPException:
         raise
@@ -138,16 +154,17 @@ async def wait_for_login(request: Request):
         await cdp.ensure_chrome(auto_launch=True)
         logged_in = await cdp.wait_for_login(timeout=120)
         if logged_in:
-            cookie_str = await cdp.extract_cookies_via_cdp()
-            if cookie_str:
-                save_cookie(cookie_str)
-                _audit_cookie("cookie_wait_login", request, length=len(cookie_str))
+            from dataworks_agent.cookie.background_refresh import cdp_extract_and_apply
+
+            result = await cdp_extract_and_apply()
+            if result["status"] == "success":
+                _audit_cookie("cookie_wait_login", request, detail=result.get("detail"))
                 return {
                     "status": "ok",
-                    "message": f"登录成功，已提取 Cookie ({len(cookie_str)} 字符)",
+                    "message": f"登录成功，已提取 Cookie ({result.get('detail', '')})",
                 }
-            _audit_cookie("cookie_wait_login", request, length=0, detail="empty_cookie")
-            return {"status": "ok", "message": "登录成功但 Cookie 提取为空"}
+            _audit_cookie("cookie_wait_login", request, length=0, detail="extract_failed")
+            return {"status": "ok", "message": "登录成功但 Cookie 提取失败"}
         raise HTTPException(
             status_code=408, detail="登录等待超时，请在浏览器中手动扫码后点击'自动提取'"
         )

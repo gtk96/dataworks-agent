@@ -17,6 +17,7 @@ class AppState:
         self.smoke_ok: bool = False
         self.smoke_failures: list[tuple[str, bool, str]] = []
         self.smoke_results: dict[str, dict] = {}
+        self.cookie_bg_poll: dict = {}
         self.task_queues: dict[str, asyncio.Queue] = {}
         self.startup_time: datetime = datetime.now(UTC)
 

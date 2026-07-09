@@ -87,6 +87,12 @@ class Settings(BaseSettings):
 
     cookie_keepalive_enabled: bool = False
     cdp_url: str = "http://localhost:9222"
+    auto_login_enabled: bool = True
+    cookie_refresh_poll_seconds: int = 600
+
+    @property
+    def cookie_refresh_configured(self) -> bool:
+        return bool((self.cdp_url or "").strip())
 
     # ── 告警配置 ──
     dingtalk_webhook: str = ""  # 钉钉机器人 Webhook URL

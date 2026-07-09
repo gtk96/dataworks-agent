@@ -95,6 +95,22 @@ class MCPClientPool:
 
         logger.info("MCP 连接池已连接到 %s", self._mcp_url)
 
+    def set_cookie_header(self, cookie: str) -> None:
+        """更新 MCP 请求头中的 Cookie（与 update_cookie 工具配合）。"""
+        if cookie:
+            self._headers["Cookie"] = cookie
+        else:
+            self._headers.pop("Cookie", None)
+
+    async def reconnect(self) -> None:
+        """MCP 会话失效时重新 initialize。"""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+        self._session_id = ""
+        self._headers.pop("Mcp-Session-Id", None)
+        await self.connect()
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """调用 MCP 工具 (JSON-RPC)。"""
         if not self._client:

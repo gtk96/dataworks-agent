@@ -634,6 +634,10 @@ class _MetadataLineageMixin:
                 "onlyShowDiSupport": "false",
             },
         )
+        if resp.get("code") not in (200, "200"):
+            self.last_error = str(resp.get("message") or resp.get("msg") or resp.get("code"))
+            logger.warning("ListDatasources2 业务失败: %s", self.last_error)
+            return []
         sources = (resp.get("data") or {}).get("dataSources") or []
         if not keyword:
             self._datasource_cache = sources

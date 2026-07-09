@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -174,6 +175,29 @@ async def lifespan(app: FastAPI):
 
     await cookie_health_monitor.start_keepalive(app_state._bff_client)
 
+    # 4b. Cookie 后台自助刷新（CDP 定时校验 + 失效重提取）
+    from dataworks_agent.cookie.background_refresh import (
+        cookie_background_refresh_loop,
+        run_cookie_background_refresh_once,
+    )
+
+    _cookie_refresh_stop = asyncio.Event()
+    _cookie_refresh_task = asyncio.create_task(
+        cookie_background_refresh_loop(_cookie_refresh_stop)
+    )
+    app_state._background_tasks = getattr(app_state, "_background_tasks", [])
+    app_state._background_tasks.append(_cookie_refresh_task)
+
+    async def _bootstrap_cookie_refresh() -> None:
+        await asyncio.sleep(5)
+        if settings.auto_login_enabled and settings.cookie_refresh_configured:
+            try:
+                await run_cookie_background_refresh_once()
+            except Exception as exc:
+                logger.warning("启动后 Cookie 自助刷新失败: %s", exc)
+
+    asyncio.create_task(_bootstrap_cookie_refresh())
+
     # 4. 冒烟检查
     from dataworks_agent.bootstrap import startup_smoke_check
 
@@ -200,6 +224,10 @@ async def lifespan(app: FastAPI):
     logger.info("dataworks-agent 正在关闭...")
     await task_monitor.stop()
     await cookie_health_monitor.stop_keepalive()
+    _cookie_refresh_stop.set()
+    _cookie_refresh_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await _cookie_refresh_task
     if app_state.mcp_pool:
         await app_state.mcp_pool.disconnect()
     if app_state._bff_client:
