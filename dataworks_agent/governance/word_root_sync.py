@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 WORD_ROOT_TABLE = "dim_pub_column_dictionary_static"
 
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -110,9 +111,7 @@ where column_name is not null and trim(column_name) <> ''
     mcp = app_state.mcp_pool
     rows = await run_odps_query(bff, mcp, sql)
     if not rows:
-        raise RuntimeError(
-            "无法从线上词根表拉取数据（MaxCompute/BFF/MCP 不可用或查询失败）"
-        )
+        raise RuntimeError("无法从线上词根表拉取数据（MaxCompute/BFF/MCP 不可用或查询失败）")
 
     entries = _parse_root_rows(rows)
     if not entries:

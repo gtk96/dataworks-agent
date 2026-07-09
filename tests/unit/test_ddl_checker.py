@@ -103,9 +103,7 @@ partitioned by (dt string comment '业务日期');"""
         async def _mock_check_fields(self, fields: list[str]) -> RootCheckResult:
             return RootCheckResult(
                 passed=True,
-                field_results=[
-                    RootCheckField(field_name=name, valid=True) for name in fields
-                ],
+                field_results=[RootCheckField(field_name=name, valid=True) for name in fields],
                 summary="0/2 个字段不合规（线上词根表 dim_pub_column_dictionary_static）",
                 source="online",
             )

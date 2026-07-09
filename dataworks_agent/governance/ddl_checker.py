@@ -8,9 +8,7 @@ from dataclasses import dataclass, replace
 from dataworks_agent.schemas import RootCheckField, RootCheckResult
 
 # 跳过分区/时间字段（不参与类型与词根检查）
-_SKIP_FIELD_NAMES = frozenset(
-    {"dt", "ht", "hh", "mt", "update_ht", "begin_dt", "end_dt"}
-)
+_SKIP_FIELD_NAMES = frozenset({"dt", "ht", "hh", "mt", "update_ht", "begin_dt", "end_dt"})
 
 # 表命名规范
 _TABLE_NAME_PATTERNS = {
@@ -22,7 +20,19 @@ _TABLE_NAME_PATTERNS = {
     "TMP": re.compile(r"^tmp_[a-z0-9_]+_(\d+)$"),
 }
 
-_RATIO_SUFFIXES = ("ratio", "rate", "cnv", "ctr", "roi", "cpm", "cpc", "cpa", "cvr", "arpu", "arppu")
+_RATIO_SUFFIXES = (
+    "ratio",
+    "rate",
+    "cnv",
+    "ctr",
+    "roi",
+    "cpm",
+    "cpc",
+    "cpa",
+    "cvr",
+    "arpu",
+    "arppu",
+)
 _AMOUNT_SUFFIXES = (
     "amt",
     "cost",
@@ -203,7 +213,9 @@ async def check_ddl_async(ddl_text: str) -> DdlCheckResult:
 
     warnings = list(result.warnings)
     if root_result.source == "online":
-        warnings.insert(0, "词根校验来源：线上词根表 dim_pub_column_dictionary_static（MCP 实时查询）")
+        warnings.insert(
+            0, "词根校验来源：线上词根表 dim_pub_column_dictionary_static（MCP 实时查询）"
+        )
     else:
         warnings.insert(
             0,
