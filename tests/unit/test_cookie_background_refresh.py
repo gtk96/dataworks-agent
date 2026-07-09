@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -49,15 +49,17 @@ async def test_run_once_skips_when_cookie_valid(monkeypatch):
         "dataworks_agent.cookie.background_refresh.decrypt_cookie",
         lambda: "session=abc",
     )
-    with patch(
-        "dataworks_agent.cookie.background_refresh.verify_cookie_access",
-        new=AsyncMock(return_value=(True, "", "testuser")),
-    ):
-        with patch(
+    with (
+        patch(
+            "dataworks_agent.cookie.background_refresh.verify_cookie_access",
+            new=AsyncMock(return_value=(True, "", "testuser")),
+        ),
+        patch(
             "dataworks_agent.cookie.background_refresh.cdp_extract_and_apply",
             new=AsyncMock(),
-        ) as mock_extract:
-            outcome = await run_cookie_background_refresh_once()
+        ) as mock_extract,
+    ):
+        outcome = await run_cookie_background_refresh_once()
     assert outcome["status"] == "valid"
     mock_extract.assert_not_called()
 
@@ -72,18 +74,20 @@ async def test_run_once_extracts_when_invalid(monkeypatch):
         "dataworks_agent.cookie.background_refresh.decrypt_cookie",
         lambda: "bad=1",
     )
-    with patch(
-        "dataworks_agent.cookie.background_refresh.verify_cookie_access",
-        new=AsyncMock(side_effect=[(False, "expired", ""), (True, "", "user1")]),
-    ):
-        with patch(
+    with (
+        patch(
+            "dataworks_agent.cookie.background_refresh.verify_cookie_access",
+            new=AsyncMock(side_effect=[(False, "expired", ""), (True, "", "user1")]),
+        ),
+        patch(
             "dataworks_agent.cookie.background_refresh.cdp_extract_and_apply",
             new=AsyncMock(return_value={"status": "success", "detail": "100 字符"}),
-        ):
-            with patch(
-                "dataworks_agent.cookie.health.cookie_health_monitor.check",
-                new=AsyncMock(),
-            ):
-                outcome = await run_cookie_background_refresh_once()
+        ),
+        patch(
+            "dataworks_agent.cookie.health.cookie_health_monitor.check",
+            new=AsyncMock(),
+        ),
+    ):
+        outcome = await run_cookie_background_refresh_once()
     assert outcome["status"] == "refreshed"
     assert app_state.cookie_bg_poll["last_action"] == "refreshed"

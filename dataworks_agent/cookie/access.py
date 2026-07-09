@@ -67,9 +67,7 @@ async def verify_cookie_access(
             code = resp.get("code")
             if code not in (200, "200"):
                 bff_ok = False
-                bff_err = str(resp.get("message") or resp.get("msg") or f"BFF code={code}")[
-                    :400
-                ]
+                bff_err = str(resp.get("message") or resp.get("msg") or f"BFF code={code}")[:400]
         except Exception as exc:
             bff_ok = False
             bff_err = f"BFF 校验失败: {str(exc)[:200]}"

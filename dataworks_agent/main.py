@@ -182,9 +182,7 @@ async def lifespan(app: FastAPI):
     )
 
     _cookie_refresh_stop = asyncio.Event()
-    _cookie_refresh_task = asyncio.create_task(
-        cookie_background_refresh_loop(_cookie_refresh_stop)
-    )
+    _cookie_refresh_task = asyncio.create_task(cookie_background_refresh_loop(_cookie_refresh_stop))
     app_state._background_tasks = getattr(app_state, "_background_tasks", [])
     app_state._background_tasks.append(_cookie_refresh_task)
 
@@ -196,7 +194,8 @@ async def lifespan(app: FastAPI):
             except Exception as exc:
                 logger.warning("启动后 Cookie 自助刷新失败: %s", exc)
 
-    asyncio.create_task(_bootstrap_cookie_refresh())
+    _bootstrap_task = asyncio.create_task(_bootstrap_cookie_refresh())
+    app_state._background_tasks.append(_bootstrap_task)
 
     # 4. 冒烟检查
     from dataworks_agent.bootstrap import startup_smoke_check

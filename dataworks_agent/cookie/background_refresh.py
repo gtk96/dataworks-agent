@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 
@@ -102,9 +103,7 @@ async def run_cookie_background_refresh_once(*, force: bool = False) -> dict:
     err = ""
     if cookie and not force:
         try:
-            ok, err, username = await verify_cookie_access(
-                cookie, bff=bff, mcp_pool=mcp
-            )
+            ok, err, username = await verify_cookie_access(cookie, bff=bff, mcp_pool=mcp)
             if ok:
                 from dataworks_agent.cookie.health import cookie_health_monitor
 
@@ -167,10 +166,8 @@ async def cookie_background_refresh_loop(stop: asyncio.Event) -> None:
         while not stop.is_set():
             if not (settings.auto_login_enabled and settings.cookie_refresh_configured):
                 touch_cookie_poll(action="disabled", detail="AUTO_LOGIN_ENABLED 未开启")
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=60.0)
-                except TimeoutError:
-                    pass
                 continue
 
             poll_sec = max(60, int(settings.cookie_refresh_poll_seconds))
@@ -187,10 +184,8 @@ async def cookie_background_refresh_loop(stop: asyncio.Event) -> None:
                 logger.exception("Cookie 后台刷新异常")
                 touch_cookie_poll(action="error", detail=str(exc)[:200])
 
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=float(poll_sec))
-            except TimeoutError:
-                pass
     except asyncio.CancelledError:
         logger.info("Cookie 后台刷新任务已停止")
         raise
