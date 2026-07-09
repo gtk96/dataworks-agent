@@ -17,11 +17,33 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from dataworks_agent.api_clients.openapi_client import DataWorksOpenAPIClient
 
 logger = logging.getLogger(__name__)
+
+
+def get_lineage_provider(*, mc_project: str | None = None) -> Any:
+    """选择血缘后端：BFF（Cookie，低延迟）优先，OpenAPI（AK/SK）兜底。"""
+    from fastapi import HTTPException
+
+    from dataworks_agent.config import settings
+    from dataworks_agent.state import app_state
+
+    bff = getattr(app_state, "_bff_client", None)
+    if bff is not None:
+        return bff
+
+    client = getattr(app_state, "_openapi_client", None)
+    if client is not None:
+        return OpenAPILineageProvider(client, mc_project=mc_project or settings.maxcompute_project)
+
+    raise HTTPException(
+        status_code=503,
+        detail="血缘服务不可用：请配置 DataWorks Cookie 或 AK/SK",
+    )
 
 
 def _to_map(body: Any) -> dict[str, Any]:
@@ -67,14 +89,24 @@ class OpenAPILineageProvider:
         mc_project: str,
         page_size: int = 100,
         max_pages: int = 50,
+        nodes_cache_ttl: int = 300,
     ) -> None:
         self._client = client
         self._mc_project = mc_project
         self._page_size = page_size
         self._max_pages = max_pages
+        self._nodes_cache_ttl = nodes_cache_ttl
+        self._nodes_cache: list[dict[str, Any]] | None = None
+        self._nodes_cache_at: float = 0.0
 
     async def _iter_all_nodes(self) -> list[dict[str, Any]]:
         """分页拉取项目下节点（ListNodes 无按名过滤，只能客户端匹配）。"""
+        if (
+            self._nodes_cache is not None
+            and (time.time() - self._nodes_cache_at) < self._nodes_cache_ttl
+        ):
+            return self._nodes_cache
+
         collected: list[dict[str, Any]] = []
         for page in range(1, self._max_pages + 1):
             body = await self._client.list_nodes(page_number=page, page_size=self._page_size)
@@ -84,6 +116,8 @@ class OpenAPILineageProvider:
             collected.extend(batch)
             if len(batch) < self._page_size:
                 break
+        self._nodes_cache = collected
+        self._nodes_cache_at = time.time()
         return collected
 
     @staticmethod

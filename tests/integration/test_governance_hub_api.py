@@ -1,4 +1,4 @@
-"""GovernanceHub.vue 集成测试 — 9 Tab, 14 个 API。"""
+"""GovernanceHub 集成测试 — 4 组 Tab 对应的后端 API。"""
 
 from __future__ import annotations
 
@@ -138,6 +138,16 @@ async def test_roots_check_table(mocked_client):
     assert resp.status_code == 200
     data = resp.json()
     assert "passed" in data or "results" in data or "valid_fields" in data
+
+
+@pytest.mark.asyncio
+async def test_governance_runtime_hints(mocked_client):
+    """GET /api/governance/runtime-hints — MC 项目默认值与通道状态。"""
+    resp = await mocked_client.get("/api/governance/runtime-hints")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "mc_prod_project" in data
 
 
 @pytest.mark.asyncio

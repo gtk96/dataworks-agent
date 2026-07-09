@@ -166,6 +166,23 @@ async def word_roots_sync_status():
     return {"status": "ok", **get_word_root_sync_status()}
 
 
+@router.get("/runtime-hints")
+async def governance_runtime_hints():
+    """治理页运行时提示（MC 项目默认值、通道状态）。"""
+    from dataworks_agent.config import settings
+    from dataworks_agent.state import app_state
+
+    return {
+        "status": "ok",
+        "mc_prod_project": settings.dataworks_prod_schema,
+        "mc_dev_project": settings.dataworks_dev_schema,
+        "maxcompute_project": settings.maxcompute_project,
+        "bff_available": getattr(app_state, "_bff_client", None) is not None,
+        "openapi_available": getattr(app_state, "_openapi_client", None) is not None,
+        "mcp_available": getattr(app_state, "mcp_pool", None) is not None,
+    }
+
+
 @router.get("/bus-matrix")
 async def get_bus_matrix():
     from dataworks_agent.modeling.bus_matrix import BusMatrixManager
@@ -220,30 +237,28 @@ async def parse_ddl_api(body: ParseDdlRequest):
 
 @router.post("/lineage/preview")
 async def lineage_preview(body: LineagePreviewRequest):
-    from dataworks_agent.config import settings
-    from dataworks_agent.governance.lineage_provider import OpenAPILineageProvider
-    from dataworks_agent.governance.lineage_service import preview_lineage
-    from dataworks_agent.state import app_state
+    import asyncio
 
-    client = getattr(app_state, "_openapi_client", None)
-    if client:
-        provider = OpenAPILineageProvider(
-            client, mc_project=body.mc_project or settings.maxcompute_project
-        )
-    else:
-        # AK/SK 不可用时降级到 BFF（Cookie）兜底
-        bff = getattr(app_state, "_bff_client", None)
-        if not bff:
-            raise HTTPException(status_code=503, detail="OpenAPI 与 BFF 均不可用")
-        provider = bff
+    from dataworks_agent.governance.lineage_provider import get_lineage_provider
+    from dataworks_agent.governance.lineage_service import preview_lineage
+
+    provider = get_lineage_provider(mc_project=body.mc_project or None)
 
     try:
-        return await preview_lineage(
-            provider,
-            table_name=body.table_name,
-            mc_project=body.mc_project or None,
-            env=body.env,
+        return await asyncio.wait_for(
+            preview_lineage(
+                provider,
+                table_name=body.table_name,
+                mc_project=body.mc_project or None,
+                env=body.env,
+            ),
+            timeout=90,
         )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="血缘预览超时（>90s）。请缩小表范围或检查 DataWorks 连接。",
+        ) from exc
     except HTTPException:
         raise
     except Exception as exc:
@@ -252,33 +267,32 @@ async def lineage_preview(body: LineagePreviewRequest):
 
 @router.post("/lineage/export")
 async def lineage_export(body: LineageExportRequest):
-    from dataworks_agent.config import settings
-    from dataworks_agent.governance.lineage_provider import OpenAPILineageProvider
-    from dataworks_agent.governance.lineage_service import export_lineage
-    from dataworks_agent.state import app_state
+    import asyncio
 
-    client = getattr(app_state, "_openapi_client", None)
-    if client:
-        provider = OpenAPILineageProvider(
-            client, mc_project=body.mc_project or settings.maxcompute_project
-        )
-    else:
-        bff = getattr(app_state, "_bff_client", None)
-        if not bff:
-            raise HTTPException(status_code=503, detail="OpenAPI 与 BFF 均不可用")
-        provider = bff
+    from dataworks_agent.governance.lineage_provider import get_lineage_provider
+    from dataworks_agent.governance.lineage_service import export_lineage
+
+    provider = get_lineage_provider(mc_project=body.mc_project or None)
 
     try:
-        result = await export_lineage(
-            provider,
-            table_name=body.table_name,
-            mc_project=body.mc_project or None,
-            env=body.env,
-            excluded_node_ids=body.excluded_node_ids,
+        result = await asyncio.wait_for(
+            export_lineage(
+                provider,
+                table_name=body.table_name,
+                mc_project=body.mc_project or None,
+                env=body.env,
+                excluded_node_ids=body.excluded_node_ids,
+            ),
+            timeout=180,
         )
         zip_name = Path(result["file_path"]).name
         result["download_url"] = f"/api/governance/lineage/download/{zip_name}"
         return result
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="血缘导出超时（>180s）。请缩小范围或检查 DataWorks 连接。",
+        ) from exc
     except HTTPException:
         raise
     except Exception as exc:

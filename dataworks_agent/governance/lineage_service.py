@@ -29,7 +29,6 @@ from dataworks_agent.governance.lineage_models import (
 )
 from dataworks_agent.governance.sql_lineage import is_temp_table
 from dataworks_agent.governance.table_name_parser import (
-    build_table_guid,
     extract_code_text,
     extract_node_id,
     identify_layer_ext,
@@ -39,21 +38,13 @@ logger = logging.getLogger(__name__)
 
 
 async def resolve_root_node(bff: Any, table_name: str, mc_project: str | None) -> RootNode:
-    """Resolve root node via MCP → BFF upstream → BFF node search."""
+    """Resolve root node via BFF upstream → BFF node search → MCP."""
+    from dataworks_agent.governance.table_guid_resolver import resolve_table_guid
     from dataworks_agent.mcp.operations import get_upstream_tasks as mcp_get_upstream
 
-    # MCP 优先
-    try:
-        tasks = await mcp_get_upstream(table_name)
-        if tasks:
-            node_id = extract_node_id(tasks[0])
-            if node_id:
-                return make_root_node(node_id, table_name)
-    except Exception as exc:
-        logger.debug("MCP get_upstream_tasks 失败: %s", exc)
+    guid, _ = await resolve_table_guid(table_name, mc_project, bff=bff)
 
-    # BFF get_upstream_tasks 回退
-    guid = build_table_guid(table_name, mc_project)
+    # BFF get_upstream_tasks（Cookie 通道，优先）
     try:
         tasks = await bff.get_upstream_tasks(guid)
         if tasks:
@@ -64,13 +55,11 @@ async def resolve_root_node(bff: Any, table_name: str, mc_project: str | None) -
         logger.debug("BFF get_upstream_tasks 失败: %s", exc)
 
     # BFF 节点搜索回退（支持 Holo 节点）
-    # Holo 节点命名格式: ods_hl_dataworks_holo__<表名>_<粒度>
     search_names = [table_name]
     if table_name.lower().startswith("ods_hl_"):
-        # 尝试不同的 Holo 节点命名格式
         parts = table_name.split("__", 1)
         if len(parts) == 2:
-            schema_table = parts[1]  # e.g., "s_order_hour"
+            schema_table = parts[1]
             search_names.extend(
                 [
                     f"ods_hl_dataworks_holo__{schema_table}",
@@ -89,6 +78,16 @@ async def resolve_root_node(bff: Any, table_name: str, mc_project: str | None) -
                         return make_root_node(node_id, table_name)
         except Exception as exc:
             logger.debug("BFF get_node_list 搜索 '%s' 失败: %s", search_name, exc)
+
+    # MCP 最后兜底
+    try:
+        tasks = await mcp_get_upstream(guid)
+        if tasks:
+            node_id = extract_node_id(tasks[0])
+            if node_id:
+                return make_root_node(node_id, table_name)
+    except Exception as exc:
+        logger.debug("MCP get_upstream_tasks 失败: %s", exc)
 
     raise HTTPException(status_code=404, detail=f"未找到表 {table_name} 的产出节点")
 
