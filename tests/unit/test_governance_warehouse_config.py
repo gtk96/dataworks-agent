@@ -32,6 +32,11 @@ class TestWarehouseConfig:
         assert data.get("layer") == "DWD"
         assert "naming" in data
 
+    def test_dim_layer_conventions_loaded(self) -> None:
+        data = load_conventions("dim")
+        assert data.get("layer") == "DIM"
+        assert data["naming"]["table_prefix"] == "dim_"
+
     def test_invalid_layer_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown layer"):
             load_conventions("foo")
@@ -46,4 +51,5 @@ class TestWarehouseConfig:
         bundle = load_warehouse_standards_bundle()
         assert bundle["field_suffix_rules"]
         assert "dwd" in bundle["layers"]
+        assert "dim" in bundle["layers"]
         assert load_coding_standards()["charset"] == "UTF-8"

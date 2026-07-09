@@ -324,6 +324,12 @@ def create_app() -> FastAPI:
     app.include_router(workspace.router, prefix="/api/workspace", tags=["工作空间"])
 
     # ── 薄路由 ──
+    @app.get("/api/bus-matrix")
+    async def get_bus_matrix():
+        from dataworks_agent.routers.governance import get_bus_matrix as _get_bus_matrix
+
+        return await _get_bus_matrix()
+
     @app.get("/api/ownership/{table_name}")
     async def get_ownership(
         table_name: str,

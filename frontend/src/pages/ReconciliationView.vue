@@ -30,9 +30,9 @@ async function load() {
   tasks.value = r.tasks
 }
 
-async function dispose(taskId: string, action: string) {
+async function dispose(intentId: number, action: string) {
   try {
-    await request('/api/reconciliation/dispose', { method: 'POST', body: { task_id: taskId, action } })
+    await request('/api/reconciliation/dispose', { method: 'POST', body: { intent_id: intentId, action } })
     ElMessage.success('处置完成')
     load()
   } catch (e: any) { ElMessage.error(e.message) }

@@ -202,6 +202,10 @@ async function exportLineage() {
       },
     })
     resultText.value = JSON.stringify(r, null, 2)
+    const downloadUrl = r.download_url as string | undefined
+    if (downloadUrl) {
+      window.open(downloadUrl, '_blank')
+    }
   } catch (e: any) {
     error.value = e.message
   }
@@ -337,6 +341,8 @@ watch(sqlText, () => {
 
 watch([lineageTable, lineageProject, lineageEnv], () => {
   if (tab.value === 'lineage') delayInvoke(previewLineage, 500)
+  else if (tab.value === 'graph') delayInvoke(loadGraph, 500)
+  else if (tab.value === 'downstream') delayInvoke(loadDownstream, 500)
 })
 
 watch(rootQuery, () => {

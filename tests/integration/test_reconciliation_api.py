@@ -26,9 +26,9 @@ async def test_reconciliation_dispose_validation(mocked_client):
 
 @pytest.mark.asyncio
 async def test_reconciliation_dispose_well_formed(mocked_client):
-    """POST /api/reconciliation/dispose — 完整参数(可能因 mcp 失败 500)。"""
+    """POST /api/reconciliation/dispose — 不存在的 intent 应 404。"""
     resp = await mocked_client.post(
         "/api/reconciliation/dispose",
-        json={"task_id": "task_xxx", "action": "confirm_success"},
+        json={"intent_id": 999999, "action": "confirm_success"},
     )
-    assert_routed_response(resp)
+    assert_routed_response(resp, allowed=(404,))

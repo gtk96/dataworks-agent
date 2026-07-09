@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { request } from '@/utils/request'
+import { ElMessage } from 'element-plus'
 
 const domains = ref<string[]>([])
 const rows = ref<any[]>([])
@@ -34,6 +35,8 @@ onMounted(async () => {
     }
     domains.value = [...domainSet]
     rows.value = Object.entries(dimMap).map(([dim, dmap]) => ({ dimension: dim, domains: dmap }))
-  } catch {}
+  } catch (e: any) {
+    ElMessage.error(e.message || '加载总线矩阵失败')
+  }
 })
 </script>

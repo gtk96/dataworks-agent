@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -238,17 +241,40 @@ async def lineage_export(body: LineageExportRequest):
         provider = bff
 
     try:
-        return await export_lineage(
+        result = await export_lineage(
             provider,
             table_name=body.table_name,
             mc_project=body.mc_project or None,
             env=body.env,
             excluded_node_ids=body.excluded_node_ids,
         )
+        zip_name = Path(result["file_path"]).name
+        result["download_url"] = f"/api/governance/lineage/download/{zip_name}"
+        return result
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail="上游服务调用失败，请稍后重试") from exc
+
+
+@router.get("/lineage/download/{filename}")
+async def lineage_download(filename: str):
+    """下载血缘导出 ZIP（仅允许 archive/lineage_export 目录下的文件名）。"""
+    from dataworks_agent.config import settings
+
+    safe_name = Path(filename).name
+    if safe_name != filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    zip_path = Path(settings.archive_dir) / "lineage_export" / safe_name
+    if not zip_path.is_file():
+        raise HTTPException(status_code=404, detail="导出文件不存在或已过期")
+
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=safe_name,
+    )
 
 
 class CheckDdlRequest(BaseModel):

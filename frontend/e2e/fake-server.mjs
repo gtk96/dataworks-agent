@@ -72,7 +72,7 @@ const MOCKS = {
   '/api/governance/conventions/DWD': { layer: 'DWD', rules: { table_prefix: 'dwd_' } },
   '/api/governance/conventions/DWS': { layer: 'DWS', rules: { table_prefix: 'dws_' } },
   '/api/governance/conventions/DMR': { layer: 'DMR', rules: { table_prefix: 'dmr_' } },
-  '/api/governance/conventions/DIM': { error: 'DIM 无独立规范' },  // 400 真实行为
+  '/api/governance/conventions/DIM': { status: 'ok', layer: 'DIM', data: { layer: 'DIM', naming: { table_prefix: 'dim_' } } },
 
   '/api/roots/check': {
     passed: true,

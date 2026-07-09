@@ -15,6 +15,7 @@ _LAYER_FILE_MAP: dict[str, str] = {
     "ods": "ods_layer.yaml",
     "dwd": "dwd_layer.yaml",
     "dws": "dws_layer.yaml",
+    "dim": "dim_layer.yaml",
     "dmr": "dmr_layer.yaml",
 }
 

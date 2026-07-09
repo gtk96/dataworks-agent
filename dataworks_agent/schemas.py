@@ -350,7 +350,7 @@ class ReconciliationTask(BaseModel):
 
 
 class ReconciliationDisposeRequest(BaseModel):
-    task_id: str
+    intent_id: int
     action: Literal["retry", "confirm_success", "confirm_failed"]
 
 

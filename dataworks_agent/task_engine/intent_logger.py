@@ -75,6 +75,38 @@ async def fail_intent(log_id: int, error: str) -> None:
     logger.debug("Intent 失败: id=%d error=%s", log_id, error)
 
 
+async def dispose_intent(intent_id: int, action: str) -> dict | None:
+    """人工协调处置 dangling intent。"""
+    with SessionLocal() as db:
+        log = db.get(TaskStepLogModel, intent_id)
+        if not log or log.status != "intent":
+            return None
+
+        if action == "confirm_success":
+            log.status = "completed"
+            log.result_json = json.dumps(
+                {"disposition": "manual_confirm_success"},
+                ensure_ascii=False,
+            )
+            log.error = ""
+        elif action == "confirm_failed":
+            log.status = "failed"
+            log.error = "人工确认失败"
+        elif action == "retry":
+            log.status = "failed"
+            log.error = "人工标记重试（请在建模任务页对该任务执行重试）"
+        else:
+            return None
+
+        db.commit()
+        return {
+            "intent_id": log.id,
+            "task_id": log.task_id,
+            "step_name": log.step_name,
+            "action": action,
+        }
+
+
 async def detect_dangling_intents() -> list[dict]:
     """启动恢复: 扫描未确认的 intent 记录。"""
     with SessionLocal() as db:

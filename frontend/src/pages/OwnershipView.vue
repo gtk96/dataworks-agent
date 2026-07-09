@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { request } from '@/utils/request'
+import { ElMessage } from 'element-plus'
 
 const searchTable = ref('')
 const records = ref<any[]>([])
@@ -24,7 +25,9 @@ async function load() {
   try {
     const r = await request<{ records: any[] }>(`/api/ownership/${searchTable.value || 'all'}`)
     records.value = r.records || []
-  } catch {}
+  } catch (e: any) {
+    ElMessage.error(e.message || '加载产权记录失败')
+  }
 }
 
 onMounted(load)
