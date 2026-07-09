@@ -131,10 +131,10 @@ async def auto_fetch_cookie(request: Request):
             return {"message": "Cookie 已自动提取", "length": length or detail}
         if result["status"] == "skipped":
             raise HTTPException(status_code=429, detail=result.get("detail", "退避中"))
-        raise HTTPException(
-            status_code=400,
-            detail=result.get("detail", "未能提取到有效 Cookie"),
-        )
+        detail = result.get("detail", "未能提取到有效 Cookie")
+        if detail == "CDP 客户端不可用":
+            raise HTTPException(status_code=503, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
     except HTTPException:
         raise
     except Exception as e:
