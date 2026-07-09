@@ -181,6 +181,15 @@ const server = http.createServer((req, res) => {
       if (url === '/api/governance/infer-update-mode') {
         return OK(res, MOCKS['/api/governance/infer-update-mode'])
       }
+      if (url === '/api/governance/word-roots/sync') {
+        return OK(res, {
+          status: 'ok',
+          count: 1011,
+          refreshed_at: '2026-07-09T12:00:00Z',
+          source: 'online',
+          table: 'dataworks.dim_pub_column_dictionary_static',
+        })
+      }
       // POST 兜底 — 404，避免 E2E 测试盲区（与 GET 兜底保持一致）
       return NOT_MOCKED(res, url)
     })

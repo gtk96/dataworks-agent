@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from dataworks_agent.schemas import RootCheckField, RootCheckResult
 
-@dataclass
-class DdlCheckResult:
-    """DDL 检查结果。"""
-
-    table_name: str
-    passed: bool
-    errors: list[str]
-    warnings: list[str]
-
+# 跳过分区/时间字段（不参与类型与词根检查）
+_SKIP_FIELD_NAMES = frozenset(
+    {"dt", "ht", "hh", "mt", "update_ht", "begin_dt", "end_dt"}
+)
 
 # 表命名规范
 _TABLE_NAME_PATTERNS = {
@@ -26,28 +22,66 @@ _TABLE_NAME_PATTERNS = {
     "TMP": re.compile(r"^tmp_[a-z0-9_]+_(\d+)$"),
 }
 
-# 字段类型规范
-_AMOUNT_SUFFIXES = re.compile(
-    r"(amt|cost|price|fee|spend|budget|revenue|income|profit|loss|payment|refund)$", re.IGNORECASE
+_RATIO_SUFFIXES = ("ratio", "rate", "cnv", "ctr", "roi", "cpm", "cpc", "cpa", "cvr", "arpu", "arppu")
+_AMOUNT_SUFFIXES = (
+    "amt",
+    "cost",
+    "price",
+    "fee",
+    "spend",
+    "budget",
+    "revenue",
+    "income",
+    "profit",
+    "loss",
+    "payment",
+    "refund",
 )
-_COUNT_SUFFIXES = re.compile(
-    r"(cnt|count|num|total|sales|clicks|impressions|views|pv|uv|orders|qty|quantity)$",
-    re.IGNORECASE,
+_COUNT_SUFFIXES = (
+    "cnt",
+    "count",
+    "num",
+    "total",
+    "sales",
+    "clicks",
+    "impressions",
+    "views",
+    "pv",
+    "uv",
+    "orders",
+    "qty",
+    "quantity",
 )
-_RATIO_SUFFIXES = re.compile(r"(ratio|rate|cnv|ctr|roi|cpm|cpc|cpa|cvr|arpu|arppu)$", re.IGNORECASE)
+
+
+@dataclass
+class DdlCheckResult:
+    """DDL 检查结果。"""
+
+    table_name: str
+    passed: bool
+    errors: list[str]
+    warnings: list[str]
+    root_source: str = ""
+
+
+def _matches_suffix(field_name: str, suffixes: tuple[str, ...]) -> bool:
+    """字段名须为 `suffix` 或 `*_suffix`，避免 `order_aamt` 误匹配 `amt`。"""
+    lower = field_name.lower()
+    return any(lower == suffix or lower.endswith(f"_{suffix}") for suffix in suffixes)
 
 
 def _infer_expected_type(field_name: str) -> str:
     """根据字段名推断期望的类型。"""
     lower = field_name.lower()
 
-    if lower.endswith("id"):
+    if _matches_suffix(lower, ("id",)):
         return "string"
-    if _AMOUNT_SUFFIXES.search(lower):
+    if _matches_suffix(lower, _AMOUNT_SUFFIXES):
         return "decimal(24,6)"
-    if _COUNT_SUFFIXES.search(lower):
+    if _matches_suffix(lower, _COUNT_SUFFIXES):
         return "bigint"
-    if _RATIO_SUFFIXES.search(lower):
+    if _matches_suffix(lower, _RATIO_SUFFIXES):
         return "decimal(24,6)"
     return "string"
 
@@ -57,26 +91,27 @@ def _normalize_type(type_str: str) -> str:
     return re.sub(r"\s+", "", type_str.upper())
 
 
-def check_ddl(ddl_text: str) -> DdlCheckResult:
-    """检查 DDL 是否符合数仓规范。
+def _root_errors_from_result(field_results: list[RootCheckField]) -> list[str]:
+    errors: list[str] = []
+    for item in field_results:
+        if item.valid:
+            continue
+        segments = ", ".join(item.invalid_segments)
+        suffix = f"，建议 {item.suggested_name}" if item.suggested_name else ""
+        errors.append(f"字段 '{item.field_name}' 词根不合规：未知词根段 [{segments}]{suffix}")
+    return errors
 
-    检查项：
-    1. 表命名规范
-    2. DDL 语法（drop table if exists + create table）
-    3. LIFECYCLE 规范
-    4. 字段类型规范
-    5. 分区字段规范
-    """
+
+def _check_ddl_structure(ddl_text: str) -> DdlCheckResult:
+    """结构/命名/类型/分区检查（不含词根）。"""
     errors: list[str] = []
     warnings: list[str] = []
 
     if not ddl_text or not ddl_text.strip():
         return DdlCheckResult(table_name="", passed=False, errors=["DDL 为空"], warnings=[])
 
-    # 解析 DDL
     ddl_upper = ddl_text.upper()
 
-    # 提取表名
     table_match = re.search(
         r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)",
         ddl_text,
@@ -88,14 +123,12 @@ def check_ddl(ddl_text: str) -> DdlCheckResult:
     table_name = table_match.group(1).strip('`"')
     bare_table = table_name.split(".")[-1] if "." in table_name else table_name
 
-    # 1. 检查表命名规范
     layer = _identify_layer(bare_table)
     if layer and layer in _TABLE_NAME_PATTERNS:
         pattern = _TABLE_NAME_PATTERNS[layer]
         if not pattern.match(bare_table.lower()):
             warnings.append(f"表名 '{bare_table}' 不符合 {layer} 层命名规范")
 
-    # 2. 检查 DDL 语法
     has_drop = "DROP TABLE IF EXISTS" in ddl_upper
     has_create = "CREATE TABLE" in ddl_upper
     has_if_not_exists = "IF NOT EXISTS" in ddl_upper
@@ -107,33 +140,30 @@ def check_ddl(ddl_text: str) -> DdlCheckResult:
     if has_if_not_exists:
         warnings.append("DDL 包含 'if not exists'，规范建议不加")
 
-    # 3. 检查 LIFECYCLE
     has_lifecycle = "LIFECYCLE" in ddl_upper
     if has_lifecycle and layer in ("ODS", "DWD", "DWS", "DMR", "DIM"):
         errors.append(f"{layer} 层表不应设置 LIFECYCLE（应永久保存）")
 
-    # 4. 检查字段类型
     columns = _extract_columns(ddl_text)
+
     for col in columns:
-        if col["name"].lower() in ("dt", "ht", "hh", "mt", "update_ht", "begin_dt", "end_dt"):
-            continue  # 跳过分区字段
+        if col["name"].lower() in _SKIP_FIELD_NAMES:
+            continue
 
         expected_type = _infer_expected_type(col["name"])
         actual_type = _normalize_type(col["type"])
         expected_normalized = _normalize_type(expected_type)
 
         if actual_type != expected_normalized:
-            # 检查是否是已知的类型不匹配
             if expected_type == "string" and actual_type in ("STRING", "VARCHAR", "TEXT"):
-                continue  # 可接受
+                continue
             if expected_type == "bigint" and actual_type in ("BIGINT", "INT", "INTEGER"):
-                continue  # 可接受
+                continue
             warnings.append(
                 f"字段 '{col['name']}' 类型 '{col['type']}' "
                 f"可能不符合规范（期望 '{expected_type}'）"
             )
 
-    # 5. 检查分区字段
     partitions = _extract_partitions(ddl_text)
     if layer and layer in ("ODS", "DWD", "DWS", "DMR", "DIM") and not partitions:
         warnings.append(f"{layer} 层表通常需要分区字段（dt）")
@@ -144,6 +174,49 @@ def check_ddl(ddl_text: str) -> DdlCheckResult:
         passed=passed,
         errors=errors,
         warnings=warnings,
+    )
+
+
+def check_ddl(ddl_text: str) -> DdlCheckResult:
+    """同步 DDL 检查（结构/类型/分区，不含线上词根）。"""
+    return _check_ddl_structure(ddl_text)
+
+
+async def check_ddl_async(ddl_text: str) -> DdlCheckResult:
+    """异步 DDL 检查：结构规范 + MCP 线上词根表校验。"""
+    result = _check_ddl_structure(ddl_text)
+    if not result.table_name:
+        return result
+
+    field_names = [
+        col["name"]
+        for col in _extract_columns(ddl_text)
+        if col["name"].lower() not in _SKIP_FIELD_NAMES
+    ]
+    if not field_names:
+        return result
+
+    from dataworks_agent.modeling.root_checker import RootChecker
+
+    root_result: RootCheckResult = await RootChecker().check_fields(field_names)
+    root_errors = _root_errors_from_result(root_result.field_results)
+
+    warnings = list(result.warnings)
+    if root_result.source == "online":
+        warnings.insert(0, "词根校验来源：线上词根表 dim_pub_column_dictionary_static（MCP 实时查询）")
+    else:
+        warnings.insert(
+            0,
+            "词根校验已降级为本地字典（MCP/线上词根表不可用，结果可能滞后于线上）",
+        )
+
+    errors = list(result.errors) + root_errors
+    return replace(
+        result,
+        passed=len(errors) == 0,
+        errors=errors,
+        warnings=warnings,
+        root_source=root_result.source,
     )
 
 
@@ -175,14 +248,11 @@ def _extract_columns(ddl_text: str) -> list[dict[str, str]]:
             in_columns = False
             continue
 
-        # v14 F6-3: 字段行可能含 'COMMENT xxx' 后缀（`id BIGINT COMMENT '主键'`）；
-        # 整行 skip 会丢字段。处理顺序：先解析字段部分，再把残余注释整行 skip。
         is_meta_line = line.upper().startswith(("COMMENT", "LIFECYCLE", "STORED", "TBLPROPERTIES"))
         if is_meta_line:
             continue
 
         if in_columns and not in_partitions:
-            # 截断 COMMENT / LIFECYCLE 等元数据后缀，只解析 'name dtype' 前缀
             for keyword in ("COMMENT", "LIFECYCLE"):
                 idx = line.upper().find(keyword)
                 if idx > 0:
@@ -214,11 +284,24 @@ def _extract_partitions(ddl_text: str) -> list[str]:
 
 
 def check_ddl_text(ddl_text: str) -> dict:
-    """检查 DDL 文本并返回结果字典。"""
+    """同步检查 DDL 并返回结果字典（不含线上词根）。"""
     result = check_ddl(ddl_text)
-    return {
+    return _ddl_result_to_dict(result)
+
+
+async def check_ddl_text_async(ddl_text: str) -> dict:
+    """异步检查 DDL 并返回结果字典（含线上词根）。"""
+    result = await check_ddl_async(ddl_text)
+    return _ddl_result_to_dict(result)
+
+
+def _ddl_result_to_dict(result: DdlCheckResult) -> dict:
+    payload = {
         "table_name": result.table_name,
         "passed": result.passed,
         "errors": result.errors,
         "warnings": result.warnings,
     }
+    if result.root_source:
+        payload["root_source"] = result.root_source
+    return payload

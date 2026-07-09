@@ -66,8 +66,16 @@ class RootChecker:
         return RootCheckResult(
             passed=all_valid,
             field_results=field_results,
-            summary=f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规",
+            summary=(
+                f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规"
+                "（线上词根表 dim_pub_column_dictionary_static）"
+            ),
+            source="online",
         )
+
+    def check_fields_local(self, fields: list[str]) -> RootCheckResult:
+        """仅使用内置词根字典（离线降级）。"""
+        return self._check_local_fallback(fields)
 
     def _check_local_fallback(self, fields: list[str]) -> RootCheckResult:
         """本地降级：基于内置词根字典校验各段。"""
@@ -90,5 +98,9 @@ class RootChecker:
         return RootCheckResult(
             passed=all_valid,
             field_results=field_results,
-            summary=f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规 (本地词根字典)",
+            summary=(
+                f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规"
+                "（本地词根字典，非线上最新）"
+            ),
+            source="local",
         )

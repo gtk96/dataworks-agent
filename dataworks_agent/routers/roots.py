@@ -43,7 +43,19 @@ async def check_table_roots(table_name: str):
         raise HTTPException(status_code=500, detail=f"校验失败: {e}") from e
 
 
-@router.get("/cache/refresh")
+@router.post("/cache/refresh")
 async def refresh_cache():
-    """刷新词根缓存。"""
-    return {"message": "词根缓存已刷新（MCP 实时查询模式无需缓存刷新）"}
+    """刷新词根缓存（等同 governance 同步接口）。"""
+    from dataworks_agent.governance.word_root_sync import run_word_root_sync_once
+
+    try:
+        result = await run_word_root_sync_once(force=True)
+        if result.get("status") == "failed":
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=503, detail=result.get("detail", "词根同步失败"))
+        return {"message": "词根已同步", **result}
+    except RuntimeError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

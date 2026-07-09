@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     auto_login_enabled: bool = True
     cookie_refresh_poll_seconds: int = 600
 
+    # 词根表自动同步（生产 dim_pub_column_dictionary_static → 本地 SQLite）
+    word_root_auto_sync_enabled: bool = True
+    word_root_sync_interval_seconds: int = 7200
+
     @property
     def cookie_refresh_configured(self) -> bool:
         return bool((self.cdp_url or "").strip())

@@ -272,6 +272,7 @@ class RootCheckResult(BaseModel):
     passed: bool
     field_results: list[RootCheckField] = []
     summary: str = ""
+    source: Literal["online", "local"] = "local"
 
 
 class RootCheckRequest(BaseModel):

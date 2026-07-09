@@ -37,6 +37,10 @@ def load_standard_document(doc_id: str) -> str:
 
 @lru_cache(maxsize=1)
 def load_word_root_entries() -> list[dict[str, Any]]:
+    db_entries = _load_word_root_entries_from_db()
+    if db_entries:
+        return db_entries
+
     if not _WORD_ROOTS_PATH.is_file():
         return []
 
@@ -64,6 +68,39 @@ def load_word_root_entries() -> list[dict[str, Any]]:
                     }
                 )
     return entries
+
+
+def _load_word_root_entries_from_db() -> list[dict[str, Any]]:
+    try:
+        from sqlalchemy import select
+
+        from dataworks_agent.db.database import SessionLocal
+        from dataworks_agent.db.models import WordRootCacheModel
+
+        with SessionLocal() as db:
+            rows = db.execute(select(WordRootCacheModel)).scalars().all()
+            if not rows:
+                return []
+            return [
+                {
+                    "column_name": row.column_name,
+                    "column_desc": row.column_desc,
+                    "is_digit": bool(row.is_digit),
+                }
+                for row in rows
+            ]
+    except Exception:
+        return []
+
+
+def clear_word_root_loader_cache() -> None:
+    load_word_root_entries.cache_clear()
+    valid_root_tokens.cache_clear()
+
+
+def word_root_source() -> str:
+    """返回当前词根数据来源：online（已同步）或 bundled（内置文件）。"""
+    return "online" if _load_word_root_entries_from_db() else "bundled"
 
 
 @lru_cache(maxsize=1)

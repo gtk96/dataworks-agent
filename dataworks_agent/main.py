@@ -197,6 +197,27 @@ async def lifespan(app: FastAPI):
     _bootstrap_task = asyncio.create_task(_bootstrap_cookie_refresh())
     app_state._background_tasks.append(_bootstrap_task)
 
+    # 4c. 词根表后台自动同步（默认每 2 小时拉生产 dim_pub_column_dictionary_static）
+    from dataworks_agent.governance.word_root_sync import (
+        run_word_root_sync_once,
+        word_root_sync_loop,
+    )
+
+    _word_root_sync_stop = asyncio.Event()
+    _word_root_sync_task = asyncio.create_task(word_root_sync_loop(_word_root_sync_stop))
+    app_state._background_tasks.append(_word_root_sync_task)
+
+    async def _bootstrap_word_root_sync() -> None:
+        await asyncio.sleep(10)
+        if settings.word_root_auto_sync_enabled:
+            try:
+                await run_word_root_sync_once()
+            except Exception as exc:
+                logger.warning("启动后词根同步失败: %s", exc)
+
+    _word_root_bootstrap_task = asyncio.create_task(_bootstrap_word_root_sync())
+    app_state._background_tasks.append(_word_root_bootstrap_task)
+
     # 4. 冒烟检查
     from dataworks_agent.bootstrap import startup_smoke_check
 
@@ -227,6 +248,10 @@ async def lifespan(app: FastAPI):
     _cookie_refresh_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await _cookie_refresh_task
+    _word_root_sync_stop.set()
+    _word_root_sync_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await _word_root_sync_task
     if app_state.mcp_pool:
         await app_state.mcp_pool.disconnect()
     if app_state._bff_client:

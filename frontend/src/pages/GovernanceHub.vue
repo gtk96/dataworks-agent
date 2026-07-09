@@ -7,8 +7,12 @@
       </el-tab-pane>
 
       <el-tab-pane label="DDL 规范检查" name="ddl">
-        <el-input v-model="ddlText" type="textarea" :rows="8" placeholder="粘贴 CREATE TABLE DDL" />
-        <el-button type="primary" style="margin-top:8px" @click="checkDdl" :loading="ddlChecking">检查 DDL</el-button>
+        <el-input v-model="ddlText" type="textarea" :rows="8" placeholder="粘贴 CREATE TABLE DDL（词根优先 MCP 线上表；可先同步最新词根）" />
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <el-button type="primary" @click="checkDdl" :loading="ddlChecking">检查 DDL</el-button>
+          <el-button @click="syncWordRoots" :loading="rootSyncing">获取最新词根</el-button>
+          <span v-if="rootSyncedAt" style="color:#999;font-size:12px">词根已同步 {{ rootSyncedAt }}（{{ rootTotal }} 条）</span>
+        </div>
         <div v-if="ddlResult" style="margin-top:12px">
           <el-alert :type="ddlResult.passed ? 'success' : 'warning'" :closable="false" show-icon>
             <template #title>{{ ddlResult.passed ? 'DDL 规范检查通过' : 'DDL 规范检查未通过' }}</template>
@@ -53,7 +57,14 @@
       </el-tab-pane>
 
       <el-tab-pane label="词根字典" name="roots">
-        <el-input v-model="rootQuery" placeholder="搜索词根（留空显示常用）" style="width:320px" clearable />
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <el-input v-model="rootQuery" placeholder="搜索词根（留空显示常用）" style="width:320px" clearable />
+          <el-button type="primary" @click="syncWordRoots" :loading="rootSyncing">获取最新词根</el-button>
+        </div>
+        <span v-if="rootSyncedAt" style="display:block;margin-bottom:8px;color:#999;font-size:12px">
+          来源：{{ rootSource === 'online' ? '线上词根表' : '内置字典' }} · 同步于 {{ rootSyncedAt }} · 共 {{ rootTotal }} 条
+          <span v-if="rootAutoSyncLabel"> · 自动同步 {{ rootAutoSyncLabel }}</span>
+        </span>
       </el-tab-pane>
 
       <el-tab-pane label="血缘 DAG" name="graph">
@@ -101,6 +112,7 @@ cust_nm" />
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { request } from '@/utils/request'
+import { ElMessage } from 'element-plus'
 import CodeBlock from '@/components/CodeBlock.vue'
 
 const tab = ref('sql')
@@ -113,6 +125,11 @@ const lineageProject = ref('')
 const lineageEnv = ref('prod')
 const excludedIds = ref('')
 const rootQuery = ref('')
+const rootSyncing = ref(false)
+const rootSyncedAt = ref('')
+const rootTotal = ref(0)
+const rootSource = ref('bundled')
+const rootAutoSyncLabel = ref('')
 const parseTableName = ref('')
 const graphDepth = ref(3)
 const conventionLayer = ref('DWD')
@@ -212,6 +229,20 @@ async function exportLineage() {
   exporting.value = false
 }
 
+async function loadWordRootSyncStatus() {
+  try {
+    const r = await request<Record<string, unknown>>('/api/governance/word-roots/sync-status')
+    if (r.synced_at) rootSyncedAt.value = String(r.synced_at)
+    if (r.total) rootTotal.value = Number(r.total)
+    if (r.source) rootSource.value = String(r.source)
+    rootAutoSyncLabel.value = r.auto_sync_enabled
+      ? String(r.interval_label || `每 ${Number(r.interval_seconds || 7200) / 3600} 小时`)
+      : '已关闭'
+  } catch {
+    /* ignore */
+  }
+}
+
 async function searchRoots() {
   loading.value = true
   error.value = ''
@@ -219,11 +250,31 @@ async function searchRoots() {
   try {
     const q = encodeURIComponent(rootQuery.value)
     const r = await request<Record<string, unknown>>(`/api/governance/word-roots?q=${q}&limit=100`)
+    rootSyncedAt.value = String(r.synced_at || '')
+    rootTotal.value = Number(r.total || 0)
+    rootSource.value = String(r.source || 'bundled')
     resultText.value = JSON.stringify(r, null, 2)
   } catch (e: any) {
     error.value = e.message
   }
   loading.value = false
+}
+
+async function syncWordRoots() {
+  rootSyncing.value = true
+  error.value = ''
+  try {
+    const r = await request<Record<string, unknown>>('/api/governance/word-roots/sync', { method: 'POST' })
+    rootSyncedAt.value = String(r.refreshed_at || r.synced_at || '')
+    rootTotal.value = Number(r.count || r.total || 0)
+    rootSource.value = String(r.source || 'online')
+    ElMessage.success(`词根已同步：${rootTotal.value} 条`)
+    if (tab.value === 'roots') await searchRoots()
+  } catch (e: any) {
+    ElMessage.error(e.message || '词根同步失败')
+    error.value = e.message
+  }
+  rootSyncing.value = false
 }
 
 async function loadGraph() {
@@ -324,7 +375,10 @@ function runTabLoader(name: string) {
   resultText.value = ''
   if (name === 'sql' && sqlText.value.trim()) parseSql()
   else if (name === 'lineage' && lineageTable.value.trim()) previewLineage()
-  else if (name === 'roots') searchRoots()
+  else if (name === 'roots') {
+    loadWordRootSyncStatus()
+    searchRoots()
+  }
   else if (name === 'graph' && lineageTable.value.trim()) loadGraph()
   else if (name === 'downstream' && lineageTable.value.trim()) loadDownstream()
   else if (name === 'parse-table' && parseTableName.value.trim()) parseTable()

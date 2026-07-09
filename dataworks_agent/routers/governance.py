@@ -107,14 +107,11 @@ async def get_standard_doc(doc_id: str):
 @router.get("/word-roots")
 async def get_word_roots(q: str = "", limit: int = 50):
     from dataworks_agent.cache import get_cache_manager
+    from dataworks_agent.governance.word_root_sync import get_word_root_sync_meta
     from dataworks_agent.standards.loader import load_word_root_entries
 
     cache = get_cache_manager()
-
-    # 生成缓存键
     cache_key = f"word_roots:{q}:{limit}"
-
-    # 尝试从缓存获取
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -129,13 +126,44 @@ async def get_word_roots(q: str = "", limit: int = 50):
             or needle in item.get("column_desc", "").lower()
         ]
     limit = max(1, min(limit, 500))
+    meta = get_word_root_sync_meta()
 
-    result = {"status": "ok", "total": len(entries), "entries": entries[:limit]}
-
-    # 缓存结果（长 TTL，因为词根字典很少变化）
+    result = {
+        "status": "ok",
+        "total": len(entries),
+        "entries": entries[:limit],
+        "source": meta.get("source", "bundled"),
+        "synced_at": meta.get("synced_at", ""),
+        "table": meta.get("table", ""),
+    }
     cache.set(cache_key, result, ttl=3600)
-
     return result
+
+
+@router.post("/word-roots/sync")
+async def sync_word_roots():
+    """从线上 dim_pub_column_dictionary_static 拉取最新词根并更新本地缓存。"""
+    from fastapi import HTTPException
+
+    from dataworks_agent.governance.word_root_sync import run_word_root_sync_once
+
+    try:
+        result = await run_word_root_sync_once(force=True)
+        if result.get("status") == "failed":
+            raise HTTPException(status_code=503, detail=result.get("detail", "词根同步失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"词根同步失败: {exc}") from exc
+
+
+@router.get("/word-roots/sync-status")
+async def word_roots_sync_status():
+    """词根自动同步状态（间隔、上次结果、本地缓存概况）。"""
+    from dataworks_agent.governance.word_root_sync import get_word_root_sync_status
+
+    return {"status": "ok", **get_word_root_sync_status()}
 
 
 @router.get("/bus-matrix")
@@ -283,7 +311,7 @@ class CheckDdlRequest(BaseModel):
 
 @router.post("/check-ddl")
 async def check_ddl_api(body: CheckDdlRequest):
-    """检查 DDL 是否符合数仓规范。"""
-    from dataworks_agent.governance.ddl_checker import check_ddl_text
+    """检查 DDL 是否符合数仓规范（词根走 MCP 线上词根表）。"""
+    from dataworks_agent.governance.ddl_checker import check_ddl_text_async
 
-    return check_ddl_text(body.ddl)
+    return await check_ddl_text_async(body.ddl)

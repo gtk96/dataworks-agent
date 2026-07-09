@@ -31,20 +31,40 @@ class ProposalGuard:
     """
 
     def check_root(self, fields: list[str]) -> ValidationResult:
-        """词根校验。"""
+        """词根校验（优先 MCP 线上词根表）。"""
+        import asyncio
+
         from dataworks_agent.modeling.root_checker import RootChecker
 
         checker = RootChecker()
         try:
-            result = checker.check_fields_sync(fields)
-            if result.passed:
-                return ValidationResult(passed=True)
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                result = asyncio.run(checker.check_fields(fields))
             else:
+                result = checker.check_fields_local(fields)
                 return ValidationResult(
-                    passed=False,
-                    errors=[f"词根校验失败: {result.summary}"],
-                    details={"invalid_fields": [f for f in result.fields if not f.passed]},
+                    passed=result.passed,
+                    errors=[] if result.passed else [f"词根校验失败: {result.summary}"],
+                    warnings=["词根校验在同步上下文中降级为本地字典"],
+                    details={"field_results": [f.model_dump() for f in result.field_results]},
                 )
+
+            if result.passed:
+                return ValidationResult(
+                    passed=True,
+                    warnings=(
+                        ["词根校验来源：线上词根表"]
+                        if result.source == "online"
+                        else ["词根校验已降级为本地字典"]
+                    ),
+                )
+            return ValidationResult(
+                passed=False,
+                errors=[f"词根校验失败: {result.summary}"],
+                details={"field_results": [f.model_dump() for f in result.field_results]},
+            )
         except Exception as e:
             logger.warning("词根校验异常: %s", e)
             return ValidationResult(passed=True, warnings=[f"词根校验跳过: {e}"])
