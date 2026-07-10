@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "dompurify": "^3.4.11",
     "element-plus": "^2.9.0",
     "markdown-it": "^14.1.0",
     "pinia": "^2.2.0",
@@ -26,6 +27,7 @@
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/vue": "^8.1.0",
+    "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.1.0",
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",

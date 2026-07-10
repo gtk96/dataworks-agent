@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 
 interface Message {
   id: string
@@ -29,7 +30,8 @@ const md = new MarkdownIt({ breaks: true })
 
 const renderedText = computed(() => {
   if (props.message.isUser) return props.message.text
-  return md.render(props.message.text)
+  const html = md.render(props.message.text)
+  return DOMPurify.sanitize(html)
 })
 
 function formatTime(date: Date): string {
