@@ -139,6 +139,46 @@ tests/                       # 单元 / 集成 / 冒烟
 - **自愈流程**: `runtime/self_heal.py` — 调度失败/数据异常诊断+修复提议
 - **评测闭环**: `runtime/evaluator.py` — 质量指标+Badcase沉淀+反馈迭代
 
+### 9. Agent 对话助手
+
+#### 对话式操作
+
+通过自然语言与数仓助手交互，支持：
+
+- **创建表**: "创建ods_user表"
+- **查询血缘**: "查询ods_user的血缘"
+- **检查状态**: "检查任务状态"
+- **部署节点**: "部署ods_user节点"
+
+#### 核心模块
+
+| 模块 | 位置 | 说明 |
+|------|------|------|
+| NLU 解析 | `agent/nlu/` | 意图识别 + 实体抽取 + 模板匹配 |
+| 任务规划 | `agent/planner/` | 任务分解 + 依赖排序 |
+| 工具执行 | `agent/executor/` | 调度 MCP/BFF/OpenAPI 完成操作 |
+| 核心编排 | `agent/core.py` | 对话管理 + 上下文维护 |
+
+#### API 接口
+
+- `POST /api/runtime/chat` — 聊天接口（文本输入 → Agent 响应）
+- `WS /api/runtime/ws` — WebSocket 实时通信（流式输出）
+
+#### 使用示例
+
+```bash
+# 通过 API 发送指令
+curl -X POST http://localhost:8085/api/runtime/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "创建ods_user表", "session_id": "test-001"}'
+```
+
+#### 前端对话组件
+
+- `AgentChat.vue` — 主对话窗口（消息列表 + 输入框）
+- `ChatMessage.vue` — 单条消息渲染（支持 Markdown）
+- `QuickActions.vue` — 快捷操作按钮
+
 ## 推送脚本(SOP)
 
 ### ODS
