@@ -1,11 +1,14 @@
 """任务规划器"""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from dataworks_agent.agent.nlu.intent_parser import Intent
 from dataworks_agent.agent.planner.task_graph import TaskGraph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,9 +50,10 @@ class TaskPlanner:
 
     def plan(self, intent: Intent) -> TaskPlan:
         """根据意图生成任务计划"""
-        task_id = f"task_{intent.action}_{hash(intent.raw_text) % 10000}"
+        task_id = f"task_{intent.action}_{abs(hash(intent.raw_text)) % 10000}"
 
         if intent.action == "unknown":
+            logger.info("未知意图，返回空计划: %s", intent.raw_text)
             return TaskPlan(task_id=task_id, steps=[], intent=intent)
 
         template = TASK_TEMPLATES.get(intent.action, [])
@@ -69,4 +73,24 @@ class TaskPlanner:
             )
             steps.append(step)
 
+        # 使用 TaskGraph 验证依赖关系
+        graph = self._build_dependency_graph(steps)
+        if not graph.validate():
+            logger.warning("检测到循环依赖，使用线性顺序")
+
         return TaskPlan(task_id=task_id, steps=steps, intent=intent)
+
+    def _build_dependency_graph(self, steps: list[TaskStep]) -> TaskGraph:
+        """构建依赖图并验证"""
+        graph = TaskGraph()
+
+        # 添加所有步骤作为节点
+        for step in steps:
+            graph.add_node(step.step_id, tool=step.tool)
+
+        # 添加依赖边
+        for step in steps:
+            for dep in step.depends_on:
+                graph.add_edge(dep, step.step_id)
+
+        return graph
