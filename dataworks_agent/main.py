@@ -301,6 +301,7 @@ def create_app() -> FastAPI:
 
     # ── 注册路由器 ──
     from dataworks_agent.routers import (
+        agent,
         artifacts,
         batch_deploy,
         cookie,
@@ -346,6 +347,7 @@ def create_app() -> FastAPI:
     app.include_router(import_sql.router, prefix="/api/import", tags=["批量导入"])
     app.include_router(schedule_config.router, prefix="/api/schedule", tags=["调度配置"])
     app.include_router(workspace.router, prefix="/api/workspace", tags=["工作空间"])
+    app.include_router(agent.router, prefix="/agent", tags=["agent"])
 
     # ── 薄路由 ──
     @app.get("/api/bus-matrix")
