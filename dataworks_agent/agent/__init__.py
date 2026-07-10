@@ -1,3 +1,3 @@
-from dataworks_agent.agent.core import Agent, AgentResponse
+from dataworks_agent.agent.core import ChatAgent, ChatResponse
 
-__all__ = ["Agent", "AgentResponse"]
+__all__ = ["ChatAgent", "ChatResponse"]
