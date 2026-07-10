@@ -18,7 +18,7 @@ from dataworks_agent.routers.agent import router
 def client():
     """创建带 mock ChatAgent 的测试客户端。"""
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(router, prefix="/agent")
 
     mock_agent = MagicMock(spec=ChatAgent)
     mock_agent.chat = AsyncMock(return_value=ChatResponse(
@@ -51,22 +51,14 @@ def test_chat_endpoint(client):
 
 
 def test_chat_endpoint_empty_message(client):
-    """测试空消息"""
-    test_client, mock_agent = client
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="请输入您的需求",
-        success=False,
-        error="empty message",
-    ))
+    """测试空消息返回 422 验证错误"""
+    test_client, _mock_agent = client
 
     response = test_client.post(
         "/agent/chat",
         json={"message": ""},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is False
-    assert data["error"] == "empty message"
+    assert response.status_code == 422  # Pydantic validation error
 
 
 def test_chat_endpoint_agent_error(client):

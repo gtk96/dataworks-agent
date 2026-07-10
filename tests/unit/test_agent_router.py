@@ -15,7 +15,7 @@ async def test_chat_router_logic():
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(router, prefix="/agent")
 
     # Mock ChatAgent
     mock_agent = MagicMock(spec=ChatAgent)
@@ -47,36 +47,19 @@ async def test_chat_router_logic():
 
 @pytest.mark.asyncio
 async def test_chat_router_empty_message():
-    """测试空消息处理"""
+    """测试空消息返回 422 验证错误"""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(router, prefix="/agent")
 
-    mock_agent = MagicMock(spec=ChatAgent)
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="请输入您的需求",
-        success=False,
-        error="empty message",
-    ))
-
-    import dataworks_agent.routers.agent as agent_module
-    original_agent = agent_module._agent
-    agent_module._agent = mock_agent
-
-    try:
-        client = TestClient(app)
-        response = client.post(
-            "/agent/chat",
-            json={"message": ""},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is False
-        assert data["error"] == "empty message"
-    finally:
-        agent_module._agent = original_agent
+    client = TestClient(app)
+    response = client.post(
+        "/agent/chat",
+        json={"message": ""},
+    )
+    assert response.status_code == 422  # Pydantic validation error
 
 
 @pytest.mark.asyncio
@@ -86,7 +69,7 @@ async def test_chat_router_missing_message():
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(router, prefix="/agent")
 
     client = TestClient(app)
     response = client.post(
