@@ -31,8 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
-import { request } from '@/utils/request'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import ChatMessage from './ChatMessage.vue'
 import QuickActions from './QuickActions.vue'
 
@@ -47,6 +46,7 @@ const input = ref('')
 const loading = ref(false)
 const messages = ref<ChatMsg[]>([])
 const messagesRef = ref<HTMLElement>()
+const ws = ref<WebSocket | null>(null)
 
 onMounted(() => {
   messages.value.push({
@@ -55,6 +55,33 @@ onMounted(() => {
     isUser: false,
     timestamp: new Date(),
   })
+
+  // 建立 WebSocket 连接
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  ws.value = new WebSocket(`${protocol}//${window.location.host}/agent/ws`)
+
+  ws.value.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+    if (data.type === 'response') {
+      messages.value.push({
+        id: (Date.now() + 1).toString(),
+        text: data.data.message,
+        isUser: false,
+        timestamp: new Date(),
+      })
+      loading.value = false
+      nextTick(() => scrollToBottom())
+    }
+  }
+
+  ws.value.onclose = () => {
+    // WebSocket 关闭后可选择重连
+    ws.value = null
+  }
+})
+
+onUnmounted(() => {
+  ws.value?.close()
 })
 
 async function sendMessage() {
@@ -73,29 +100,7 @@ async function sendMessage() {
   scrollToBottom()
 
   loading.value = true
-  try {
-    const data = await request<{ message: string }>('/agent/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message: text }),
-    })
-    messages.value.push({
-      id: (Date.now() + 1).toString(),
-      text: data.message,
-      isUser: false,
-      timestamp: new Date(),
-    })
-  } catch {
-    messages.value.push({
-      id: (Date.now() + 1).toString(),
-      text: '抱歉，请求失败，请稍后重试。',
-      isUser: false,
-      timestamp: new Date(),
-    })
-  } finally {
-    loading.value = false
-    await nextTick()
-    scrollToBottom()
-  }
+  ws.value?.send(JSON.stringify({ message: text }))
 }
 
 function handleQuickAction(prompt: string) {

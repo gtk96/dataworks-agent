@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from dataworks_agent.agent.core import ChatAgent
@@ -14,6 +14,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["agent"])
 
 _agent = ChatAgent()
+
+
+class ConnectionManager:
+    """WebSocket 连接管理器"""
+
+    def __init__(self) -> None:
+        self._connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.remove(websocket)
+
+    async def broadcast(self, message: dict) -> None:
+        for connection in self._connections:
+            await connection.send_json(message)
+
+
+manager = ConnectionManager()
 
 
 class ChatRequest(BaseModel):
@@ -41,3 +62,27 @@ async def chat(request: ChatRequest) -> ChatResponse:
         data=response.data,
         error=response.error,
     )
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """WebSocket 实时通信端点"""
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            message = data.get("message", "")
+            response = await _agent.chat(message)
+            await websocket.send_json({
+                "type": "response",
+                "data": {
+                    "message": response.message,
+                    "success": response.success,
+                    "data": response.data,
+                },
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logger.debug("WS 异常断开: %s", e)
+        manager.disconnect(websocket)
