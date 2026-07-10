@@ -1,7 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from dataworks_agent.agent.core import ChatAgent, ChatResponse
+from dataworks_agent.agent.executor.task_executor import ExecutionResult, StepResult
 
 
 def test_chat_response_initialization():
@@ -40,49 +40,59 @@ async def test_chat_agent_whitespace_message():
 
 @pytest.mark.asyncio
 async def test_chat_agent_delegates_to_agent():
-    """测试 ChatAgent 委托给 runtime.agent.Agent"""
-    from dataworks_agent.runtime.agent import AgentRequest, AgentResponse
-
-    mock_agent = MagicMock()
-    mock_agent.process = AsyncMock(return_value=AgentResponse(
-        success=True,
-        response_type="result",
-        content="查询结果",
-        data={"table": "ods_user"},
-    ))
-
+    """测试 ChatAgent 通过 NLU→Planner→Executor 链路处理"""
     agent = ChatAgent()
-    agent._agent = mock_agent
 
     response = await agent.chat("查询 ods_user")
 
     assert response.success is True
-    assert response.message == "查询结果"
-    assert response.data == {"table": "ods_user"}
-
-    # 验证调用参数
-    call_args = mock_agent.process.call_args[0][0]
-    assert isinstance(call_args, AgentRequest)
-    assert call_args.request_type == "query"
-    assert call_args.content == "查询 ods_user"
+    assert "操作已完成" in response.message or "ods_user" in response.message
+    assert "task_id" in response.data
 
 
 @pytest.mark.asyncio
 async def test_chat_agent_request_type_passed():
-    """测试请求类型正确传递"""
-    from dataworks_agent.runtime.agent import AgentResponse
-
-    mock_agent = MagicMock()
-    mock_agent.process = AsyncMock(return_value=AgentResponse(
-        success=True,
-        response_type="result",
-        content="建模结果",
-    ))
-
+    """测试意图被正确解析并传递到规划器"""
     agent = ChatAgent()
-    agent._agent = mock_agent
 
-    response = await agent.chat("建表", request_type="modeling")
+    response = await agent.chat("建表 test_table")
 
-    call_args = mock_agent.process.call_args[0][0]
-    assert call_args.request_type == "modeling"
+    assert response.success is True
+    assert "task_id" in response.data
+
+
+@pytest.fixture
+def agent():
+    """创建 ChatAgent 并 mock TaskExecutor 以返回成功结果"""
+    a = ChatAgent()
+
+    def fake_execute(plan):
+        return ExecutionResult(
+            success=True,
+            task_id=plan.task_id,
+            step_results=[
+                StepResult(step_id=s.step_id, tool=s.tool, success=True)
+                for s in plan.steps
+            ],
+            errors=[],
+        )
+
+    a._task_executor.execute = fake_execute
+    return a
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_create_table(agent):
+    """测试 Agent 处理创建表请求"""
+    response = await agent.chat("创建ods_user表")
+    assert response.success is True
+    assert "ods_user" in response.message
+    assert "task_id" in response.data
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_query_lineage(agent):
+    """测试 Agent 处理查询血缘请求"""
+    response = await agent.chat("查询ods_user的血缘")
+    assert response.success is True
+    assert "ods_user" in response.message

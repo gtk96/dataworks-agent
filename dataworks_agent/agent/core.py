@@ -8,7 +8,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.nlu.intent_parser import IntentParser
+from dataworks_agent.agent.planner.task_planner import TaskPlanner
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,8 @@ class ChatAgent:
         self._agent = Agent()
         self._AgentRequest = AgentRequest
         self._intent_parser = IntentParser()
+        self._task_planner = TaskPlanner()
+        self._task_executor = TaskExecutor()
 
     async def chat(self, message: str, request_type: str | None = None) -> ChatResponse:
         """处理用户消息
@@ -58,29 +62,27 @@ class ChatAgent:
             )
 
         try:
-            # 如果未指定 request_type，使用 NLU 解析
-            if request_type is None:
-                intent = self._intent_parser.parse(message)
-                request_type = INTENT_TO_REQUEST_TYPE.get(intent.action, "query")
-                logger.info(
-                    "NLU 解析: action=%s, confidence=%.2f, request_type=%s",
-                    intent.action,
-                    intent.confidence,
-                    request_type,
-                )
-
-            request = self._AgentRequest(
-                request_type=request_type,
-                content=message.strip(),
+            # 1. 意图解析
+            intent = self._intent_parser.parse(message)
+            logger.info(
+                "NLU 解析: action=%s, confidence=%.2f",
+                intent.action,
+                intent.confidence,
             )
-            response = await self._agent.process(request)
 
-            return ChatResponse(
-                message=response.content or "处理完成",
-                success=response.success,
-                data=response.data if isinstance(response.data, dict) else {},
-                error=response.errors[0] if response.errors else None,
+            # 2. 任务规划
+            plan = self._task_planner.plan(intent)
+            logger.info(
+                "任务计划: task_id=%s, 步骤数=%d",
+                plan.task_id,
+                len(plan.steps),
             )
+
+            # 3. 任务执行
+            result = self._task_executor.execute(plan)
+
+            # 4. 构建响应
+            return self._build_response(intent, plan, result)
         except Exception as e:
             logger.error("ChatAgent 处理失败: %s", e)
             return ChatResponse(
@@ -88,3 +90,43 @@ class ChatAgent:
                 success=False,
                 error=str(e),
             )
+
+    def _build_response(
+        self,
+        intent: Any,
+        plan: Any,
+        result: ExecutionResult,
+    ) -> ChatResponse:
+        """构建响应"""
+        if result.success:
+            message = self._format_success_message(intent, result)
+            return ChatResponse(
+                message=message,
+                success=True,
+                data={
+                    "task_id": result.task_id,
+                    "steps_completed": len(result.step_results),
+                },
+            )
+        else:
+            message = self._format_error_message(intent, result)
+            return ChatResponse(
+                message=message,
+                success=False,
+                error=result.errors[0] if result.errors else "未知错误",
+            )
+
+    def _format_success_message(self, intent: Any, result: ExecutionResult) -> str:
+        """格式化成功消息"""
+        action_messages = {
+            "create_table": "已成功创建表",
+            "query_lineage": "血缘查询结果",
+            "check_status": "任务状态",
+        }
+        prefix = action_messages.get(intent.action, "操作已完成")
+        table_name = intent.params.get("table_name", "")
+        return f"{prefix} {table_name}" if table_name else prefix
+
+    def _format_error_message(self, intent: Any, result: ExecutionResult) -> str:
+        """格式化错误消息"""
+        return f"操作失败: {'; '.join(result.errors)}"
