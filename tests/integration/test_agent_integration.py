@@ -1,5 +1,6 @@
-"""Agent 集成测试 — 测试完整对话流程（真实 ChatAgent + mock 外部依赖）。
+"""Agent 集成测试 — 测试完整对话流程。
 
+使用真实 ChatAgent（NLU→Planner→Executor 链路），ToolExecutor 为 stub 实现。
 验证从 API 请求到 Agent 处理再到响应的完整链路。
 """
 
@@ -22,9 +23,10 @@ def client():
     agent_module._agent = ChatAgent()
 
     test_client = TestClient(app)
-    yield test_client
-
-    agent_module._agent = original_agent
+    try:
+        yield test_client
+    finally:
+        agent_module._agent = original_agent
 
 
 def test_full_chat_flow(client):
