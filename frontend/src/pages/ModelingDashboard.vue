@@ -1,5 +1,12 @@
 <template>
   <div v-loading="!loaded" element-loading-text="仪表盘加载中...">
+    <!-- Agent 对话入口 -->
+    <el-drawer v-model="showChat" title="数仓助手" size="420px" :with-header="true">
+      <AgentChat />
+    </el-drawer>
+    <el-button class="chat-fab" circle @click="showChat = true">
+      <el-icon :size="24"><ChatDotRound /></el-icon>
+    </el-button>
     <el-alert
       v-if="loadError && loaded"
       type="error"
@@ -102,7 +109,11 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import { request } from '@/utils/request'
+import AgentChat from '@/components/agent/AgentChat.vue'
+
+const showChat = ref(false)
 
 type TypeBucket = { total: number; completed: number; failed: number; running?: number; pending?: number }
 
@@ -248,3 +259,15 @@ onUnmounted(() => {
   if (_ws) { _ws.onclose = null; _ws.close(); _ws = null }
 })
 </script>
+
+<style scoped>
+.chat-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+</style>
