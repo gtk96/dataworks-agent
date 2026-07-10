@@ -8,7 +8,17 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from dataworks_agent.agent.nlu.intent_parser import IntentParser
+
 logger = logging.getLogger(__name__)
+
+# 意图到请求类型的映射
+INTENT_TO_REQUEST_TYPE: dict[str, str] = {
+    "create_table": "modeling",
+    "query_lineage": "query",
+    "check_status": "query",
+    "unknown": "query",
+}
 
 
 @dataclass
@@ -31,13 +41,14 @@ class ChatAgent:
 
         self._agent = Agent()
         self._AgentRequest = AgentRequest
+        self._intent_parser = IntentParser()
 
-    async def chat(self, message: str, request_type: str = "query") -> ChatResponse:
+    async def chat(self, message: str, request_type: str | None = None) -> ChatResponse:
         """处理用户消息
 
         Args:
             message: 用户输入
-            request_type: 请求类型 (query/modeling/clarification)，默认 "query"
+            request_type: 请求类型 (query/modeling/clarification)，默认从 NLU 解析
         """
         if not message or not message.strip():
             return ChatResponse(
@@ -47,6 +58,17 @@ class ChatAgent:
             )
 
         try:
+            # 如果未指定 request_type，使用 NLU 解析
+            if request_type is None:
+                intent = self._intent_parser.parse(message)
+                request_type = INTENT_TO_REQUEST_TYPE.get(intent.action, "query")
+                logger.info(
+                    "NLU 解析: action=%s, confidence=%.2f, request_type=%s",
+                    intent.action,
+                    intent.confidence,
+                    request_type,
+                )
+
             request = self._AgentRequest(
                 request_type=request_type,
                 content=message.strip(),
