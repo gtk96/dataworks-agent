@@ -33,7 +33,7 @@ class AgentResponse:
     success: bool
     response_type: str  # proposal / result / clarification / error
     content: str = ""
-    data: dict[str, Any] = field(default_factory=list)
+    data: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     needs_approval: bool = False
 

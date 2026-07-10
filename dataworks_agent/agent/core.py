@@ -32,8 +32,13 @@ class ChatAgent:
         self._agent = Agent()
         self._AgentRequest = AgentRequest
 
-    async def chat(self, message: str) -> ChatResponse:
-        """处理用户消息"""
+    async def chat(self, message: str, request_type: str = "query") -> ChatResponse:
+        """处理用户消息
+
+        Args:
+            message: 用户输入
+            request_type: 请求类型 (query/modeling/clarification)，默认 "query"
+        """
         if not message or not message.strip():
             return ChatResponse(
                 message="请输入您的需求",
@@ -43,7 +48,7 @@ class ChatAgent:
 
         try:
             request = self._AgentRequest(
-                request_type="query",
+                request_type=request_type,
                 content=message.strip(),
             )
             response = await self._agent.process(request)
