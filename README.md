@@ -161,16 +161,16 @@ tests/                       # 单元 / 集成 / 冒烟
 
 #### API 接口
 
-- `POST /api/runtime/chat` — 聊天接口（文本输入 → Agent 响应）
-- `WS /api/runtime/ws` — WebSocket 实时通信（流式输出）
+- `POST /agent/chat` — 聊天接口（文本输入 → Agent 响应）
+- `WS /agent/ws` — WebSocket 实时通信（流式输出）
 
 #### 使用示例
 
 ```bash
 # 通过 API 发送指令
-curl -X POST http://localhost:8085/api/runtime/chat \
+curl -X POST http://localhost:8085/agent/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "创建ods_user表", "session_id": "test-001"}'
+  -d '{"message": "创建ods_user表"}'
 ```
 
 #### 前端对话组件
@@ -256,7 +256,8 @@ uv run python scripts/delete_dim_nodes.py "业务流程/100_订单信息/MaxComp
 | `/api/logs` | 任务日志 | 1 |
 | `/api/system` | 系统(health/settings) | 3 |
 | `/api/semantic` | 语义层(定义/口径/质量) | 7 |
-| `/api/runtime` | Runtime(会话/运行/Agent) | 10 |
+| `/api/runtime` | Runtime(会话/运行) | 8 |
+| `/agent` | Agent(对话式操作) | 2 |
 | `/api/mcp-server` | MCP Server(工具调用) | 4 |
 | `/api/workspace` | 数据源与工作空间 | 12 |
 | `/api/reconciliation` | 协调 | 2 |

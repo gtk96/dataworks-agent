@@ -30,10 +30,7 @@ class IntentParser:
     def _check_negation(self, text: str) -> bool:
         """检查文本是否包含否定词"""
         text_lower = text.lower()
-        for negation in NEGATION_WORDS:
-            if negation in text_lower:
-                return True
-        return False
+        return any(negation in text_lower for negation in NEGATION_WORDS)
 
     def parse(self, text: str) -> Intent:
         """解析用户输入为意图"""

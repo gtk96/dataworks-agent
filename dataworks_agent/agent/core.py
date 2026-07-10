@@ -14,14 +14,6 @@ from dataworks_agent.agent.planner.task_planner import TaskPlanner
 
 logger = logging.getLogger(__name__)
 
-# 意图到请求类型的映射
-INTENT_TO_REQUEST_TYPE: dict[str, str] = {
-    "create_table": "modeling",
-    "query_lineage": "query",
-    "check_status": "query",
-    "unknown": "query",
-}
-
 
 @dataclass
 class ChatResponse:
