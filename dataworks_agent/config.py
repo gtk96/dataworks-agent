@@ -105,6 +105,17 @@ class Settings(BaseSettings):
     # Product profile: expose only Agent-first core by default; L1-L5 semantic/runtime/MCP skeleton routes are opt-in.
     enable_experimental_platform_routes: bool = False
 
+    # 阿里云官方 DataWorks MCP（stdio 子进程）
+    official_dataworks_mcp_enabled: bool = True
+    official_dataworks_mcp_command: str = "npx"
+    official_dataworks_mcp_package: str = "alibabacloud-dataworks-mcp-server@1.0.45"
+    official_dataworks_mcp_tool_categories: str = ""
+    official_dataworks_mcp_tool_names: str = ""
+
+    # 自主问数默认返回行数与超时限制
+    ask_data_default_limit: int = 100
+    ask_data_timeout_seconds: int = 120
+
     # Derived properties
     @property
     def dataworks_endpoint(self) -> str:

@@ -26,6 +26,21 @@ async def startup_smoke_check() -> None:
     else:
         results["mcp"] = {"ok": False, "msg": "未配置"}
 
+    # Official DataWorks MCP
+    official_mcp = getattr(app_state, "_official_mcp_client", None)
+    if official_mcp:
+        status = official_mcp.status
+        results["official_mcp"] = {
+            "ok": status.connected,
+            "msg": (
+                f"connected, slim tools={status.tool_count}"
+                if status.connected
+                else status.error or "not connected"
+            ),
+        }
+    else:
+        results["official_mcp"] = {"ok": False, "msg": "not initialized"}
+
     # —— BFF ——
     bff = getattr(app_state, "_bff_client", None)
     if bff:

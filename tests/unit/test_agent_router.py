@@ -49,6 +49,42 @@ async def test_chat_router_logic():
 
 
 @pytest.mark.asyncio
+async def test_chat_router_explicit_plan_uses_workflow_options():
+    """前端显式选择规划预览时，仍走新的全链路 workflow service。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(router, prefix="/agent")
+    mock_agent = MagicMock(spec=ChatAgent)
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(message="已生成全链路计划", success=True, data={})
+    )
+
+    import dataworks_agent.routers.agent as agent_module
+
+    original_agent = agent_module._agent
+    agent_module._agent = mock_agent
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/agent/chat",
+            json={"message": "ODS 到 DWS 全链路", "execution_mode": "plan"},
+        )
+        assert response.status_code == 200
+        mock_agent.chat.assert_awaited_once_with(
+            "ODS 到 DWS 全链路",
+            None,
+            execution_mode="plan",
+            initialize_data=True,
+            publish=False,
+            client_ip="testclient",
+        )
+    finally:
+        agent_module._agent = original_agent
+
+
+@pytest.mark.asyncio
 async def test_chat_router_empty_message():
     """测试空消息返回 422 验证错误"""
     from fastapi import FastAPI

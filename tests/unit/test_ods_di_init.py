@@ -449,3 +449,70 @@ class TestTargetTableIdentifierGuard:
             granularity="hour",
         )
         assert result["target_table"] == "ods_hl_shop__orders_hour"
+
+
+class TestDevelopmentOnlyInitialization:
+    async def test_does_not_touch_prod_or_deploy(self, monkeypatch) -> None:
+        calls: list[dict] = []
+
+        async def fake_run_four_phases(bff, mcp, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "steps": {"create_node": {"uuid": f"u{len(calls)}"}},
+                "standard_ddl": "",
+                "di_config": {"steps": [{}, {}, {"parameter": {"column": ["id"]}}]},
+            }
+
+        monkeypatch.setattr(init_workflow, "run_four_phases", fake_run_four_phases)
+        monkeypatch.setattr(
+            init_workflow,
+            "infer_fields",
+            AsyncMock(
+                return_value={
+                    "status": "ok",
+                    "columns": ["id"],
+                    "where_field": "update_time",
+                    "where_type": "datetime",
+                }
+            ),
+        )
+        monkeypatch.setattr(init_workflow, "manual_run_init_node", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            init_workflow,
+            "validate_init_partition",
+            AsyncMock(return_value={"passed": True, "target_row_count": 1}),
+        )
+        ensure = AsyncMock(return_value={"status": "exists"})
+        monkeypatch.setattr(init_workflow, "ensure_table", ensure)
+        bff = AsyncMock()
+        bff.deploy_nodes = AsyncMock(return_value=True)
+        node_client = AsyncMock()
+        mc_client = AsyncMock()
+
+        result = await init_workflow.run_with_initialization(
+            bff,
+            AsyncMock(),
+            datasource_name="shop",
+            source_table="orders",
+            granularity="hour",
+            target_table="ods_shop_orders_hour",
+            init_config=init_workflow.InitializationConfig(
+                copy_to_prod=False,
+                publish_incremental_after_init=False,
+                dev_mc_project="dev_project",
+                prod_mc_project="prod_project",
+            ),
+            node_client=node_client,
+            mc_client=mc_client,
+        )
+
+        assert result["success"] is True
+        assert result["execution_scope"] == "dev_only"
+        assert [call["mc_project"] for call in calls] == ["dev_project", "dev_project"]
+        assert all(call["node_client"] is node_client for call in calls)
+        assert all(call["mc_client"] is mc_client for call in calls)
+        assert result["initialization"]["prod_copy"]["status"] == "skipped"
+        assert result["incremental"]["deploy"]["status"] == "skipped"
+        ensure.assert_not_awaited()
+        bff.deploy_nodes.assert_not_awaited()

@@ -170,6 +170,17 @@ async def lifespan(app: FastAPI):
         app_state._maxcompute_client = None
         app_state._node_client = None
 
+    # 3c. Official Alibaba Cloud DataWorks MCP (slim allowlist; graceful fallback)
+    try:
+        from dataworks_agent.mcp.official_dataworks import OfficialDataWorksMCPClient
+
+        official_mcp = OfficialDataWorksMCPClient()
+        await official_mcp.connect()
+        app_state._official_mcp_client = official_mcp
+    except Exception as e:
+        logger.warning("Official DataWorks MCP initialization failed: %s", e)
+        app_state._official_mcp_client = None
+
     # 4. Cookie 保活 (轻量 BFF 心跳，不刷新浏览器)
     from dataworks_agent.cookie.health import cookie_health_monitor
 
@@ -252,6 +263,8 @@ async def lifespan(app: FastAPI):
     _word_root_sync_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await _word_root_sync_task
+    if app_state._official_mcp_client:
+        await app_state._official_mcp_client.close()
     if app_state.mcp_pool:
         await app_state.mcp_pool.disconnect()
     if app_state._bff_client:

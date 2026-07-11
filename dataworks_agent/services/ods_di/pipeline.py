@@ -71,6 +71,8 @@ class DIPipeline:
                 source_type=source_type,
                 target_table=target_table,
                 init_config=cfg,
+                node_client=self._nodes,
+                mc_client=self._mc,
             )
 
         ods_table = target_table or generate_ods_di_table_name(

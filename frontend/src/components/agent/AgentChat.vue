@@ -34,6 +34,14 @@
         </div>
 
         <div class="composer">
+          <div class="execution-controls">
+            <el-radio-group v-model="executionMode" size="small">
+              <el-radio-button value="dev_execute">开发执行</el-radio-button>
+              <el-radio-button value="plan">规划预览</el-radio-button>
+            </el-radio-group>
+            <el-switch v-model="initializeData" active-text="初始化数据" />
+            <el-checkbox v-model="requestPublish">完成后提交发布审批</el-checkbox>
+          </div>
           <el-input
             v-model="input"
             type="textarea"
@@ -98,8 +106,8 @@
         <div v-if="planSteps.length" class="panel-section">
           <div class="panel-title">Agent 计划</div>
           <ol class="plan-list">
-            <li v-for="step in planSteps" :key="step.step_id">
-              <strong>{{ step.title || step.tool }}</strong>
+            <li v-for="step in planSteps" :key="step.step_id || step.step || step.tool">
+              <strong>{{ step.title || step.tool || step.step }}</strong>
               <span>{{ phaseLabel(step.phase) }} / {{ riskLabel(step.risk) }}</span>
             </li>
           </ol>
@@ -179,8 +187,9 @@ interface ExecutionStatus {
 }
 
 interface PlanStep {
-  step_id: string
-  tool: string
+  step_id?: string
+  step?: string
+  tool?: string
   title?: string
   phase?: string
   risk?: string
@@ -209,7 +218,11 @@ interface AgentPayload {
       }>
     }
     status?: ExecutionStatus | null
-    artifacts?: Record<string, unknown>
+    artifacts?: Record<string, unknown> | Array<Record<string, unknown>>
+    capabilities?: Record<string, unknown>
+    executed?: Array<Record<string, unknown>>
+    execution_mode?: string
+    publish_request?: Record<string, unknown>
     approvals?: unknown[]
     clarifying_questions?: string[]
     next_actions?: string[]
@@ -220,6 +233,9 @@ interface AgentPayload {
 
 const input = ref('')
 const loading = ref(false)
+const executionMode = ref<'plan' | 'dev_execute'>('dev_execute')
+const initializeData = ref(true)
+const requestPublish = ref(false)
 const messages = ref<ChatMsg[]>([])
 const messagesRef = ref<HTMLElement>()
 const ws = ref<WebSocket | null>(null)
@@ -245,22 +261,35 @@ const modeText = computed(() => {
     needs_context: '需要上下文',
     approval_required: '等待审批',
     blocked: '需要处理',
+    executed: '开发已执行',
   }
   return map[agentMode.value] ?? agentMode.value
 })
 const modeTagType = computed(() => {
   if (agentMode.value === 'blocked') return 'danger'
   if (agentMode.value === 'approval_required' || agentMode.value === 'needs_context') return 'warning'
-  if (agentMode.value === 'proposal') return 'success'
+  if (agentMode.value === 'proposal' || agentMode.value === 'executed') return 'success'
   return 'info'
 })
 
 const artifactCards = computed(() => {
   const cards: Array<{ label: string; value: string; isCode: boolean }> = []
   const artifacts = lastPayload.value?.data?.artifacts ?? {}
-  for (const [key, value] of Object.entries(artifacts)) {
-    if (value === undefined || value === null || value === '') continue
-    cards.push({ label: artifactLabel(key), value: stringifyArtifact(value), isCode: key === 'ddl' || key === 'sql' })
+  if (Array.isArray(artifacts)) {
+    for (const artifact of artifacts) {
+      const type = String(artifact.type ?? 'artifact')
+      const value = artifact.content ?? artifact
+      cards.push({
+        label: `${artifactLabel(type)}${artifact.name ? ` · ${artifact.name}` : ''}`,
+        value: stringifyArtifact(value),
+        isCode: type.includes('ddl') || type.includes('sql'),
+      })
+    }
+  } else {
+    for (const [key, value] of Object.entries(artifacts)) {
+      if (value === undefined || value === null || value === '') continue
+      cards.push({ label: artifactLabel(key), value: stringifyArtifact(value), isCode: key === 'ddl' || key === 'sql' })
+    }
   }
   const stepResults = lastPayload.value?.data?.execution?.step_results ?? []
   for (const result of stepResults) {
@@ -289,7 +318,7 @@ const approvalItems = computed(() => {
 onMounted(() => {
   messages.value.push({
     id: 'welcome',
-    text: '我是你的 DataWorks Agent。请直接描述业务或数据目标，不需要先选择工具页。我会理解目标、拆解计划、生成产物草稿并展示执行状态；涉及发布、删除、覆盖等高风险操作时，会停在 Publish Gate 等待审批。',
+    text: '我是你的 DataWorks Agent。直接用一句话描述目标即可：正向/逆向建模、异常排查、Cookie 管理、自主问数，以及 ODS→DWD/DIM→DWS 全链路。默认可在开发环境建表、建 Saved 节点、配置调度并初始化；正式发布仍会停在 Publish Gate 等待审批。',
     isUser: false,
     timestamp: new Date(),
   })
@@ -334,7 +363,12 @@ async function sendMessage() {
 
   loading.value = true
   if (ws.value?.readyState === WebSocket.OPEN) {
-    ws.value.send(JSON.stringify({ message: text }))
+    ws.value.send(JSON.stringify({
+      message: text,
+      execution_mode: executionMode.value,
+      initialize_data: initializeData.value,
+      publish: requestPublish.value,
+    }))
     return
   }
 
@@ -346,7 +380,12 @@ async function sendViaHttp(text: string) {
     const response = await fetch('/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({
+        message: text,
+        execution_mode: executionMode.value,
+        initialize_data: initializeData.value,
+        publish: requestPublish.value,
+      }),
     })
     const payload = await response.json()
     handleAgentResponse(payload)
@@ -565,6 +604,14 @@ function stringifyArtifact(value: unknown) {
 @keyframes pulse {
   0%, 80%, 100% { opacity: 0.35; transform: scale(0.75); }
   40% { opacity: 1; transform: scale(1); }
+}
+
+.execution-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: #52627a;
 }
 
 .composer {

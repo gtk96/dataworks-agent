@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from dataworks_agent.agent.core import ChatAgent
@@ -44,6 +44,9 @@ class ChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=10000, description="User message")
     request_type: str | None = Field(default=None, description="Optional request type override")
+    execution_mode: Literal["auto", "plan", "dev_execute"] = "plan"
+    initialize_data: bool = True
+    publish: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -56,13 +59,27 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    """Handle chat messages for modeling, lineage query, and status check workflows."""
-    logger.info("Received chat request: %s", request.message[:50])
-    if request.request_type is None:
-        response = await _agent.chat(request.message)
+async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    """Handle conversational planning and development execution."""
+    logger.info("Received chat request: %s", payload.message[:50])
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    workflow_options_explicit = bool(
+        {"execution_mode", "initialize_data", "publish"} & payload.model_fields_set
+    )
+    if not workflow_options_explicit:
+        if payload.request_type is None:
+            response = await _agent.chat(payload.message)
+        else:
+            response = await _agent.chat(payload.message, payload.request_type)
     else:
-        response = await _agent.chat(request.message, request.request_type)
+        response = await _agent.chat(
+            payload.message,
+            payload.request_type,
+            execution_mode=payload.execution_mode,
+            initialize_data=payload.initialize_data,
+            publish=payload.publish,
+            client_ip=client_ip,
+        )
     logger.info("Chat response: success=%s", response.success)
     return ChatResponse(
         message=response.message,
@@ -94,7 +111,24 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         while True:
             data = await websocket.receive_json()
             message = data.get("message", "")
-            response = await _agent.chat(message)
+            execution_mode = data.get("execution_mode", "plan")
+            initialize_data = bool(data.get("initialize_data", True))
+            publish = bool(data.get("publish", False))
+            request_type = data.get("request_type")
+            workflow_options_explicit = any(
+                key in data for key in ("execution_mode", "initialize_data", "publish")
+            )
+            if not workflow_options_explicit and request_type is None:
+                response = await _agent.chat(message)
+            else:
+                response = await _agent.chat(
+                    message,
+                    request_type,
+                    execution_mode=execution_mode,
+                    initialize_data=initialize_data,
+                    publish=publish,
+                    client_ip=websocket.client.host if websocket.client else "127.0.0.1",
+                )
             payload = {
                 "message": response.message,
                 "success": response.success,

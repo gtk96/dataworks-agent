@@ -5,6 +5,22 @@ from __future__ import annotations
 from typing import Any
 
 INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "cookie_manage": {
+        "patterns": [
+            r"(cookie|\u767b\u5f55\u6001|9222).*?(\u68c0\u67e5|\u63d0\u53d6|\u5237\u65b0|\u540c\u6b65|\u66f4\u65b0|\u7ba1\u7406)?",
+            r"(\u68c0\u67e5|\u63d0\u53d6|\u5237\u65b0|\u540c\u6b65|\u66f4\u65b0|\u7ba1\u7406).*?(cookie|\u767b\u5f55\u6001|9222)",
+        ],
+        "required_params": [],
+        "optional_params": ["goal"],
+    },
+    "ask_data": {
+        "patterns": [
+            r"(\u81ea\u4e3b\u95ee\u6570|\u95ee\u6570|\u67e5\u6570|\u67e5\u8be2\u6570\u636e|\u770b\u6570\u636e|\u591a\u5c11\u6761|\u524d\u51e0\u6761)",
+            r"```sql[\s\S]*?select",
+        ],
+        "required_params": [],
+        "optional_params": ["goal", "table_name", "source_table"],
+    },
     "publish_review": {
         "patterns": [
             r"(直接)?发布.*?(表|节点|任务|dwd|ods|dim|dws|dmr)",
@@ -48,6 +64,8 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
             r"(\u4ece|\u57fa\u4e8e|source).*?(ods).*?(dwd)",
             r"ods\s*(?:\+|and|\u518d|\u5230|->|\u2192).*?dwd",
             r"source.*?ods.*?dwd",
+            r"ods.*?(dwd|dim).*?dws",
+            r"\u5168\u94fe\u8def.*?(ods|dwd|dim|dws|\u5efa\u8868|\u521d\u59cb\u5316)",
         ],
         "required_params": [],
         "optional_params": [

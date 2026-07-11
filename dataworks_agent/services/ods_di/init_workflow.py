@@ -36,6 +36,7 @@ class InitializationConfig:
     init_partition_hour: str = "00"
     allow_empty_source: bool = False
     publish_incremental_after_init: bool = True
+    copy_to_prod: bool = True
     first_incremental_lookback_hours: int | None = None
 
 
@@ -160,6 +161,8 @@ async def run_four_phases(
     schedule_minute: int,
     resource_group: str,
     source_type: str | None,
+    node_client: Any = None,
+    mc_client: Any = None,
 ) -> dict[str, Any]:
     """Run phases 1–4 for one task role."""
     steps: dict[str, Any] = {}
@@ -178,6 +181,7 @@ async def run_four_phases(
         target_table=ods_table,
         granularity=granularity,
         mc_project=mc_project,
+        mc=mc_client,
     )
     steps["ensure_table"] = table_step
     if table_step.get("status") not in {"exists", "created"}:
@@ -207,7 +211,7 @@ async def run_four_phases(
     }
 
     node_step = await create_di_node(
-        bff,
+        node_client or bff,
         node_name=node_name,
         node_path=node_path,
         di_config=config_step["di_config"],
@@ -274,11 +278,10 @@ async def run_with_initialization(
     source_type: str | None = "hologres",
     target_table: str | None = None,
     init_config: InitializationConfig | None = None,
+    node_client: Any = None,
+    mc_client: Any = None,
 ) -> dict[str, Any]:
-    """Full init → validate → copy → publish gate → incremental pipeline."""
-    # B3 同源债（v9 §3.2）：尊重 target_table 时校验标识符白名单，防止
-    # ../../../etc/passwd / 'ods_x; DROP TABLE y' 注入到 generate_node_path /
-    # create_di_node / ensure_table 的 SQL 拼接。
+    """Run init + incremental workflow with an explicit dev-only safe mode."""
     if target_table is not None:
         from dataworks_agent.schemas import assert_safe_table_name
 
@@ -288,6 +291,7 @@ async def run_with_initialization(
     dev_project = cfg.dev_mc_project or settings.dataworks_dev_schema
     prod_project = cfg.prod_mc_project or settings.dataworks_prod_schema
     rg = resource_group or settings.dataworks_resource_group
+    nodes = node_client or bff
 
     ods_table = target_table or generate_ods_di_table_name(
         datasource_name, source_table, granularity, source_type=source_type
@@ -300,6 +304,7 @@ async def run_with_initialization(
     result: dict[str, Any] = {
         "target_table": ods_table,
         "success": True,
+        "execution_scope": "dev_only" if not cfg.copy_to_prod else "dev_to_prod",
         "initialization": {},
         "incremental": {},
     }
@@ -308,7 +313,6 @@ async def run_with_initialization(
     field_info["init_partition_date"] = cfg.init_partition_date
     field_info["init_partition_hour"] = cfg.init_partition_hour
 
-    # Phase A: init node on dev (no schedule)
     init_run = await run_four_phases(
         bff,
         mcp,
@@ -324,26 +328,14 @@ async def run_with_initialization(
         schedule_minute=schedule_minute,
         resource_group=rg,
         source_type=source_type,
+        node_client=nodes,
+        mc_client=mc_client,
     )
     result["initialization"]["init_pipeline"] = init_run
     if not init_run.get("success"):
         result["success"] = False
         return result
 
-    # Ensure prod table
-    prod_table = await ensure_table(
-        bff,
-        mcp,
-        datasource_name=datasource_name,
-        source_table_name=source_table,
-        target_table=ods_table,
-        granularity=granularity,
-        mc_project=prod_project,
-    )
-    result["initialization"]["prod_ensure_table"] = prod_table
-    prod_table_ok = prod_table.get("status") in {"exists", "created"}
-
-    # Run init DI once
     init_exec_ok = await manual_run_init_node(
         bff, node_path=init_path, node_name=init_node_name, resource_group=rg
     )
@@ -351,12 +343,6 @@ async def run_with_initialization(
         "status": "ok" if init_exec_ok else "failed",
         "error": bff.last_error if not init_exec_ok else "",
     }
-
-    standard_ddl = init_run.get("standard_ddl") or prod_table.get("standard_ddl") or ""
-    di_config = init_run.get("di_config") or {}
-    writer_columns = ((di_config.get("steps") or [{}, {}, {}])[2].get("parameter") or {}).get(
-        "column"
-    ) or field_info.get("columns", [])
 
     dev_validation = await validate_init_partition(
         bff,
@@ -368,61 +354,94 @@ async def run_with_initialization(
         init_partition_hour=cfg.init_partition_hour,
     )
     result["initialization"]["dev_validation"] = dev_validation
+    filter_valid = bool(
+        field_info.get("where_field") or granularity in {"all", "hourly", "hour"}
+    )
 
-    copy_ok = False
-    copy_job = None
-    if dev_validation.get("passed"):
-        copy_sql = build_copy_init_partition_sql(
-            ods_table_name=ods_table,
-            columns=list(writer_columns),
+    if cfg.copy_to_prod:
+        prod_table = await ensure_table(
+            bff,
+            mcp,
+            datasource_name=datasource_name,
+            source_table_name=source_table,
+            target_table=ods_table,
             granularity=granularity,
-            ddl=standard_ddl or None,
-            dev_project=dev_project,
-            prod_project=prod_project,
+            mc_project=prod_project,
+            mc=mc_client,
+        )
+        result["initialization"]["prod_ensure_table"] = prod_table
+        prod_table_ok = prod_table.get("status") in {"exists", "created"}
+
+        standard_ddl = init_run.get("standard_ddl") or prod_table.get("standard_ddl") or ""
+        di_config = init_run.get("di_config") or {}
+        writer_columns = (
+            ((di_config.get("steps") or [{}, {}, {}])[2].get("parameter") or {}).get("column")
+            or field_info.get("columns", [])
+        )
+        copy_ok = False
+        copy_job = None
+        if dev_validation.get("passed"):
+            copy_sql = build_copy_init_partition_sql(
+                ods_table_name=ods_table,
+                columns=list(writer_columns),
+                granularity=granularity,
+                ddl=standard_ddl or None,
+                dev_project=dev_project,
+                prod_project=prod_project,
+                init_partition_date=cfg.init_partition_date,
+                init_partition_hour=cfg.init_partition_hour,
+            )
+            copy_job = await bff.execute_sql_ida(copy_sql)
+            copy_ok = bool(
+                copy_job and await bff.wait_ida_job(copy_job, max_retry=36, interval=5)
+            )
+        result["initialization"]["prod_copy"] = {
+            "status": "ok" if copy_ok else "failed",
+            "job_code": copy_job,
+        }
+        prod_validation = await validate_init_partition(
+            bff,
+            project=prod_project,
+            table_name=ods_table,
+            granularity=granularity,
+            allow_empty_source=cfg.allow_empty_source,
             init_partition_date=cfg.init_partition_date,
             init_partition_hour=cfg.init_partition_hour,
         )
-        copy_job = await bff.execute_sql_ida(copy_sql)
-        copy_ok = bool(copy_job and await bff.wait_ida_job(copy_job, max_retry=36, interval=5))
-    result["initialization"]["prod_copy"] = {
-        "status": "ok" if copy_ok else "failed",
-        "job_code": copy_job,
-    }
+        result["initialization"]["prod_validation"] = prod_validation
+        dev_count = int(dev_validation.get("target_row_count") or 0)
+        prod_count = int(prod_validation.get("target_row_count") or 0)
+        gate = evaluate_publish_gate(
+            tables_created=prod_table_ok,
+            init_run_succeeded=init_exec_ok,
+            dev_validated=bool(dev_validation.get("passed")),
+            prod_copy_succeeded=copy_ok,
+            prod_validated=bool(prod_validation.get("passed")) and prod_count == dev_count,
+            incremental_filter_valid=filter_valid,
+        )
+        incremental_project = prod_project
+    else:
+        for key in ("prod_ensure_table", "prod_copy", "prod_validation"):
+            result["initialization"][key] = {
+                "status": "skipped",
+                "reason": "copy_to_prod=false",
+            }
+        gate = {
+            "allowed": bool(init_exec_ok and dev_validation.get("passed") and filter_valid),
+            "scope": "development",
+            "reasons": [],
+        }
+        if not init_exec_ok:
+            gate["reasons"].append("init_run_failed")
+        if not dev_validation.get("passed"):
+            gate["reasons"].append("dev_validation_failed")
+        if not filter_valid:
+            gate["reasons"].append("incremental_filter_invalid")
+        incremental_project = dev_project
 
-    prod_validation = await validate_init_partition(
-        bff,
-        project=prod_project,
-        table_name=ods_table,
-        granularity=granularity,
-        allow_empty_source=cfg.allow_empty_source,
-        init_partition_date=cfg.init_partition_date,
-        init_partition_hour=cfg.init_partition_hour,
-    )
-    result["initialization"]["prod_validation"] = prod_validation
-
-    dev_count = int(dev_validation.get("target_row_count") or 0)
-    prod_count = int(prod_validation.get("target_row_count") or 0)
-    filter_valid = bool(field_info.get("where_field") or granularity in {"all", "hourly"})
-
-    gate = evaluate_publish_gate(
-        tables_created=prod_table_ok,
-        init_run_succeeded=init_exec_ok,
-        dev_validated=bool(dev_validation.get("passed")),
-        prod_copy_succeeded=copy_ok,
-        prod_validated=bool(prod_validation.get("passed")) and prod_count == dev_count,
-        incremental_filter_valid=filter_valid,
-    )
     result["publish_gate"] = gate
-
     if not gate.get("allowed"):
         result["success"] = False
-        return result
-
-    if not cfg.publish_incremental_after_init:
-        result["incremental"] = {
-            "status": "skipped",
-            "reason": "publish_incremental_after_init=false",
-        }
         return result
 
     incr_run = await run_four_phases(
@@ -436,10 +455,12 @@ async def run_with_initialization(
         granularity=granularity,
         field_info=field_info,
         task_role="incremental",
-        mc_project=prod_project,
+        mc_project=incremental_project,
         schedule_minute=schedule_minute,
         resource_group=rg,
         source_type=source_type,
+        node_client=nodes,
+        mc_client=mc_client,
     )
     result["incremental"] = incr_run
     if not incr_run.get("success"):
@@ -451,7 +472,7 @@ async def run_with_initialization(
         lookback = cfg.first_incremental_lookback_hours
         if lookback:
             lb_result = await apply_first_incremental_lookback(
-                bff,
+                nodes,
                 incr_uuid=str(incr_uuid),
                 di_config=incr_run.get("di_config", {}),
                 where_field=field_info.get("where_field", ""),
@@ -460,11 +481,20 @@ async def run_with_initialization(
                 lookback_hours=lookback,
             )
             result["incremental"]["first_run_lookback"] = lb_result
-            # v10 §4.5 fail-closed：lookback 改写失败则禁止 deploy，避免漏采无回滚
             if lb_result.get("status") == "failed":
                 result["success"] = False
                 return result
-        deployed = await bff.deploy_nodes([str(incr_uuid)], comment=f"auto deploy {ods_table}")
-        result["incremental"]["deploy"] = {"status": "ok" if deployed else "failed"}
+        if cfg.copy_to_prod and cfg.publish_incremental_after_init:
+            deployed = await bff.deploy_nodes(
+                [str(incr_uuid)], comment=f"auto deploy {ods_table}"
+            )
+            result["incremental"]["deploy"] = {
+                "status": "ok" if deployed else "failed"
+            }
+        else:
+            result["incremental"]["deploy"] = {
+                "status": "skipped",
+                "reason": "saved_dev_node_requires_publish_gate",
+            }
 
     return result

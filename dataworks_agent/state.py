@@ -28,6 +28,8 @@ class AppState:
         self._openapi_client = None  # DataWorksOpenAPIClient | None
         self._maxcompute_client = None  # MaxComputeClient | None
         self._node_client = None  # OpenAPINodeAdapter | None（节点操作 AK/SK，drop-in 替 bff）
+        self._official_mcp_client = None  # OfficialDataWorksMCPClient | None
+        self._publish_gate = None  # Runtime PublishGate | None
 
     @property
     def mcp_pool(self):

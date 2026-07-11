@@ -9,6 +9,7 @@ from typing import Any
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
+from dataworks_agent.agent.workflow_service import AgentWorkflowService
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,19 @@ class ChatAgent:
         self._intent_parser = IntentParser()
         self._task_planner = TaskPlanner()
         self._task_executor = TaskExecutor()
+        self._workflow_service = AgentWorkflowService()
         self._last_task_id: str | None = None
 
-    async def chat(self, message: str, request_type: str | None = None) -> ChatResponse:
+    async def chat(
+        self,
+        message: str,
+        request_type: str | None = None,
+        *,
+        execution_mode: str | None = None,
+        initialize_data: bool = True,
+        publish: bool = False,
+        client_ip: str = "127.0.0.1",
+    ) -> ChatResponse:
         """Process user message."""
         if not message or not message.strip():
             return ChatResponse(
@@ -46,6 +57,48 @@ class ChatAgent:
             if request_type and request_type != "auto":
                 intent.action = request_type
             logger.info("NLU parsed: action=%s, confidence=%.2f", intent.action, intent.confidence)
+
+            workflow_actions = {
+                "agent_workflow",
+                "ods_dwd_modeling",
+                "forward_modeling",
+                "reverse_modeling",
+                "diagnose_issue",
+                "cookie_manage",
+                "ask_data",
+            }
+            if intent.action in workflow_actions and execution_mode is not None:
+                workflow = await self._workflow_service.execute(
+                    message=message,
+                    action=intent.action,
+                    params=intent.params,
+                    execution_mode=execution_mode,
+                    initialize_data=initialize_data,
+                    publish=publish,
+                    client_ip=client_ip,
+                )
+                data = workflow.to_data()
+                data.update(
+                    {
+                        "intent": self._intent_to_dict(intent),
+                        "plan": {"summary": workflow.message, "steps": workflow.steps},
+                        "agent_mode": (
+                            "approval_required"
+                            if data.get("publish_request")
+                            else "executed"
+                            if workflow.mode == "dev_execute" and workflow.success
+                            else "blocked"
+                            if not workflow.success
+                            else "proposal"
+                        ),
+                    }
+                )
+                return ChatResponse(
+                    message=workflow.message,
+                    success=workflow.success,
+                    data=data,
+                    error=workflow.errors[0] if workflow.errors else None,
+                )
 
             plan = self._task_planner.plan(intent)
             logger.info("Task planned: task_id=%s, steps=%d", plan.task_id, len(plan.steps))

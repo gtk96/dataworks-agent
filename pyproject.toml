@@ -27,6 +27,7 @@ dependencies = [
     # 2026-07 架构澄清：Cookie 链路为 AK/SK 开发权限缺口的长久兜底（非待删除过渡态）
     # 因此这些依赖永久保留，不再计划移除
     "alibabacloud-credentials>=1.0.0",
+    "mcp>=1.0.0",
 ]
 
 [project.scripts]
