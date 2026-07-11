@@ -225,3 +225,24 @@ async def test_websocket_exception_cleans_up():
     await websocket_endpoint(ws)
 
     assert ws not in manager._connections
+
+
+def test_capabilities_endpoint(monkeypatch):
+    """Capability matrix is available to the Agent-first frontend."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import dataworks_agent.routers.agent as agent_module
+
+    monkeypatch.setattr(
+        agent_module._agent,
+        "capability_status",
+        lambda: {"ak_sk": True, "official_mcp": {"connected": True}},
+    )
+    app = FastAPI()
+    app.include_router(router, prefix="/agent")
+    response = TestClient(app).get("/agent/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["capabilities"]["ak_sk"] is True
+    assert response.json()["capabilities"]["official_mcp"]["connected"] is True

@@ -113,6 +113,10 @@ class ChatAgent:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
 
+    def capability_status(self) -> dict[str, Any]:
+        """Return the live AK/SK, Cookie/CDP and official MCP capability matrix."""
+        return self._workflow_service.capability_status()
+
     def get_status(self, task_id: str | None = None) -> dict[str, Any] | None:
         """Get task status."""
         target = task_id or self._last_task_id

@@ -89,6 +89,12 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     )
 
 
+@router.get("/capabilities")
+async def capabilities() -> dict[str, Any]:
+    """Expose the Agent execution matrix used by the conversational workspace."""
+    return {"capabilities": _agent.capability_status()}
+
+
 @router.get("/status")
 async def latest_status() -> dict[str, Any]:
     """Get the latest Agent task status."""

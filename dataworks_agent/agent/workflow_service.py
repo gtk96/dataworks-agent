@@ -135,11 +135,18 @@ class AgentWorkflowService:
             errors=[] if ok else [str(result.get("detail", "cookie refresh failed"))],
         )
 
-    async def _reverse_model(self, message: str, params: dict[str, Any], mode: ExecutionMode) -> WorkflowResult:
-        table = params.get("table_name") or params.get("source_table") or self._extractor.extract_table_name(message)
+    async def _reverse_model(
+        self, message: str, params: dict[str, Any], mode: ExecutionMode
+    ) -> WorkflowResult:
+        table = (
+            params.get("table_name")
+            or params.get("source_table")
+            or self._extractor.extract_table_name(message)
+        )
         node_match = re.search(r"(?:节点|node)\s*[:：]?\s*([A-Za-z0-9_-]+)", message, re.I)
         mc = getattr(app_state, "_maxcompute_client", None)
         api = getattr(app_state, "_openapi_client", None)
+
         if node_match and api is not None:
             from dataworks_agent.api_clients.openapi_node_adapter import _to_map
 
@@ -148,60 +155,206 @@ class AgentWorkflowService:
             spec = json.loads(body.get("Spec") or "{}")
             nodes = (spec.get("spec") or {}).get("nodes") or []
             script = (nodes[0].get("script") if nodes else {}) or {}
-            return WorkflowResult(True, f"已逆向读取节点 {node_id} 的 FlowSpec 与 SQL。", "reverse_modeling", mode, artifacts=[{"type": "node_sql", "name": node_id, "content": script.get("content", "")}], data={"node": body, "flowspec": spec})
+            dependencies: Any = []
+            try:
+                dependency_body = _to_map(await api.list_node_dependencies(node_id))
+                dependencies = (dependency_body.get("PagingInfo") or {}).get("Nodes") or []
+            except Exception as exc:
+                dependencies = {"warning": str(exc)}
+            sql = script.get("content", "")
+            upstream_tables = self._extract_sql_sources(sql) if sql else []
+            return WorkflowResult(
+                True,
+                f"已逆向读取节点 {node_id} 的 FlowSpec、SQL 与节点级依赖。",
+                "reverse_modeling",
+                mode,
+                steps=[
+                    {"step": "read_node_flowspec", "status": "completed"},
+                    {"step": "parse_node_sql", "status": "completed"},
+                    {"step": "read_node_dependencies", "status": "completed"},
+                ],
+                artifacts=[{"type": "node_sql", "name": node_id, "content": sql}],
+                data={
+                    "source_type": "node",
+                    "node": body,
+                    "flowspec": spec,
+                    "dependencies": dependencies,
+                    "upstream_tables": upstream_tables,
+                },
+            )
+
         if not table:
-            return WorkflowResult(False, "请在一句话中给出要逆向的表名或节点 ID。", "reverse_modeling", mode, errors=["missing table or node"])
-        assert_safe_table_name(table.split(".")[-1])
+            return WorkflowResult(
+                False,
+                "请在一句话中给出要逆向的表名或节点 ID。",
+                "reverse_modeling",
+                mode,
+                errors=["missing table or node"],
+            )
+        table_name = table.split(".")[-1]
+        assert_safe_table_name(table_name)
         if mc is None:
-            return WorkflowResult(False, "MaxCompute AK/SK 客户端不可用，无法读取真实表结构。", "reverse_modeling", mode, errors=["maxcompute client unavailable"])
+            return WorkflowResult(
+                False,
+                "MaxCompute AK/SK 客户端不可用，无法读取真实表结构。",
+                "reverse_modeling",
+                mode,
+                errors=["maxcompute client unavailable"],
+            )
+
         schema = await mc.get_table_schema(table)
-        columns = [c.__dict__ for c in schema.columns]
-        partitions = [c.__dict__ for c in schema.partition_keys]
+        columns = [self._column_to_dict(column) for column in schema.columns]
+        partitions = [self._column_to_dict(column) for column in schema.partition_keys]
+        metadata = self._infer_reverse_metadata(table_name, columns)
         lineage: Any = []
         bff = getattr(app_state, "_bff_client", None)
         if bff is not None:
             try:
-                lineage = await bff.list_lineage(f"odps.{settings.maxcompute_project}.{table.split('.')[-1]}")
+                lineage = await bff.list_lineage(
+                    f"odps.{settings.maxcompute_project}.{table_name}"
+                )
             except Exception as exc:
                 lineage = {"warning": str(exc)}
+
+        steps = [
+            {"step": "read_maxcompute_schema", "status": "completed", "count": len(columns)},
+            {"step": "infer_layer_and_update_mode", "status": "completed"},
+            {"step": "infer_semantic_candidates", "status": "completed"},
+            {
+                "step": "read_cookie_lineage",
+                "status": "completed" if not isinstance(lineage, dict) or "warning" not in lineage else "warning",
+            },
+        ]
         return WorkflowResult(
             True,
-            f"已从 MaxCompute 元数据逆向表 {table}，并按权限矩阵补充 Cookie 血缘。",
+            f"已完成 {table} 的逆向建模：真实表结构、分层、更新方式、语义候选与 Cookie 血缘均已汇总。",
             "reverse_modeling",
             mode,
-            artifacts=[{"type": "table_schema", "name": table, "columns": columns, "partitions": partitions}],
-            data={"table": table, "columns": columns, "partitions": partitions, "lineage": lineage},
+            steps=steps,
+            artifacts=[
+                {
+                    "type": "table_schema",
+                    "name": table,
+                    "columns": columns,
+                    "partitions": partitions,
+                },
+                {"type": "semantic_candidates", "name": table, "content": metadata["semantic_candidates"]},
+            ],
+            data={
+                "source_type": "table",
+                "table": table,
+                "columns": columns,
+                "partitions": partitions,
+                "lineage": lineage,
+                **metadata,
+            },
         )
 
-    async def _diagnose(self, message: str, params: dict[str, Any], mode: ExecutionMode) -> WorkflowResult:
+    async def _diagnose(
+        self, message: str, params: dict[str, Any], mode: ExecutionMode
+    ) -> WorkflowResult:
         task_id = params.get("task_id") or self._extractor.extract_task_id(message)
         checks = self.capability_status()
         details: dict[str, Any] = {"capabilities": checks, "startup": app_state.smoke_results}
         errors: list[str] = []
+        task_data: dict[str, Any] | None = None
+
         if task_id:
+            from sqlalchemy import select
+
             from dataworks_agent.db.database import SessionLocal
-            from dataworks_agent.db.models import ModelingTaskModel
+            from dataworks_agent.db.models import ModelingTaskModel, TaskStepLogModel
 
             with SessionLocal() as db:
                 task = db.get(ModelingTaskModel, task_id)
-                details["task"] = None if task is None else {
-                    "task_id": task.task_id,
-                    "status": task.status,
-                    "target_table": task.target_table,
-                    "error_message": task.error_message,
-                    "node_uuid": task.node_uuid,
-                }
-                if task and task.error_message:
-                    errors.append(task.error_message)
-        ready = checks["ak_sk"] and checks["maxcompute"] and checks["node_adapter"]
+                if task is not None:
+                    task_data = {
+                        "task_id": task.task_id,
+                        "status": task.status,
+                        "source_table": task.source_table,
+                        "target_table": task.target_table,
+                        "target_layer": task.target_layer,
+                        "error_message": task.error_message,
+                        "node_uuid": task.node_uuid,
+                        "updated_at": task.updated_at,
+                    }
+                    logs = list(
+                        db.scalars(
+                            select(TaskStepLogModel)
+                            .where(TaskStepLogModel.task_id == task_id)
+                            .order_by(TaskStepLogModel.id.desc())
+                            .limit(20)
+                        )
+                    )
+                    details["step_logs"] = [
+                        {
+                            "step": log.step_name,
+                            "status": log.status,
+                            "error": log.error,
+                            "duration_ms": log.duration_ms,
+                            "created_at": log.created_at,
+                        }
+                        for log in reversed(logs)
+                    ]
+                    errors.extend(log.error for log in logs if log.error)
+                    if task.error_message:
+                        errors.append(task.error_message)
+                details["task"] = task_data
+
+        node_id = (task_data or {}).get("node_uuid")
+        api = getattr(app_state, "_openapi_client", None)
+        if node_id and api is not None:
+            try:
+                from dataworks_agent.api_clients.openapi_node_adapter import _to_map
+
+                details["node"] = (_to_map(await api.get_node(node_id)).get("Node") or {})
+                dependency_body = _to_map(await api.list_node_dependencies(node_id))
+                details["node_dependencies"] = (dependency_body.get("PagingInfo") or {}).get("Nodes") or []
+            except Exception as exc:
+                details["node_warning"] = str(exc)
+
+        from dataworks_agent.runtime.self_heal import IssueReport, IssueType, SelfHealFlow
+
+        issue_type = self._infer_issue_type(message, errors)
+        proposal = await SelfHealFlow().diagnose(
+            IssueReport(
+                issue_id=task_id or f"diag_{uuid.uuid4().hex[:8]}",
+                issue_type=IssueType(issue_type),
+                source=task_id or "agent_health",
+                description="; ".join(dict.fromkeys(errors)) or message,
+                context={
+                    "affected_tables": [
+                        value
+                        for value in ((task_data or {}).get("source_table"), (task_data or {}).get("target_table"))
+                        if value
+                    ]
+                },
+            )
+        )
+        details["recovery_proposal"] = {
+            "proposal_id": proposal.proposal_id,
+            "action": proposal.action.value,
+            "description": proposal.description,
+            "requires_approval": proposal.requires_approval,
+            "affected_resources": proposal.affected_resources,
+        }
+
+        execution_ready = checks["ak_sk"] and checks["maxcompute"] and checks["node_adapter"]
+        task_failed = bool(task_data and task_data.get("status") in {"failed", "error"})
+        success = execution_ready and not task_failed
         return WorkflowResult(
-            ready and not errors,
-            "异常排查已完成：已汇总任务状态、AK/SK、官方 MCP、Cookie/BFF 与 9222 CDP 健康度。",
+            success,
+            "异常排查已完成：已汇总任务日志、节点依赖、AK/SK、官方 MCP、Cookie/CDP，并生成恢复建议。",
             "diagnose_issue",
             mode,
-            steps=[{"step": "health_matrix", "status": "ok" if ready else "degraded"}, {"step": "task_diagnosis", "status": "failed" if errors else "ok"}],
+            steps=[
+                {"step": "health_matrix", "status": "completed" if execution_ready else "warning"},
+                {"step": "task_and_step_logs", "status": "completed" if task_id else "skipped"},
+                {"step": "node_dependency_inspection", "status": "completed" if node_id else "skipped"},
+                {"step": "self_heal_proposal", "status": "completed"},
+            ],
             data=details,
-            errors=errors,
+            errors=list(dict.fromkeys(errors)),
         )
 
     async def _ask_data(self, message: str, mode: ExecutionMode) -> WorkflowResult:
@@ -426,6 +579,81 @@ class AgentWorkflowService:
     @staticmethod
     def _escape_comment(value: str) -> str:
         return (value or "").replace("'", "''")
+
+    @staticmethod
+    def _column_to_dict(column: Any) -> dict[str, Any]:
+        return {
+            "name": getattr(column, "name", ""),
+            "type": str(getattr(column, "type", "")),
+            "comment": getattr(column, "comment", "") or "",
+        }
+
+    @staticmethod
+    def _extract_sql_sources(sql: str) -> list[str]:
+        try:
+            statement = sqlglot.parse_one(sql, read="hive")
+        except Exception:
+            return []
+        return list(
+            dict.fromkeys(
+                table.sql(dialect="hive")
+                for table in statement.find_all(exp.Table)
+                if table.name
+            )
+        )
+
+    @staticmethod
+    def _infer_reverse_metadata(
+        table_name: str, columns: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        from dataworks_agent.governance.table_name_parser import identify_layer, parse_table_name
+        from dataworks_agent.governance.update_mode_inferer import infer_update_mode
+
+        layer = identify_layer(table_name)
+        try:
+            parsed = parse_table_name(table_name)
+        except Exception:
+            parsed = {}
+        try:
+            resolution = infer_update_mode(table_name)
+            update_mode: Any = {
+                "dwd_update_mode": resolution.dwd_update_mode,
+                "sql_update_mode": resolution.sql_update_mode,
+                "partition_fields": resolution.partition_fields,
+            }
+        except Exception:
+            update_mode = "unknown"
+        semantic_candidates = []
+        for column in columns:
+            name = column["name"].lower()
+            kind = "measure" if any(token in name for token in ("amt", "amount", "price", "cnt", "count", "qty", "gmv")) else "dimension"
+            semantic_candidates.append(
+                {
+                    "name": column["name"],
+                    "kind": kind,
+                    "data_type": column["type"],
+                    "description": column.get("comment", ""),
+                    "confidence": 0.82 if column.get("comment") else 0.62,
+                }
+            )
+        return {
+            "layer": layer,
+            "domain": parsed.get("subject_domain", "") if isinstance(parsed, dict) else "",
+            "entity": parsed.get("description", "") if isinstance(parsed, dict) else "",
+            "update_mode": update_mode,
+            "semantic_candidates": semantic_candidates,
+        }
+
+    @staticmethod
+    def _infer_issue_type(message: str, errors: list[str]) -> str:
+        text = f"{message} {' '.join(errors)}".lower()
+        if any(token in text for token in ("延迟", "上游未完成", "upstream delay")):
+            return "upstream_delay"
+        if any(token in text for token in ("质量", "空值", "重复", "quality")):
+            return "quality_issue"
+        if any(token in text for token in ("数据异常", "数据不对", "波动", "data anomaly")):
+            return "data_anomaly"
+        return "schedule_failure"
 
     @staticmethod
     def _execution_artifacts(executed: list[dict[str, Any]]) -> list[dict[str, Any]]:

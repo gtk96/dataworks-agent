@@ -1,237 +1,205 @@
-<template>
-  <div class="agent-chat">
-    <section class="agent-console">
-      <div class="console-main">
-        <div class="console-toolbar">
-          <div>
-            <p class="eyebrow">DataWorks Agent</p>
-            <h2>告诉我目标，我来规划和推进</h2>
+﻿<template>
+  <div class="agent-workspace">
+    <aside class="conversation-rail">
+      <button class="new-chat" type="button" @click="resetConversation">
+        <el-icon><Plus /></el-icon>
+        新建会话
+      </button>
+
+      <div class="rail-section">
+        <span class="rail-label">快捷能力</span>
+        <button v-for="item in capabilityPrompts" :key="item.title" type="button" class="rail-item" @click="runPrompt(item.text)">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.title }}</span>
+        </button>
+      </div>
+
+      <div class="rail-bottom">
+        <div class="runtime-card">
+          <div class="runtime-title">
+            <span class="status-dot" :class="{ online: healthyCapabilityCount > 0 }" />
+            执行底座
           </div>
-          <el-tag :type="connectionType" effect="plain">{{ connectionText }}</el-tag>
+          <div class="runtime-grid">
+            <span v-for="item in capabilityBadges" :key="item.label" :class="{ online: item.online }">
+              {{ item.label }}
+            </span>
+          </div>
+          <small>{{ healthyCapabilityCount }}/{{ capabilityBadges.length }} 项在线</small>
+        </div>
+      </div>
+    </aside>
+
+    <section class="conversation-main">
+      <header class="chat-header">
+        <div>
+          <div class="product-row">
+            <span class="product-mark">D</span>
+            <strong>DataWorks Agent</strong>
+            <span class="edition">Workspace</span>
+          </div>
+          <p>一句话完成建模、诊断、问数和 Cookie 管理</p>
+        </div>
+        <div class="header-actions">
+          <span class="connection-pill">
+            <i :class="{ online: isRealtime }" />{{ connectionText }}
+          </span>
+          <el-button text circle title="刷新能力状态" @click="loadCapabilities"><el-icon><Refresh /></el-icon></el-button>
+        </div>
+      </header>
+
+      <div ref="messagesRef" class="message-stage" :class="{ empty: messages.length <= 1 }">
+        <div v-if="messages.length <= 1" class="welcome-panel">
+          <div class="agent-orb"><MagicStick /></div>
+          <h1>今天想让数据 Agent 完成什么？</h1>
+          <p>直接描述业务目标。无需选择工具，Agent 会自动组合 AK/SK、9222 Cookie 和阿里云官方 MCP。</p>
+          <div class="prompt-grid">
+            <button v-for="prompt in starterPrompts" :key="prompt.title" type="button" @click="runPrompt(prompt.text)">
+              <span class="prompt-icon"><el-icon><component :is="prompt.icon" /></el-icon></span>
+              <strong>{{ prompt.title }}</strong>
+              <small>{{ prompt.description }}</small>
+              <el-icon class="prompt-arrow"><ArrowRight /></el-icon>
+            </button>
+          </div>
         </div>
 
-        <div class="prompt-strip">
-          <button
-            v-for="prompt in prompts"
-            :key="prompt.text"
-            type="button"
-            class="prompt-chip"
-            @click="runPrompt(prompt.text)"
-          >
-            <span>{{ prompt.title }}</span>
-            <small>{{ prompt.text }}</small>
-          </button>
-        </div>
-
-        <div class="chat-messages" ref="messagesRef">
+        <div v-else class="message-list">
           <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
-          <div v-if="loading" class="typing-card">
-            <span />
-            <span />
-            <span />
-            <strong>Agent 正在理解目标、拆解计划并生成草稿...</strong>
+          <div v-if="loading" class="thinking-row">
+            <span class="thinking-mark">D</span>
+            <div><i /><i /><i /><em>正在理解目标并编排执行路径</em></div>
           </div>
-        </div>
 
-        <div class="composer">
-          <div class="execution-controls">
-            <el-radio-group v-model="executionMode" size="small">
-              <el-radio-button value="dev_execute">开发执行</el-radio-button>
-              <el-radio-button value="plan">规划预览</el-radio-button>
-            </el-radio-group>
-            <el-switch v-model="initializeData" active-text="初始化数据" />
-            <el-checkbox v-model="requestPublish">完成后提交发布审批</el-checkbox>
-          </div>
-          <el-input
-            v-model="input"
-            type="textarea"
-            :autosize="{ minRows: 2, maxRows: 5 }"
-            resize="none"
-            placeholder="例如：把 mysql 数据源 jky_singleshop 的 orders 表做成小时 ODS，再基于它建 dwd_trade_order_detail"
-            :disabled="loading"
-            @keydown.enter.exact.prevent="sendMessage"
-          />
-          <div class="composer-actions">
-            <span>Enter 发送，Shift + Enter 换行。真实发布会进入 Publish Gate，不会越权执行。</span>
-            <el-button type="primary" round size="large" :loading="loading" :disabled="!input.trim()" @click="sendMessage">
-              交给 Agent
-            </el-button>
+          <article v-if="lastPayload" class="result-card">
+            <header>
+              <div>
+                <span class="result-kicker">EXECUTION SUMMARY</span>
+                <h3>{{ resultTitle }}</h3>
+              </div>
+              <span class="result-state" :class="agentMode">{{ modeText }}</span>
+            </header>
+
+            <div class="result-metrics">
+              <div><strong>{{ completedStepCount }}/{{ planSteps.length || completedStepCount }}</strong><span>步骤完成</span></div>
+              <div><strong>{{ artifactCards.length }}</strong><span>产物</span></div>
+              <div><strong>{{ executionTables.length }}</strong><span>表 / 节点</span></div>
+              <div><strong>{{ publishGateText }}</strong><span>发布状态</span></div>
+            </div>
+
+            <ol v-if="planSteps.length" class="compact-plan">
+              <li v-for="(step, index) in planSteps" :key="step.step_id || step.step || step.tool || index">
+                <span class="step-check">{{ stepStatus(index) }}</span>
+                <div><strong>{{ humanizeStep(step.title || step.tool || step.step || `步骤 ${index + 1}`) }}</strong><small>{{ phaseLabel(step.phase) }}</small></div>
+              </li>
+            </ol>
+
+            <div v-if="executionTables.length" class="created-resources">
+              <span v-for="resource in executionTables" :key="resource">{{ resource }}</span>
+            </div>
+
+            <el-collapse v-if="artifactCards.length || technicalDetails" class="technical-collapse">
+              <el-collapse-item title="查看技术详情" name="details">
+                <div v-if="artifactCards.length" class="artifact-list">
+                  <article v-for="artifact in artifactCards" :key="artifact.label + artifact.value.slice(0, 20)">
+                    <strong>{{ artifact.label }}</strong>
+                    <pre v-if="artifact.isCode"><code>{{ artifact.value }}</code></pre>
+                    <p v-else>{{ artifact.value }}</p>
+                  </article>
+                </div>
+                <pre v-if="technicalDetails" class="json-detail"><code>{{ technicalDetails }}</code></pre>
+              </el-collapse-item>
+            </el-collapse>
+          </article>
+
+          <div v-if="clarifyingQuestions.length" class="question-card">
+            <strong>还需要你确认</strong>
+            <button v-for="question in clarifyingQuestions" :key="question" type="button" @click="appendQuestion(question)">
+              {{ question }}<el-icon><ArrowRight /></el-icon>
+            </button>
           </div>
         </div>
       </div>
 
-      <aside class="agent-panel">
-        <div class="panel-section status-card">
-          <div class="panel-title">
-            <span>当前任务</span>
-            <el-tag size="small" :type="modeTagType">
-              {{ modeText }}
-            </el-tag>
-          </div>
-          <TaskExecution
-            v-if="currentStatus"
-            :status="currentStatus"
-            @retry="handleRetry"
-            @cancel="handleCancel"
+      <footer class="composer-shell">
+        <div class="composer-box" :class="{ focused: inputFocused }">
+          <textarea
+            v-model="input"
+            rows="1"
+            :disabled="loading"
+            placeholder="给 DataWorks Agent 发消息，例如：把 orders 做成 ODS→DWD→DWS 小时链路并初始化"
+            @focus="inputFocused = true"
+            @blur="inputFocused = false"
+            @keydown.enter.exact.prevent="sendMessage"
           />
-          <el-empty v-else description="描述目标后，Agent 会在这里展示计划和进度。" :image-size="90" />
-        </div>
-
-        <div v-if="lastPayload?.data?.intent" class="panel-section">
-          <div class="panel-title">理解结果</div>
-          <dl class="insight-list">
-            <div>
-              <dt>意图</dt>
-              <dd>{{ lastPayload.data.intent.action }}</dd>
-            </div>
-            <div v-if="lastPayload.data.intent.params?.table_name">
-              <dt>目标表</dt>
-              <dd>{{ lastPayload.data.intent.params.table_name }}</dd>
-            </div>
-            <div v-if="lastPayload.data.intent.params?.source_table">
-              <dt>源表</dt>
-              <dd>{{ lastPayload.data.intent.params.source_table }}</dd>
-            </div>
-            <div v-if="lastPayload.data.intent.params?.layer">
-              <dt>分层</dt>
-              <dd>{{ lastPayload.data.intent.params.layer }}</dd>
-            </div>
-            <div>
-              <dt>置信度</dt>
-              <dd>{{ Math.round((lastPayload.data.intent.confidence ?? 0) * 100) }}%</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div v-if="planSteps.length" class="panel-section">
-          <div class="panel-title">Agent 计划</div>
-          <ol class="plan-list">
-            <li v-for="step in planSteps" :key="step.step_id || step.step || step.tool">
-              <strong>{{ step.title || step.tool || step.step }}</strong>
-              <span>{{ phaseLabel(step.phase) }} / {{ riskLabel(step.risk) }}</span>
-            </li>
-          </ol>
-        </div>
-
-        <div v-if="artifactCards.length" class="panel-section">
-          <div class="panel-title">产物草稿</div>
-          <div class="artifact-list">
-            <article v-for="artifact in artifactCards" :key="artifact.label" class="artifact-card">
-              <strong>{{ artifact.label }}</strong>
-              <pre v-if="artifact.isCode"><code>{{ artifact.value }}</code></pre>
-              <p v-else>{{ artifact.value }}</p>
-            </article>
+          <div class="composer-toolbar">
+            <el-popover placement="top-start" :width="320" trigger="click">
+              <template #reference>
+                <button class="settings-button" type="button"><el-icon><Setting /></el-icon>{{ executionMode === 'dev_execute' ? '开发执行' : '规划预览' }}</button>
+              </template>
+              <div class="run-settings">
+                <strong>执行设置</strong>
+                <label><span>模式<small>开发执行会真实写入开发环境</small></span><el-segmented v-model="executionMode" :options="modeOptions" size="small" /></label>
+                <label><span>初始化 ODS 数据</span><el-switch v-model="initializeData" /></label>
+                <label><span>提交发布审批<small>只创建 Publish Gate，不自动上线</small></span><el-switch v-model="requestPublish" /></label>
+              </div>
+            </el-popover>
+            <span class="guard-hint"><el-icon><Lock /></el-icon>生产变更受 Publish Gate 保护</span>
+            <button class="send-button" type="button" :disabled="!input.trim() || loading" @click="sendMessage">
+              <el-icon v-if="!loading"><Promotion /></el-icon><span v-else class="send-spinner" />
+            </button>
           </div>
         </div>
-
-        <div v-if="approvalItems.length" class="panel-section approval-section">
-          <div class="panel-title">风险与审批</div>
-          <ul class="next-list">
-            <li v-for="item in approvalItems" :key="item">{{ item }}</li>
-          </ul>
-        </div>
-
-        <div v-if="clarifyingQuestions.length" class="panel-section">
-          <div class="panel-title">需要补充</div>
-          <button
-            v-for="question in clarifyingQuestions"
-            :key="question"
-            type="button"
-            class="question-chip"
-            @click="appendQuestion(question)"
-          >
-            {{ question }}
-          </button>
-        </div>
-
-        <div v-if="nextActions.length" class="panel-section">
-          <div class="panel-title">下一步建议</div>
-          <ul class="next-list">
-            <li v-for="action in nextActions" :key="action">{{ action }}</li>
-          </ul>
-        </div>
-      </aside>
+        <p>Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。</p>
+      </footer>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import {
+  ArrowRight,
+  Connection,
+  DataAnalysis,
+  MagicStick,
+  Plus,
+  Promotion,
+  Refresh,
+  Search,
+  Setting,
+  Tools,
+  Lock,
+} from '@element-plus/icons-vue'
 import ChatMessage from './ChatMessage.vue'
-import TaskExecution from './TaskExecution.vue'
 
-interface ChatMsg {
-  id: string
-  text: string
-  isUser: boolean
-  timestamp: Date
-}
-
-interface StepStatus {
-  step_id: string
-  tool: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  title?: string
-  phase?: string
-  error?: string | null
-  warnings?: string[]
-}
-
-interface ExecutionStatus {
-  task_id: string
-  current_step: string | null
-  total_steps: number
-  completed_steps: number
-  failed_steps: number
-  steps: Record<string, StepStatus>
-}
-
-interface PlanStep {
-  step_id?: string
-  step?: string
-  tool?: string
-  title?: string
-  phase?: string
-  risk?: string
-}
-
+interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
+interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
+interface ExecutionStatus { task_id: string; current_step: string | null; total_steps: number; completed_steps: number; failed_steps: number; steps: Record<string, { status: string }> }
 interface AgentPayload {
   message: string
   success: boolean
   data?: {
     task_id?: string
-    intent?: {
-      action: string
-      confidence?: number
-      params?: Record<string, string>
-    }
-    plan?: {
-      summary?: string
-      steps?: PlanStep[]
-    }
-    execution?: {
-      step_results?: Array<{
-        tool: string
-        success: boolean
-        data?: Record<string, unknown>
-        warnings?: string[]
-      }>
-    }
+    workflow_type?: string
+    execution_mode?: string
+    plan?: { summary?: string; steps?: PlanStep[] }
+    steps?: PlanStep[]
     status?: ExecutionStatus | null
-    artifacts?: Record<string, unknown> | Array<Record<string, unknown>>
+    artifacts?: Array<Record<string, unknown>> | Record<string, unknown>
     capabilities?: Record<string, unknown>
     executed?: Array<Record<string, unknown>>
-    execution_mode?: string
+    publish_gate?: string
     publish_request?: Record<string, unknown>
-    approvals?: unknown[]
     clarifying_questions?: string[]
     next_actions?: string[]
     agent_mode?: string
+    [key: string]: unknown
   }
   error?: string | null
 }
 
 const input = ref('')
+const inputFocused = ref(false)
 const loading = ref(false)
 const executionMode = ref<'plan' | 'dev_execute'>('dev_execute')
 const initializeData = ref(true)
@@ -241,550 +209,171 @@ const messagesRef = ref<HTMLElement>()
 const ws = ref<WebSocket | null>(null)
 const currentStatus = ref<ExecutionStatus | null>(null)
 const lastPayload = ref<AgentPayload | null>(null)
+const capabilities = ref<Record<string, unknown>>({})
 
-const prompts = [
-  { title: 'MySQL 到 ODS+DWD', text: '把 mysql 数据源 jky_singleshop 的 orders 表做成小时 ODS，再基于它建 dwd_trade_order_detail' },
-  { title: '现有 ODS 建 DWD', text: '基于 ods_order 设计 dwd_trade_order_detail，生成 DDL、DML、依赖和发布前风险检查' },
-  { title: '发布前检查', text: '对 dwd_trade_order_detail 做发布前检查，只给方案和风险，不要直接发布' },
+const modeOptions = [
+  { label: '规划', value: 'plan' },
+  { label: '开发执行', value: 'dev_execute' },
+]
+const capabilityPrompts = [
+  { title: '正向建模', icon: MagicStick, text: '把 mysql 数据源 jky_singleshop 的 orders 做成小时 ods_trade_order，再建 dwd_trade_order_detail、dim_customer、dws_trade_day，创建开发表、节点、调度并初始化，不发布生产。' },
+  { title: '逆向建模', icon: Search, text: '逆向分析存量表 dwd_trade_order_detail，读取真实表结构、血缘、分层和语义候选。' },
+  { title: '异常排查', icon: Tools, text: '排查最近失败的 DataWorks 任务，检查任务日志、节点依赖和运行底座，给出恢复建议。' },
+  { title: '自主问数', icon: DataAnalysis, text: '查数 dws_trade_day 前几条数据。' },
+  { title: 'Cookie 管理', icon: Connection, text: '检查 9222 浏览器 Cookie、AK/SK 和官方 MCP 状态。' },
+]
+const starterPrompts = [
+  { title: '一句话建完整数仓链路', description: 'ODS、DWD、DIM、DWS 建表与任务一次完成', icon: MagicStick, text: capabilityPrompts[0].text },
+  { title: '逆向理解存量模型', description: '读取结构、节点、血缘并生成语义候选', icon: Search, text: capabilityPrompts[1].text },
+  { title: '排查失败与数据异常', description: '汇总日志、依赖和健康状态，给恢复方案', icon: Tools, text: capabilityPrompts[2].text },
+  { title: '直接问业务数据', description: '只读 SQL 护栏下自然语言查询 MaxCompute', icon: DataAnalysis, text: capabilityPrompts[3].text },
 ]
 
-const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? [])
-const nextActions = computed(() => lastPayload.value?.data?.next_actions ?? [])
+const isRealtime = computed(() => ws.value?.readyState === WebSocket.OPEN)
+const connectionText = computed(() => isRealtime.value ? '实时连接' : 'HTTP 可用')
+const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? lastPayload.value?.data?.steps ?? [])
 const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_questions ?? [])
-const connectionText = computed(() => (ws.value?.readyState === WebSocket.OPEN ? '实时连接' : 'HTTP 兜底'))
-const connectionType = computed(() => (ws.value?.readyState === WebSocket.OPEN ? 'success' : 'warning'))
-const agentMode = computed(() => lastPayload.value?.data?.agent_mode ?? (currentStatus.value ? 'proposal' : 'idle'))
-const modeText = computed(() => {
-  const map: Record<string, string> = {
-    idle: '等待目标',
-    proposal: '计划已生成',
-    needs_context: '需要上下文',
-    approval_required: '等待审批',
-    blocked: '需要处理',
-    executed: '开发已执行',
-  }
-  return map[agentMode.value] ?? agentMode.value
+const agentMode = computed(() => lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle'))
+const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
+const resultTitle = computed(() => lastPayload.value?.data?.plan?.summary || lastPayload.value?.message || 'Agent 执行结果')
+const completedStepCount = computed(() => currentStatus.value?.completed_steps ?? (lastPayload.value?.success ? planSteps.value.length : 0))
+const publishGateText = computed(() => lastPayload.value?.data?.publish_request ? '待审批' : lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布')
+const executionTables = computed(() => {
+  const rows = lastPayload.value?.data?.executed ?? []
+  return rows.map((row) => String(row.table ?? row.node_name ?? '')).filter(Boolean)
 })
-const modeTagType = computed(() => {
-  if (agentMode.value === 'blocked') return 'danger'
-  if (agentMode.value === 'approval_required' || agentMode.value === 'needs_context') return 'warning'
-  if (agentMode.value === 'proposal' || agentMode.value === 'executed') return 'success'
-  return 'info'
+const capabilityBadges = computed(() => {
+  const official = capabilities.value.official_mcp as Record<string, unknown> | undefined
+  return [
+    { label: 'AK/SK', online: Boolean(capabilities.value.ak_sk) },
+    { label: 'OpenAPI', online: Boolean(capabilities.value.openapi) },
+    { label: 'MaxCompute', online: Boolean(capabilities.value.maxcompute) },
+    { label: 'Cookie', online: Boolean(capabilities.value.cookie_bff) },
+    { label: '9222', online: Boolean(capabilities.value.cdp_9222) },
+    { label: '官方 MCP', online: Boolean(official?.connected) },
+  ]
 })
-
+const healthyCapabilityCount = computed(() => capabilityBadges.value.filter((item) => item.online).length)
 const artifactCards = computed(() => {
-  const cards: Array<{ label: string; value: string; isCode: boolean }> = []
-  const artifacts = lastPayload.value?.data?.artifacts ?? {}
+  const result: Array<{ label: string; value: string; isCode: boolean }> = []
+  const artifacts = lastPayload.value?.data?.artifacts
+  if (!artifacts) return result
+  const append = (key: string, value: unknown) => {
+    if (value === undefined || value === null || value === '') return
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    result.push({ label: artifactLabel(key), value: text, isCode: key.includes('sql') || key.includes('ddl') || key.includes('content') })
+  }
   if (Array.isArray(artifacts)) {
-    for (const artifact of artifacts) {
-      const type = String(artifact.type ?? 'artifact')
-      const value = artifact.content ?? artifact
-      cards.push({
-        label: `${artifactLabel(type)}${artifact.name ? ` · ${artifact.name}` : ''}`,
-        value: stringifyArtifact(value),
-        isCode: type.includes('ddl') || type.includes('sql'),
-      })
-    }
+    artifacts.forEach((artifact) => append(String(artifact.type ?? artifact.name ?? 'artifact'), artifact.content ?? artifact.columns ?? artifact))
   } else {
-    for (const [key, value] of Object.entries(artifacts)) {
-      if (value === undefined || value === null || value === '') continue
-      cards.push({ label: artifactLabel(key), value: stringifyArtifact(value), isCode: key === 'ddl' || key === 'sql' })
-    }
+    Object.entries(artifacts).forEach(([key, value]) => append(key, value))
   }
-  const stepResults = lastPayload.value?.data?.execution?.step_results ?? []
-  for (const result of stepResults) {
-    const data = result.data ?? {}
-    if (typeof data.ddl === 'string') cards.push({ label: 'MaxCompute DDL', value: data.ddl, isCode: true })
-    if (typeof data.sql === 'string') cards.push({ label: 'SQL / DML', value: data.sql, isCode: true })
-    if (typeof data.summary === 'string') cards.push({ label: String(data.artifact_type ?? result.tool), value: data.summary, isCode: false })
-  }
-  return cards.slice(0, 8)
+  return result.slice(0, 12)
 })
-
-const approvalItems = computed(() => {
-  const items: string[] = []
-  const approvals = lastPayload.value?.data?.approvals ?? []
-  for (const approval of approvals) items.push(stringifyArtifact(approval))
-  const stepResults = lastPayload.value?.data?.execution?.step_results ?? []
-  for (const result of stepResults) {
-    const data = result.data ?? {}
-    if (data.requires_approval || data.publish_gate) {
-      items.push(`${result.tool}: 真实写入或发布前必须经过 Publish Gate 审批`)
-    }
-  }
-  return Array.from(new Set(items))
+const technicalDetails = computed(() => {
+  const data = lastPayload.value?.data
+  if (!data) return ''
+  const detail = { workflow_type: data.workflow_type, execution_mode: data.execution_mode, task_id: data.task_id, capabilities: data.capabilities, publish_request: data.publish_request }
+  return Object.values(detail).some(Boolean) ? JSON.stringify(detail, null, 2) : ''
 })
 
 onMounted(() => {
-  messages.value.push({
-    id: 'welcome',
-    text: '我是你的 DataWorks Agent。直接用一句话描述目标即可：正向/逆向建模、异常排查、Cookie 管理、自主问数，以及 ODS→DWD/DIM→DWS 全链路。默认可在开发环境建表、建 Saved 节点、配置调度并初始化；正式发布仍会停在 Publish Gate 等待审批。',
-    isUser: false,
-    timestamp: new Date(),
-  })
+  resetConversation()
   connectWebSocket()
+  loadCapabilities()
 })
+onUnmounted(() => ws.value?.close())
 
-onUnmounted(() => {
-  ws.value?.close()
-})
-
+function resetConversation() {
+  messages.value = [{ id: crypto.randomUUID(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
+  lastPayload.value = null
+  currentStatus.value = null
+  input.value = ''
+}
+async function loadCapabilities() {
+  try {
+    const response = await fetch('/agent/capabilities')
+    const payload = await response.json()
+    capabilities.value = payload.capabilities ?? {}
+  } catch { /* capability state stays degraded */ }
+}
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const socket = new WebSocket(`${protocol}//${window.location.host}/agent/ws`)
   ws.value = socket
-
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data)
-    if (data.type === 'response') {
-      handleAgentResponse(data.data)
-    } else if (data.type === 'status') {
-      currentStatus.value = data.data
-      nextTick(scrollToBottom)
-    }
+    if (data.type === 'response') handleAgentResponse(data.data)
+    if (data.type === 'status') currentStatus.value = data.data
   }
-
-  socket.onclose = () => {
-    if (ws.value === socket) ws.value = null
-  }
-
-  socket.onerror = () => {
-    socket.close()
-  }
+  socket.onclose = () => { if (ws.value === socket) ws.value = null }
+  socket.onerror = () => socket.close()
 }
-
 async function sendMessage() {
   const text = input.value.trim()
   if (!text || loading.value) return
-
   input.value = ''
   messages.value.push({ id: crypto.randomUUID(), text, isUser: true, timestamp: new Date() })
-  await nextTick(scrollToBottom)
-
   loading.value = true
-  if (ws.value?.readyState === WebSocket.OPEN) {
-    ws.value.send(JSON.stringify({
-      message: text,
-      execution_mode: executionMode.value,
-      initialize_data: initializeData.value,
-      publish: requestPublish.value,
-    }))
+  await nextTick(scrollToBottom)
+  const payload = { message: text, execution_mode: executionMode.value, initialize_data: initializeData.value, publish: requestPublish.value }
+  if (isRealtime.value) {
+    ws.value?.send(JSON.stringify(payload))
     return
   }
-
-  await sendViaHttp(text)
-}
-
-async function sendViaHttp(text: string) {
   try {
-    const response = await fetch('/agent/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        execution_mode: executionMode.value,
-        initialize_data: initializeData.value,
-        publish: requestPublish.value,
-      }),
-    })
-    const payload = await response.json()
-    handleAgentResponse(payload)
+    const response = await fetch('/agent/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    handleAgentResponse(await response.json())
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    messages.value.push({
-      id: crypto.randomUUID(),
-      text: `Agent 连接失败：${message}`,
-      isUser: false,
-      timestamp: new Date(),
-    })
-    loading.value = false
-    await nextTick(scrollToBottom)
+    handleAgentResponse({ message: `Agent 连接失败：${error instanceof Error ? error.message : String(error)}`, success: false })
   }
 }
-
 function handleAgentResponse(payload: AgentPayload) {
   lastPayload.value = payload
-  messages.value.push({
-    id: crypto.randomUUID(),
-    text: payload.message,
-    isUser: false,
-    timestamp: new Date(),
-  })
+  if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
+  messages.value.push({ id: crypto.randomUUID(), text: payload.message, isUser: false, timestamp: new Date() })
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)
 }
-
-function runPrompt(prompt: string) {
-  input.value = prompt
-  sendMessage()
-}
-
-function appendQuestion(question: string) {
-  input.value = input.value ? `${input.value}\n${question}：` : `${question}：`
-}
-
-function handleRetry() {
-  input.value = '诊断上一次失败步骤，并给出安全恢复和重试方案'
-  sendMessage()
-}
-
-function handleCancel() {
-  loading.value = false
-  messages.value.push({
-    id: crypto.randomUUID(),
-    text: '已停止本地等待。当前 Agent 路径默认是 dry-run/proposal，不会直接取消或修改线上 DataWorks 任务。',
-    isUser: false,
-    timestamp: new Date(),
-  })
-}
-
-function scrollToBottom() {
-  if (messagesRef.value) {
-    messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-  }
-}
-
-function phaseLabel(phase?: string) {
-  const map: Record<string, string> = {
-    understand: '理解',
-    inspect: '检查',
-    plan: '规划',
-    design: '设计',
-    orchestrate: '编排',
-    guardrail: '风控',
-    draft: '产物',
-    next: '建议',
-    execute: '执行',
-  }
-  return phase ? map[phase] ?? phase : '执行'
-}
-
-function riskLabel(risk?: string) {
-  const map: Record<string, string> = { low: '低风险', medium: '中风险', high: '高风险' }
-  return risk ? map[risk] ?? risk : '低风险'
-}
-
-function artifactLabel(key: string) {
-  const map: Record<string, string> = {
-    ddl: 'DDL 草稿',
-    sql: 'SQL / DML 草稿',
-    schedule: '调度建议',
-    lineage: '血缘影响',
-    risk_report: '风险报告',
-  }
-  return map[key] ?? key
-}
-
-function stringifyArtifact(value: unknown) {
-  if (typeof value === 'string') return value
-  return JSON.stringify(value, null, 2)
-}
+function runPrompt(text: string) { input.value = text; sendMessage() }
+function appendQuestion(question: string) { input.value = `${question}：`; nextTick(() => document.querySelector<HTMLTextAreaElement>('.composer-box textarea')?.focus()) }
+function scrollToBottom() { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight }
+function stepStatus(index: number) { return index < completedStepCount.value ? '✓' : index + 1 }
+function phaseLabel(phase?: string) { return ({ understand: '理解目标', inspect: '检查环境', plan: '生成计划', design: '设计模型', orchestrate: '编排任务', guardrail: '安全检查', execute: '开发执行' }[phase ?? ''] ?? '执行步骤') }
+function humanizeStep(value: string) { return value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase()) }
+function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', query_sql: '只读查询 SQL', node_sql: '节点 SQL', table_schema: '表结构', semantic_candidates: '语义候选' }[key] ?? key.replaceAll('_', ' ')) }
 </script>
 
 <style scoped>
-.agent-chat {
-  min-height: 680px;
-}
-
-.agent-console {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 20px;
-}
-
-.console-main,
-.agent-panel {
-  border: 1px solid rgba(98, 128, 210, 0.14);
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 24px 70px rgba(31, 45, 91, 0.1);
-  backdrop-filter: blur(18px);
-}
-
-.console-main {
-  display: flex;
-  min-height: 720px;
-  overflow: hidden;
-  flex-direction: column;
-}
-
-.console-toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  padding: 22px 24px 12px;
-}
-
-.eyebrow {
-  margin: 0 0 6px;
-  color: #2456d6;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.console-toolbar h2 {
-  margin: 0;
-  color: #18233f;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-}
-
-.prompt-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  padding: 0 24px 16px;
-}
-
-.prompt-chip {
-  cursor: pointer;
-  border: 1px solid rgba(64, 158, 255, 0.18);
-  border-radius: 18px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #f6f8ff 100%);
-  color: #1f2a44;
-  text-align: left;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.prompt-chip:hover {
-  transform: translateY(-2px);
-  border-color: rgba(64, 158, 255, 0.45);
-  box-shadow: 0 10px 24px rgba(64, 158, 255, 0.12);
-}
-
-.prompt-chip span,
-.prompt-chip small {
-  display: block;
-}
-
-.prompt-chip span {
-  font-weight: 700;
-}
-
-.prompt-chip small {
-  margin-top: 5px;
-  color: #667085;
-  line-height: 1.45;
-}
-
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 18px 24px 8px;
-  background: linear-gradient(180deg, rgba(246, 248, 255, 0.5), rgba(255, 255, 255, 0));
-}
-
-.typing-card {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  margin: 4px 0 16px 44px;
-  padding: 12px 16px;
-  border-radius: 16px;
-  background: #f3f6ff;
-  color: #52627a;
-}
-
-.typing-card span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #409eff;
-  animation: pulse 1.2s infinite ease-in-out;
-}
-
-.typing-card span:nth-child(2) { animation-delay: 0.15s; }
-.typing-card span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes pulse {
-  0%, 80%, 100% { opacity: 0.35; transform: scale(0.75); }
-  40% { opacity: 1; transform: scale(1); }
-}
-
-.execution-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  color: #52627a;
-}
-
-.composer {
-  padding: 16px;
-  border-top: 1px solid rgba(98, 128, 210, 0.12);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.composer :deep(.el-textarea__inner) {
-  border-radius: 18px;
-  padding: 14px 16px;
-  box-shadow: none;
-}
-
-.composer-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  color: #98a2b3;
-  font-size: 12px;
-}
-
-.agent-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  min-height: 720px;
-}
-
-.panel-section {
-  border: 1px solid rgba(98, 128, 210, 0.12);
-  border-radius: 22px;
-  padding: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9ff 100%);
-}
-
-.approval-section {
-  border-color: rgba(245, 158, 11, 0.28);
-  background: linear-gradient(180deg, #fffaf0 0%, #fff7ed 100%);
-}
-
-.panel-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: #1f2a44;
-  font-weight: 800;
-}
-
-.insight-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-}
-
-.insight-list div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.insight-list dt {
-  color: #667085;
-}
-
-.insight-list dd {
-  margin: 0;
-  color: #1f2a44;
-  font-weight: 700;
-}
-
-.plan-list,
-.next-list {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.plan-list li,
-.next-list li {
-  margin-bottom: 10px;
-  color: #344054;
-  line-height: 1.55;
-}
-
-.plan-list strong,
-.plan-list span {
-  display: block;
-}
-
-.plan-list span {
-  color: #98a2b3;
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-.artifact-list {
-  display: grid;
-  gap: 10px;
-}
-
-.artifact-card {
-  padding: 12px;
-  border: 1px solid rgba(64, 158, 255, 0.14);
-  border-radius: 16px;
-  background: #fff;
-}
-
-.artifact-card strong {
-  display: block;
-  margin-bottom: 8px;
-  color: #1f2a44;
-}
-
-.artifact-card p,
-.artifact-card pre {
-  margin: 0;
-  color: #52627a;
-  line-height: 1.6;
-}
-
-.artifact-card pre {
-  max-height: 220px;
-  overflow: auto;
-  padding: 10px;
-  border-radius: 12px;
-  background: #111827;
-  color: #e5e7eb;
-  font-size: 12px;
-}
-
-.question-chip {
-  display: block;
-  width: 100%;
-  cursor: pointer;
-  border: 1px solid rgba(64, 158, 255, 0.18);
-  border-radius: 14px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  background: #fff;
-  color: #2456d6;
-  text-align: left;
-}
-
-@media (max-width: 1280px) {
-  .prompt-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1180px) {
-  .agent-console {
-    grid-template-columns: 1fr;
-  }
-
-  .agent-panel {
-    min-height: unset;
-  }
-}
-
-@media (max-width: 760px) {
-  .prompt-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .console-toolbar,
-  .composer-actions {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
+.agent-workspace { height: calc(100vh - 66px); min-height: 680px; display: grid; grid-template-columns: 220px minmax(0, 1fr); overflow: hidden; background: #fff; border: 1px solid #e8e8eb; border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,.035); }
+.conversation-rail { display: flex; flex-direction: column; padding: 14px 12px; border-right: 1px solid #ececef; background: #f8f8fa; }
+.new-chat { height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #dedee3; border-radius: 9px; background: #fff; color: #202123; font-weight: 600; cursor: pointer; transition: .2s; }
+.new-chat:hover { border-color: #6b4eff; color: #6b4eff; box-shadow: 0 4px 12px rgba(107,78,255,.1); }
+.rail-section { margin-top: 24px; }
+.rail-label { display: block; padding: 0 10px 8px; color: #9a9aa1; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.rail-item { width: 100%; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #54545b; cursor: pointer; text-align: left; }
+.rail-item:hover { color: #202123; background: #ededf1; }
+.rail-item .el-icon { color: #777780; font-size: 16px; }
+.rail-bottom { margin-top: auto; }
+.runtime-card { padding: 12px; border: 1px solid #e2e2e6; border-radius: 10px; background: #fff; }
+.runtime-title { display: flex; align-items: center; gap: 7px; color: #34343a; font-size: 12px; font-weight: 700; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #c5c5ca; }.status-dot.online { background: #20b26b; box-shadow: 0 0 0 3px rgba(32,178,107,.12); }
+.runtime-grid { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 8px; }.runtime-grid span { padding: 3px 6px; border-radius: 5px; background: #f0f0f2; color: #a2a2a8; font-size: 10px; }.runtime-grid span.online { background: #eaf8f1; color: #168552; }.runtime-card small { color: #9999a0; font-size: 10px; }
+.conversation-main { min-width: 0; display: grid; grid-template-rows: 66px minmax(0,1fr) auto; background: #fff; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid #ededf0; }
+.product-row { display: flex; align-items: center; gap: 9px; color: #202123; }.product-mark,.thinking-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: linear-gradient(145deg,#7658ff,#5c3ef2); color: #fff; font-weight: 800; }.edition { padding: 3px 7px; border-radius: 5px; background: #f0edff; color: #6748ef; font-size: 10px; font-weight: 700; }.chat-header p { margin: 3px 0 0 37px; color: #9a9aa1; font-size: 11px; }
+.header-actions { display: flex; align-items: center; gap: 5px; }.connection-pill { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #e4e4e8; border-radius: 999px; color: #707078; font-size: 11px; }.connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #e6a23c; }.connection-pill i.online { background: #20b26b; }
+.message-stage { overflow-y: auto; scrollbar-width: thin; }.message-stage.empty { display: grid; place-items: center; }
+.welcome-panel { width: min(760px, calc(100% - 48px)); padding: 34px 0 50px; text-align: center; }.agent-orb { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 17px; background: linear-gradient(145deg,#7658ff,#5034de); color: #fff; font-size: 24px; box-shadow: 0 12px 30px rgba(91,61,226,.22); }.welcome-panel h1 { margin: 0; color: #202123; font-size: 28px; letter-spacing: -.035em; }.welcome-panel>p { margin: 11px auto 28px; max-width: 600px; color: #85858c; font-size: 14px; line-height: 1.7; }
+.prompt-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; text-align: left; }.prompt-grid button { position: relative; min-height: 92px; display: grid; grid-template-columns: 34px 1fr 20px; grid-template-rows: auto auto; column-gap: 10px; align-items: center; padding: 15px; border: 1px solid #e4e4e8; border-radius: 11px; background: #fff; cursor: pointer; transition: .2s; }.prompt-grid button:hover { border-color: #b9abff; transform: translateY(-1px); box-shadow: 0 8px 22px rgba(49,38,102,.08); }.prompt-icon { grid-row: 1/3; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #f1eeff; color: #694af0; }.prompt-grid strong { color: #303036; font-size: 13px; }.prompt-grid small { color: #929299; font-size: 11px; line-height: 1.4; }.prompt-arrow { grid-column: 3; grid-row: 1/3; color: #b4b4ba; }
+.message-list { width: min(900px, calc(100% - 48px)); margin: 0 auto; padding: 28px 0 36px; }.thinking-row { display: flex; gap: 12px; margin: 8px 0 22px; }.thinking-row>div { display: flex; align-items: center; gap: 4px; color: #888890; }.thinking-row i { width: 5px; height: 5px; border-radius: 50%; background: #7456f5; animation: pulse 1s infinite alternate; }.thinking-row i:nth-child(2){animation-delay:.2s}.thinking-row i:nth-child(3){animation-delay:.4s}.thinking-row em { margin-left: 6px; font-size: 12px; font-style: normal; }
+.result-card { margin: 16px 0 24px 40px; overflow: hidden; border: 1px solid #e1e1e5; border-radius: 12px; background: #fff; }.result-card>header { display: flex; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid #ededf0; }.result-kicker { color: #9a9aa1; font-size: 9px; font-weight: 800; letter-spacing: .12em; }.result-card h3 { max-width: 650px; margin: 5px 0 0; color: #29292f; font-size: 14px; line-height: 1.5; }.result-state { height: fit-content; padding: 5px 9px; border-radius: 6px; background: #ecf8f2; color: #168552; font-size: 11px; font-weight: 700; }.result-state.blocked { background: #fff0f0; color: #d14343; }.result-state.approval_required,.result-state.needs_context { background: #fff6e8; color: #b66a00; }
+.result-metrics { display: grid; grid-template-columns: repeat(4,1fr); border-bottom: 1px solid #ededf0; }.result-metrics div { padding: 14px 18px; border-right: 1px solid #ededf0; }.result-metrics div:last-child { border-right: 0; }.result-metrics strong,.result-metrics span { display: block; }.result-metrics strong { color: #27272d; font-size: 16px; }.result-metrics span { margin-top: 3px; color: #9a9aa1; font-size: 10px; }
+.compact-plan { margin: 0; padding: 16px 20px; list-style: none; }.compact-plan li { display: flex; align-items: center; gap: 10px; min-height: 38px; }.step-check { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: #eeebff; color: #6748ef; font-size: 10px; font-weight: 800; }.compact-plan strong,.compact-plan small { display: block; }.compact-plan strong { color: #4b4b52; font-size: 12px; }.compact-plan small { margin-top: 2px; color: #a2a2a8; font-size: 10px; }.created-resources { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 16px; }.created-resources span { padding: 5px 8px; border: 1px solid #dedee3; border-radius: 6px; color: #5d5d65; font-family: ui-monospace,monospace; font-size: 10px; }
+.technical-collapse { border-top: 1px solid #ededf0; border-bottom: 0; padding: 0 20px; }.technical-collapse :deep(.el-collapse-item__header){font-size:11px;color:#777780}.artifact-list article { margin-bottom: 10px; }.artifact-list strong { color: #55555d; font-size: 11px; }.artifact-list pre,.json-detail { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #17171b; color: #dddde3; font-size: 10px; white-space: pre-wrap; }.artifact-list p { color: #66666e; font-size: 12px; white-space: pre-wrap; }
+.question-card { margin: 14px 0 20px 40px; padding: 16px; border: 1px solid #f0d5a8; border-radius: 10px; background: #fffaf2; }.question-card>strong { display: block; margin-bottom: 8px; color: #8d5b0e; font-size: 12px; }.question-card button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border: 0; border-top: 1px solid #f3e5cb; background: transparent; color: #765723; font-size: 12px; cursor: pointer; text-align: left; }
+.composer-shell { padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }
+@keyframes pulse{to{opacity:.25;transform:translateY(-2px)}}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:900px){.agent-workspace{grid-template-columns:1fr}.conversation-rail{display:none}.result-metrics{grid-template-columns:repeat(2,1fr)}.result-metrics div:nth-child(2){border-right:0}.prompt-grid{grid-template-columns:1fr}.chat-header{padding:0 16px}.composer-shell{padding-left:12px;padding-right:12px}.message-list{width:calc(100% - 24px)}.welcome-panel{width:calc(100% - 24px)}}
 </style>
