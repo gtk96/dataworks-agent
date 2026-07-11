@@ -41,6 +41,31 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
         "required_params": [],
         "optional_params": ["goal", "table_name", "source_table", "layer"],
     },
+    "ods_dwd_modeling": {
+        "patterns": [
+            r"(ods|\u8d34\u6e90|\u5165\u4ed3).*?(dwd|\u660e\u7ec6)",
+            r"(dwd|\u660e\u7ec6).*?(ods|\u8d34\u6e90|\u5165\u4ed3)",
+            r"(\u4ece|\u57fa\u4e8e|source).*?(ods).*?(dwd)",
+            r"ods\s*(?:\+|and|\u518d|\u5230|->|\u2192).*?dwd",
+            r"source.*?ods.*?dwd",
+        ],
+        "required_params": [],
+        "optional_params": [
+            "goal",
+            "table_name",
+            "source_table",
+            "layer",
+            "domain",
+            "schedule_cycle",
+            "source_type",
+            "datasource_name",
+            "oss_path",
+            "ods_table",
+            "dwd_table",
+            "granularity",
+            "schedule_minute",
+        ],
+    },
     "forward_modeling": {
         "patterns": [
             r"(正向|生成|设计|规划).*?(建模|模型|dwd|dws|dim|dmr)",

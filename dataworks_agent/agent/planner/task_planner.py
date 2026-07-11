@@ -85,6 +85,23 @@ TASK_TEMPLATES: dict[str, dict[str, Any]] = {
             {"tool": "check_task_status", "params": ["task_id"], "title": "Read execution status", "phase": "inspect"},
         ],
     },
+    "ods_dwd_modeling": {
+        "summary": "Conversational ODS to DWD modeling proposal",
+        "assumptions": [
+            "Generate dry-run/preview artifacts before online writes.",
+            "ODS execution route is selected by source type; DWD preview reuses deterministic generators when metadata is sufficient.",
+            "Publish and online writes require Publish Gate approval.",
+        ],
+        "steps": [
+            {"tool": "analyze_ods_dwd_requirement", "params": ["goal", "table_name", "source_table", "source_type", "datasource_name", "oss_path", "ods_table", "dwd_table", "granularity", "schedule_cycle", "schedule_minute", "domain"], "title": "Understand ODS+DWD goal", "phase": "understand"},
+            {"tool": "classify_ods_source", "params": ["goal", "source_table", "source_type", "datasource_name", "oss_path", "ods_table", "granularity"], "title": "Select ODS route", "phase": "plan"},
+            {"tool": "plan_ods_pipeline", "params": ["goal", "source_table", "source_type", "datasource_name", "oss_path", "ods_table", "granularity", "schedule_minute", "domain"], "title": "Plan ODS pipeline", "phase": "plan", "risk": "medium"},
+            {"tool": "preview_dwd_artifacts", "params": ["goal", "table_name", "source_table", "source_type", "datasource_name", "oss_path", "ods_table", "dwd_table", "granularity", "schedule_cycle", "domain"], "title": "Preview DWD artifacts", "phase": "draft", "risk": "medium"},
+            {"tool": "plan_ods_dwd_dependencies", "params": ["goal", "table_name", "source_table", "source_type", "datasource_name", "oss_path", "ods_table", "dwd_table", "granularity", "schedule_minute"], "title": "Plan ODS+DWD dependencies", "phase": "orchestrate"},
+            {"tool": "validate_guardrails", "params": ["table_name", "dwd_table", "ods_table", "layer"], "title": "Validate guardrails", "phase": "guardrail"},
+            {"tool": "recommend_next_actions", "params": ["goal", "table_name", "ods_table", "dwd_table"], "title": "Recommend next actions", "phase": "next"},
+        ],
+    },
     "forward_modeling": {
         "summary": "Goal-driven forward modeling proposal",
         "assumptions": ["Generate artifacts in dry-run mode before any DataWorks write.", "Publish requires approval."],

@@ -37,8 +37,9 @@ def test_plan_query_lineage(planner):
     plan = planner.plan(intent)
 
     assert isinstance(plan, TaskPlan)
-    assert len(plan.steps) == 1
+    assert len(plan.steps) == 2
     assert plan.steps[0].tool == "query_lineage"
+    assert plan.steps[1].tool == "summarize_lineage_impact"
 
 
 def test_plan_unknown_intent(planner):
@@ -112,16 +113,18 @@ def test_plan_create_table_dependencies(planner):
     assert plan.steps[3].depends_on == ["step_2"]
 
 
+
 def test_plan_with_llm_fallback(planner):
-    """测试 LLM 规划回退"""
+    """DataWorks-shaped unknown goals use a deterministic safe fallback plan."""
     intent = Intent(
         action="unknown",
         params={},
         confidence=0.0,
-        raw_text="帮我创建一个用户表并配置每天调度",
+        raw_text="\u5e2e\u6211\u521b\u5efa\u4e00\u4e2a\u7528\u6237\u8868\u5e76\u914d\u7f6e\u6bcf\u5929\u8c03\u5ea6",
     )
-    # 当模板匹配失败时，应该尝试 LLM 规划
-    # 当前 LLM 未集成，返回空计划
     plan = planner.plan(intent)
     assert isinstance(plan, TaskPlan)
-    assert len(plan.steps) == 0  # LLM 未集成，返回空
+    assert len(plan.steps) == 6
+    assert plan.summary == "Fallback DataWorks Agent plan"
+    assert plan.needs_confirmation is True
+    assert plan.steps[0].tool == "analyze_requirement"

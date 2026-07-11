@@ -140,3 +140,24 @@ def test_complex_task_decomposition(client):
     assert data["success"] is True
     # 复杂任务应该有多个步骤
     assert data["data"]["steps_completed"] >= 2
+
+
+
+def test_ods_dwd_conversational_flow(client):
+    """Verify ODS+DWD conversations return route and preview artifacts."""
+    response = client.post(
+        "/agent/chat",
+        json={
+            "message": (
+                "\u628a mysql \u6570\u636e\u6e90 jky_singleshop \u7684 orders "
+                "\u8868\u505a\u6210\u5c0f\u65f6 ODS\uff0c\u518d\u57fa\u4e8e\u5b83\u5efa "
+                "dwd_trade_order_detail"
+            )
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["data"]["intent"]["action"] == "ods_dwd_modeling"
+    assert data["data"]["artifacts"]["ods_plan"]["route"] == "ods_di"
+    assert data["data"]["artifacts"]["dwd_preview"]["target_table"] == "dwd_trade_order_detail"

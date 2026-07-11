@@ -147,7 +147,7 @@ The local Agent now has a closed loop for natural-language input -> NLU intent/e
 
 Current execution boundary:
 
-- **Supported**: recognize table creation, lineage query, status check, and end-to-end DataWorks workflow intents; extract target table, layer, schedule, and related entities; generate task plans, DDL/FlowSpec/dependency drafts, task status, and recommended next actions.
+- **Supported**: recognize table creation, lineage query, status check, end-to-end DataWorks workflow, and conversational ODS+DWD modeling intents; extract target table, layer, schedule, source type, datasource, ODS/DWD table, OSS path, and granularity entities; generate task plans, ODS route plans, DWD DDL/SQL previews, dependency drafts, task status, and recommended next actions.
 - **Safety**: `agent/executor/tool_executor.py` only runs in dry-run/proposal mode. Real online writes such as publish, delete, overwrite, or DataWorks node creation must still use the existing modeling flow, destructive-operation guard, and Publish Gate.
 - **Capability split**: AK/SK and Cookie BFF fallback coexist according to the Capability Matrix. The chat Agent can suggest the route, but it does not remove or bypass the Cookie fallback path.
 
@@ -157,6 +157,8 @@ Current execution boundary:
 - **Lineage query plan**: `query ods_user lineage` or `query ods_user`
 - **Status check**: `check task status`
 - **Complex planning**: `create ods_user table and configure schedule`
+- **ODS+DWD proposal**: `build hourly ODS from mysql datasource jky_singleshop orders, then create dwd_trade_order_detail`
+- **ODS route coverage**: batch DB (`ods_di`), Hologres (`ods_holo`), OSS (`ods_oss`), realtime/CDC (`ods_realtime`), and existing ODS tables all stop at dry-run/proposal plus Publish Gate boundary.
 
 #### Core modules
 

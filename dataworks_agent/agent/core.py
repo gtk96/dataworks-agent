@@ -164,6 +164,7 @@ class ChatAgent:
             "forward_modeling",
             "reverse_modeling",
             "publish_review",
+            "ods_dwd_modeling",
         }
         if missing_table:
             actions.append("补充目标表名，例如 ods_xxx / dwd_xxx。")
@@ -200,6 +201,14 @@ class ChatAgent:
                 artifacts["lineage"] = data["lineage"]
             if data.get("risk_report") and "risk_report" not in artifacts:
                 artifacts["risk_report"] = data["risk_report"]
+            if data.get("ods_plan") and "ods_plan" not in artifacts:
+                artifacts["ods_plan"] = data["ods_plan"]
+            if data.get("dwd_preview") and "dwd_preview" not in artifacts:
+                artifacts["dwd_preview"] = data["dwd_preview"]
+            if data.get("dependency_plan") and "dependency_plan" not in artifacts:
+                artifacts["dependency_plan"] = data["dependency_plan"]
+            if data.get("capability_matrix") and "capability_matrix" not in artifacts:
+                artifacts["capability_matrix"] = data["capability_matrix"]
         return artifacts
 
     def _collect_approvals(
@@ -247,9 +256,11 @@ class ChatAgent:
     ) -> str:
         if not result.success:
             return "blocked"
+        if self._clarifying_questions(intent, result):
+            return "needs_context"
         if approvals:
             return "approval_required"
-        if plan.needs_confirmation or self._clarifying_questions(intent, result):
+        if plan.needs_confirmation:
             return "needs_context"
         return "proposal"
 
@@ -261,6 +272,23 @@ class ChatAgent:
                 questions.append("目标表名是什么？例如 dwd_trade_order_detail。")
             if not params.get("source_table"):
                 questions.append("源表或主要输入表是什么？例如 ods_order。")
+        if intent.action == "ods_dwd_modeling":
+            source_table = params.get("source_table")
+            ods_table = params.get("ods_table")
+            source_type = params.get("source_type")
+            is_existing_ods = isinstance(source_table, str) and source_table.lower().startswith("ods_")
+            if not params.get("dwd_table") and not params.get("table_name"):
+                questions.append("DWD \u76ee\u6807\u8868\u540d\u662f\u4ec0\u4e48\uff1f\u4f8b\u5982 dwd_trade_order_detail\u3002")
+            if not source_table and not ods_table and not params.get("oss_path"):
+                questions.append("\u6e90\u8868\u3001OSS \u8def\u5f84\u6216\u5df2\u6709 ODS \u8868\u662f\u4ec0\u4e48\uff1f\u4f8b\u5982 orders / oss://bucket/path/orders.csv / ods_order\u3002")
+            if not source_type and not ods_table and not is_existing_ods:
+                questions.append("ODS \u6765\u6e90\u7c7b\u578b\u662f\u4ec0\u4e48\uff1f\u53ef\u9009 mysql\u3001hologres\u3001oss\u3001realtime \u6216\u5df2\u6709 ODS\u3002")
+            if source_type in {"mysql", "polardb", "postgres", "oracle", "sqlserver", "hologres", "realtime"} and not params.get("datasource_name"):
+                questions.append("DataWorks \u6570\u636e\u6e90\u540d\u79f0\u662f\u4ec0\u4e48\uff1f\u4f8b\u5982 jky_singleshop \u6216 dataworks_holo\u3002")
+            for step in result.step_results:
+                missing = (step.data or {}).get("missing_context", [])
+                if isinstance(missing, list) and missing:
+                    questions.append("\u8bf7\u8865\u9f50\u7f3a\u5931\u4e0a\u4e0b\u6587\uff1a" + "\u3001".join(str(item) for item in missing) + "\u3002")
         if intent.action in {"metric_attribution"} and not params.get("metric_id"):
             questions.append("需要归因的指标或口径 ID 是什么？")
         if any(step.error == "missing_table_name" for step in result.step_results):
