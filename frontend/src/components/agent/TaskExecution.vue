@@ -1,31 +1,21 @@
 <template>
   <div class="task-execution">
     <div class="execution-header">
-      <h4>任务执行</h4>
-      <el-tag :type="statusType">{{ statusText }}</el-tag>
+      <div>
+        <span class="caption">Task</span>
+        <h4>{{ status?.task_id ?? '等待目标' }}</h4>
+      </div>
+      <el-tag :type="statusType" effect="light">{{ statusText }}</el-tag>
     </div>
-    
-    <ExecutionProgress 
-      v-if="status"
-      :status="status"
-    />
-    
+
+    <ExecutionProgress v-if="status" :status="status" />
+
     <div class="execution-actions">
-      <el-button 
-        v-if="status?.current_step"
-        type="danger" 
-        size="small"
-        @click="$emit('cancel')"
-      >
-        取消执行
+      <el-button v-if="status?.current_step" type="danger" plain size="small" @click="$emit('cancel')">
+        停止等待
       </el-button>
-      <el-button 
-        v-if="status && status.failed_steps > 0"
-        type="warning" 
-        size="small"
-        @click="$emit('retry')"
-      >
-        重试失败步骤
+      <el-button v-if="status && status.failed_steps > 0" type="warning" plain size="small" @click="$emit('retry')">
+        让 Agent 诊断并重试
       </el-button>
     </div>
   </div>
@@ -67,34 +57,46 @@ const statusType = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (!props.status) return '等待中'
-  if (props.status.failed_steps > 0) return '执行失败'
-  if (props.status.current_step) return '执行中'
-  return '已完成'
+  if (!props.status) return '等待目标'
+  if (props.status.failed_steps > 0) return '需要处理'
+  if (props.status.current_step) return '规划中'
+  return '计划已生成'
 })
 </script>
 
 <style scoped>
 .task-execution {
-  padding: 16px;
-  border: 1px solid #eee;
-  border-radius: 8px;
+  padding: 0;
 }
 
 .execution-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.caption {
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .execution-header h4 {
-  margin: 0;
+  margin: 4px 0 0;
+  color: #1f2a44;
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-all;
 }
 
 .execution-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 </style>

@@ -55,3 +55,12 @@ def test_parse_negation_with_negation_words(parser):
     for text, expected_negated in negation_cases:
         result = parser.parse(text)
         assert result.is_negated == expected_negated, f"Text: {text}"
+
+
+def test_parse_query_table_without_lineage_keyword(parser):
+    """Test query plus table name defaults to lineage/dependency planning."""
+    query = chr(0x67E5) + chr(0x8BE2)
+    result = parser.parse(f"{query} ods_user")
+    assert result.action == "query_lineage"
+    assert result.params["table_name"] == "ods_user"
+    assert result.confidence >= 0.5

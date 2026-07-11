@@ -22,6 +22,10 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET || 'http://localhost:8085',
         ws: true,
       },
+      '/agent': {
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8085',
+        ws: true,
+      },
     },
   },
   build: {

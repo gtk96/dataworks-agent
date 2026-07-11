@@ -139,56 +139,66 @@ tests/                       # 单元 / 集成 / 冒烟
 - **自愈流程**: `runtime/self_heal.py` — 调度失败/数据异常诊断+修复提议
 - **评测闭环**: `runtime/evaluator.py` — 质量指标+Badcase沉淀+反馈迭代
 
-### 9. Agent 对话助手
+### 9. Agent Chat Assistant
 
-#### 对话式操作
+#### Current capability boundary
 
-通过自然语言与数仓助手交互，支持：
+The local Agent now has a closed loop for natural-language input -> NLU intent/entity parsing -> task planning -> dry-run/proposal tool execution -> status feedback. It is designed to turn DataWorks modeling, lineage, and status requests into auditable plans and draft artifacts. The chat path must not pretend that online writes or publishes have already happened.
 
-- **创建表**: "创建ods_user表"
-- **查询血缘**: "查询ods_user的血缘"
-- **检查状态**: "检查任务状态"
-- **部署节点**: "部署ods_user节点"
-- **复杂任务**: "创建ods_user表并配置调度"（自动拆解）
+Current execution boundary:
 
-#### 核心模块
+- **Supported**: recognize table creation, lineage query, status check, and end-to-end DataWorks workflow intents; extract target table, layer, schedule, and related entities; generate task plans, DDL/FlowSpec/dependency drafts, task status, and recommended next actions.
+- **Safety**: `agent/executor/tool_executor.py` only runs in dry-run/proposal mode. Real online writes such as publish, delete, overwrite, or DataWorks node creation must still use the existing modeling flow, destructive-operation guard, and Publish Gate.
+- **Capability split**: AK/SK and Cookie BFF fallback coexist according to the Capability Matrix. The chat Agent can suggest the route, but it does not remove or bypass the Cookie fallback path.
 
-| 模块 | 位置 | 说明 |
+#### Supported examples
+
+- **Create table draft**: `create ods_user table`
+- **Lineage query plan**: `query ods_user lineage` or `query ods_user`
+- **Status check**: `check task status`
+- **Complex planning**: `create ods_user table and configure schedule`
+
+#### Core modules
+
+| Module | Path | Description |
 |------|------|------|
-| NLU 解析 | `agent/nlu/` | 意图识别 + 实体抽取 + 模板匹配 |
-| 任务规划 | `agent/planner/` | 任务分解 + 依赖排序 + LLM 规划 |
-| 任务拆解 | `agent/planner/task_decomposer.py` | 复杂任务自动拆解 |
-| 工具执行 | `agent/executor/` | 调度 MCP/BFF/OpenAPI 完成操作 |
-| 重试处理 | `agent/executor/retry_handler.py` | 错误恢复 + 指数退避 |
-| 执行监控 | `agent/monitor/execution_monitor.py` | 实时状态跟踪 |
-| 核心编排 | `agent/core.py` | 对话管理 + 上下文维护 |
+| NLU parsing | `agent/nlu/` | Intent recognition, entity extraction, template and fallback matching |
+| Task planning | `agent/planner/` | Task decomposition, dependency ordering, safe dry-run workflow |
+| Tool execution | `agent/executor/` | Draft artifacts, validate guardrails, recommend next actions; no direct online write |
+| Execution monitor | `agent/monitor/execution_monitor.py` | Task and step status tracking |
+| Core orchestration | `agent/core.py` | Chat management, plan execution, response formatting |
 
-#### API 接口
+#### API endpoints
 
-- `POST /agent/chat` — 聊天接口（文本输入 → Agent 响应）
-- `WS /agent/ws` — WebSocket 实时通信（流式输出）
+- `POST /agent/chat` - chat endpoint that returns Agent plan/draft/status response.
+- `GET /agent/status` - latest Agent task status.
+- `GET /agent/status/{task_id}` - task status by id.
+- `WS /agent/ws` - realtime chat endpoint, returning `response` and available `status` events.
 
-#### 使用示例
+#### Usage examples
 
 ```bash
-# 简单任务
+# Simple dry-run/proposal
 curl -X POST http://localhost:8085/agent/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "创建ods_user表"}'
+  -d '{"message": "create ods_user table"}'
 
-# 复杂任务（自动拆解）
+# Lineage query plan
 curl -X POST http://localhost:8085/agent/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "创建ods_user表并配置调度"}'
+  -d '{"message": "query ods_user"}'
+
+# Latest status
+curl http://localhost:8085/agent/status
 ```
 
-#### 前端对话组件
+#### Frontend chat components
 
-- `AgentChat.vue` — 主对话窗口（消息列表 + 输入框）
-- `ChatMessage.vue` — 单条消息渲染（支持 Markdown）
-- `QuickActions.vue` — 快捷操作按钮
-- `TaskExecution.vue` — 任务执行面板
-- `ExecutionProgress.vue` — 执行进度显示
+- `AgentChat.vue` - main chat window with message list, input box, and status panel.
+- `ChatMessage.vue` - single message renderer with Markdown support.
+- `QuickActions.vue` - quick action buttons.
+- `TaskExecution.vue` - task execution panel.
+- `ExecutionProgress.vue` - execution progress display.
 
 ## 推送脚本(SOP)
 

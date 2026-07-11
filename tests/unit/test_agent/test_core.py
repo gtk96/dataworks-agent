@@ -26,7 +26,7 @@ async def test_chat_agent_empty_message():
     agent = ChatAgent()
     response = await agent.chat("")
     assert response.success is False
-    assert "请输入您的需求" in response.message
+    assert "请输入你希望 Agent 达成" in response.message
 
 
 @pytest.mark.asyncio
@@ -35,7 +35,7 @@ async def test_chat_agent_whitespace_message():
     agent = ChatAgent()
     response = await agent.chat("   ")
     assert response.success is False
-    assert "请输入您的需求" in response.message
+    assert "请输入你希望 Agent 达成" in response.message
 
 
 @pytest.mark.asyncio
@@ -95,3 +95,18 @@ async def test_agent_chat_query_lineage(agent):
     response = await agent.chat("查询ods_user的血缘")
     assert response.success is True
     assert "ods_user" in response.message
+
+
+@pytest.mark.asyncio
+async def test_chat_agent_response_has_status_and_no_garbled_text():
+    """Test Agent response includes status and has no garbled text."""
+    query = chr(0x67E5) + chr(0x8BE2)
+    agent = ChatAgent()
+
+    response = await agent.chat(f"{query} ods_user")
+
+    assert response.success is True
+    assert response.data["status"]["task_id"] == response.data["task_id"]
+    assert response.data["status"]["completed_steps"] >= 1
+    assert "????" not in response.message
+    assert "????" not in str(response.data)

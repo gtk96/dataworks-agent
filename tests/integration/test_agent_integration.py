@@ -54,7 +54,7 @@ def test_full_chat_flow(client):
 
 
 def test_unknown_intent(client):
-    """测试未知意图"""
+    """测试未知意图：非 DataWorks 目标只返回澄清，不生成执行计划。"""
     response = client.post(
         "/agent/chat",
         json={"message": "今天天气怎么样"},
@@ -62,6 +62,36 @@ def test_unknown_intent(client):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
+    assert data["data"]["agent_mode"] == "needs_context"
+    assert data["data"]["plan"]["steps"] == []
+    assert data["data"]["clarifying_questions"]
+
+
+def test_dataworks_goal_fallback_plan(client):
+    """测试 DataWorks 相关自然语言目标能进入 Agent 通用计划。"""
+    response = client.post(
+        "/agent/chat",
+        json={"message": "帮我把 ods_order 建成 DWD 明细模型，并给出调度和风险检查"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["data"]["plan"]["steps"]
+    assert data["data"]["agent_mode"] in {"proposal", "needs_context", "approval_required"}
+
+
+def test_publish_request_requires_approval(client):
+    """测试发布类请求停在审批边界，不伪装成已发布。"""
+    response = client.post(
+        "/agent/chat",
+        json={"message": "直接发布 dwd_order_detail"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["data"]["agent_mode"] == "approval_required"
+    assert data["data"]["approvals"]
+    assert "不会直接操作线上" in data["message"] or "Publish Gate" in data["message"]
 
 
 def test_empty_message_rejected(client):
