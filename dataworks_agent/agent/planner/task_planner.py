@@ -53,6 +53,11 @@ class TaskPlanner:
         task_id = f"task_{intent.action}_{abs(hash(intent.raw_text)) % 10000}"
 
         if intent.action == "unknown":
+            # 尝试使用 LLM 进行任务拆解
+            steps = self._llm_plan(intent.raw_text)
+            if steps:
+                return TaskPlan(task_id=task_id, steps=steps, intent=intent)
+            
             logger.info("未知意图，返回空计划: %s", intent.raw_text)
             return TaskPlan(task_id=task_id, steps=[], intent=intent)
 
@@ -79,6 +84,12 @@ class TaskPlanner:
             logger.warning("检测到循环依赖，使用线性顺序")
 
         return TaskPlan(task_id=task_id, steps=steps, intent=intent)
+
+    def _llm_plan(self, task_description: str) -> list[TaskStep]:
+        """使用 LLM 进行任务规划（Phase 2 实现）"""
+        # TODO: Phase 2 集成 LLM 服务
+        # 当前返回空列表，后续集成 DeepSeek API
+        return []
 
     def _build_dependency_graph(self, steps: list[TaskStep]) -> TaskGraph:
         """构建依赖图并验证"""

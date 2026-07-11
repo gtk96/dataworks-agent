@@ -110,3 +110,18 @@ def test_plan_create_table_dependencies(planner):
     assert plan.steps[1].depends_on == ["step_0"]
     assert plan.steps[2].depends_on == ["step_1"]
     assert plan.steps[3].depends_on == ["step_2"]
+
+
+def test_plan_with_llm_fallback(planner):
+    """测试 LLM 规划回退"""
+    intent = Intent(
+        action="unknown",
+        params={},
+        confidence=0.0,
+        raw_text="帮我创建一个用户表并配置每天调度",
+    )
+    # 当模板匹配失败时，应该尝试 LLM 规划
+    # 当前 LLM 未集成，返回空计划
+    plan = planner.plan(intent)
+    assert isinstance(plan, TaskPlan)
+    assert len(plan.steps) == 0  # LLM 未集成，返回空
