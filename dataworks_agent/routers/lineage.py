@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
@@ -87,12 +88,10 @@ async def get_upstream(
             )
 
     if not guid and bff is not None:
-        try:
+        with contextlib.suppress(Exception):
             guid, resolved_project = await resolve_table_guid(
                 table_name, mc_project or None, bff=bff
             )
-        except Exception:
-            pass
 
     payload: dict = {
         "table": table_name,
