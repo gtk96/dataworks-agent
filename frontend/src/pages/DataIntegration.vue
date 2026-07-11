@@ -331,6 +331,7 @@
           <el-form-item label="格式">
             <el-select v-model="ossForm.file_format" style="width:100px">
               <el-option value="csv" label="csv" />
+              <el-option value="json" label="json" />
               <el-option value="parquet" label="parquet" />
             </el-select>
           </el-form-item>
