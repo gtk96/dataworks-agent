@@ -51,10 +51,10 @@ def test_multiple_steps(monitor):
     """测试多个步骤"""
     monitor.record_step_start("task_1", "step_0", "create_holo_table")
     monitor.record_step_complete("task_1", "step_0", success=True)
-    
+
     monitor.record_step_start("task_1", "step_1", "create_mc_table")
     monitor.record_step_complete("task_1", "step_1", success=True)
-    
+
     status = monitor.get_status("task_1")
     assert status.completed_steps == 2
     assert len(status.steps) == 2

@@ -57,7 +57,7 @@ class TaskPlanner:
             steps = self._llm_plan(intent.raw_text)
             if steps:
                 return TaskPlan(task_id=task_id, steps=steps, intent=intent)
-            
+
             logger.info("未知意图，返回空计划: %s", intent.raw_text)
             return TaskPlan(task_id=task_id, steps=[], intent=intent)
 

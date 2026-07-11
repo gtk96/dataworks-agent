@@ -87,14 +87,14 @@ class TaskExecutor:
     def _execute_with_retry(self, step: Any) -> ToolResult:
         """带重试的执行"""
         last_result = None
-        
+
         for attempt in range(self._max_retries):
             result = self._tool_executor.execute(step.tool, step.params)
             if result.success:
                 return result
-            
+
             last_result = result
-            
+
             # 检查是否应该重试
             if attempt < self._max_retries - 1 and self._should_retry(result.error):
                 delay = 2 ** attempt  # 指数退避
@@ -103,14 +103,14 @@ class TaskExecutor:
                     step.step_id, delay, attempt + 1, self._max_retries
                 )
                 time.sleep(delay)
-        
+
         return last_result  # 返回最后一次结果
 
     def _should_retry(self, error: str | None) -> bool:
         """判断是否应该重试"""
         if not error:
             return False
-        
+
         # 瞬时错误应该重试
         transient_errors = [
             "connection_timeout",
@@ -118,6 +118,6 @@ class TaskExecutor:
             "rate_limit",
             "timeout",
         ]
-        
+
         error_lower = error.lower()
         return any(transient_error in error_lower for transient_error in transient_errors)

@@ -25,7 +25,7 @@ def test_retry_count_exceeded(handler):
     """测试重试次数超限"""
     for _ in range(3):
         handler.record_attempt("connection_timeout")
-    
+
     strategy = handler.get_strategy("connection_timeout")
     assert strategy.should_retry is False
 
@@ -34,10 +34,10 @@ def test_exponential_backoff(handler):
     """测试指数退避"""
     handler.record_attempt("connection_timeout")
     strategy1 = handler.get_strategy("connection_timeout")
-    
+
     handler.record_attempt("connection_timeout")
     strategy2 = handler.get_strategy("connection_timeout")
-    
+
     assert strategy2.delay_seconds > strategy1.delay_seconds
 
 
@@ -45,7 +45,7 @@ def test_reset_attempts(handler):
     """测试重置尝试次数"""
     handler.record_attempt("connection_timeout")
     handler.record_attempt("connection_timeout")
-    
+
     handler.reset("connection_timeout")
     strategy = handler.get_strategy("connection_timeout")
     assert strategy.should_retry is True

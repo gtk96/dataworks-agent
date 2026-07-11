@@ -1,8 +1,8 @@
 import pytest
 
 from dataworks_agent.agent.nlu.intent_parser import Intent
-from dataworks_agent.agent.planner.task_planner import TaskPlanner, TaskPlan, TaskStep
 from dataworks_agent.agent.planner.task_graph import TaskGraph
+from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 
 
 @pytest.fixture
