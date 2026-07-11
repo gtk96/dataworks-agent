@@ -39,7 +39,7 @@
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 5 }"
             resize="none"
-            placeholder="例如：分析 ods_order 到 DWD 明细表的建模方案，并给出 DDL、DML、调度和风险检查"
+            placeholder="例如：把 mysql 数据源 jky_singleshop 的 orders 表做成小时 ODS，再基于它建 dwd_trade_order_detail"
             :disabled="loading"
             @keydown.enter.exact.prevent="sendMessage"
           />
@@ -227,11 +227,9 @@ const currentStatus = ref<ExecutionStatus | null>(null)
 const lastPayload = ref<AgentPayload | null>(null)
 
 const prompts = [
-  { title: '血缘影响分析', text: '分析 ods_user 的三层血缘影响范围，并给出风险和下一步建议' },
-  { title: 'DWD 建模草案', text: '帮我基于 ods_order 设计 dwd_trade_order_detail，生成 DDL、DML、调度建议和发布前风险检查' },
-  { title: '任务诊断', text: '排查最近一个 Agent 任务失败原因，并给出安全恢复方案' },
+  { title: 'MySQL 到 ODS+DWD', text: '把 mysql 数据源 jky_singleshop 的 orders 表做成小时 ODS，再基于它建 dwd_trade_order_detail' },
+  { title: '现有 ODS 建 DWD', text: '基于 ods_order 设计 dwd_trade_order_detail，生成 DDL、DML、依赖和发布前风险检查' },
   { title: '发布前检查', text: '对 dwd_trade_order_detail 做发布前检查，只给方案和风险，不要直接发布' },
-  { title: '异常自愈建议', text: '分析指标异常或调度失败的可能原因，并生成自愈建议' },
 ]
 
 const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? [])

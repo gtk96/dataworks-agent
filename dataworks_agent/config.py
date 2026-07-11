@@ -102,7 +102,10 @@ class Settings(BaseSettings):
     dingtalk_webhook: str = ""  # 钉钉机器人 Webhook URL
     alert_enabled: bool = True  # 是否启用告警
 
-    # ── 派生属性 ──
+    # Product profile: expose only Agent-first core by default; L1-L5 semantic/runtime/MCP skeleton routes are opt-in.
+    enable_experimental_platform_routes: bool = False
+
+    # Derived properties
     @property
     def dataworks_endpoint(self) -> str:
         return f"dataworks.{self.dataworks_region}.aliyuncs.com"

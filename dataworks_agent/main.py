@@ -310,19 +310,16 @@ def create_app() -> FastAPI:
         import_sql,
         lineage,
         logs,
-        mcp_server,
         modeling,
         monitor,
         pipeline,
         reconciliation,
         roots,
         schedule_config,
-        semantic,
         sync,
         system,
         workspace,
     )
-    from dataworks_agent.runtime import routers as runtime_routers
 
     # L0 基础路由
     app.include_router(modeling.router, prefix="/api/modeling", tags=["建模任务"])
@@ -339,10 +336,14 @@ def create_app() -> FastAPI:
     app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["协调处置"])
     app.include_router(artifacts.router, prefix="/api/artifacts", tags=["产物管理"])
 
-    # L1-L5 新增路由
-    app.include_router(semantic.router, prefix="/api/semantic", tags=["语义层"])
-    app.include_router(runtime_routers.router, prefix="/api/runtime", tags=["Runtime"])
-    app.include_router(mcp_server.router, prefix="/api/mcp-server", tags=["MCP Server"])
+    # Slim default: keep Agent-first core exposed; L1-L5 skeleton routes are opt-in.
+    if settings.enable_experimental_platform_routes:
+        from dataworks_agent.routers import mcp_server, semantic
+        from dataworks_agent.runtime import routers as runtime_routers
+
+        app.include_router(semantic.router, prefix="/api/semantic", tags=["Semantic"])
+        app.include_router(runtime_routers.router, prefix="/api/runtime", tags=["Runtime"])
+        app.include_router(mcp_server.router, prefix="/api/mcp-server", tags=["MCP Server"])
     app.include_router(monitor.router, prefix="/api/monitor", tags=["监控"])
     app.include_router(import_sql.router, prefix="/api/import", tags=["批量导入"])
     app.include_router(schedule_config.router, prefix="/api/schedule", tags=["调度配置"])

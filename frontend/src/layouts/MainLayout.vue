@@ -29,10 +29,10 @@
           <span>产物中心</span>
         </el-menu-item>
 
-        <el-sub-menu index="advanced">
+        <el-sub-menu v-if="enableAdvancedTools" index="advanced">
           <template #title>
             <el-icon><MoreFilled /></el-icon>
-            <span>高级工具</span>
+            <span>后台工具（可选）</span>
           </template>
           <el-menu-item index="/tasks/create"><el-icon><Plus /></el-icon><span>建模任务</span></el-menu-item>
           <el-menu-item index="/di"><el-icon><Connection /></el-icon><span>数据集成</span></el-menu-item>
@@ -93,6 +93,7 @@ import {
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const enableAdvancedTools = import.meta.env.VITE_ENABLE_ADVANCED_TOOLS === 'true'
 
 const pageTitle = computed(() => {
   const map: Record<string, string> = {

@@ -128,17 +128,14 @@ tests/                       # 单元 / 集成 / 冒烟
 - **BFF 客户端**: `bff_client.py:735` 行,作为 Cookie 链路的长期兜底保留(无 AK/SK 等价的能力按 Capability Matrix 仍在调用)
 - **MCP 客户端池**: `mcp/pool.py` Streamable HTTP + JSON-RPC
 
-### 8. 语义层与 Agent 平台 (L0-L5)
-- **语义层**: `semantic/layer.py` — 版本化语义定义、口径澄清、质量信号
-- **语义图谱**: `semantic/graph.py` — 融合血缘+语义+元数据+质量信号
-- **Agent Runtime**: `runtime/service.py` — 无状态执行、检查点、重放续跑
-- **MCP Server**: `mcp_server/server.py` — 六类工具、鉴权+审计
-- **正向建模**: `runtime/forward_flow.py` — NL→DDL/DML/调度→校验→审批→执行
-- **逆向建模**: `runtime/reverse_flow.py` — 存量表→结构+血缘+语义候选
-- **指标归因**: `runtime/attribution.py` — 口径澄清→血缘下钻→根因分类
-- **自愈流程**: `runtime/self_heal.py` — 调度失败/数据异常诊断+修复提议
-- **评测闭环**: `runtime/evaluator.py` — 质量指标+Badcase沉淀+反馈迭代
+### 8. Semantic / Runtime platform (L0-L5, hidden by default)
 
+These modules remain in the repo as future-capability skeletons, but they are not exposed in the default product profile. The default user path is the Agent-first ODS+DWD conversational loop.
+
+- Backend: set `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` to mount `/api/semantic`, `/api/runtime`, and `/api/mcp-server`.
+- Frontend: set `VITE_ENABLE_ADVANCED_TOOLS=true` to show the optional backstage tools menu and routes.
+
+Skeleton modules: `semantic/layer.py`, `semantic/graph.py`, `runtime/service.py`, `mcp_server/server.py`, `runtime/forward_flow.py`, `runtime/reverse_flow.py`, `runtime/attribution.py`, `runtime/self_heal.py`, `runtime/evaluator.py`.
 ### 9. Agent Chat Assistant
 
 #### Current capability boundary
@@ -196,11 +193,9 @@ curl http://localhost:8085/agent/status
 
 #### Frontend chat components
 
-- `AgentChat.vue` - main chat window with message list, input box, and status panel.
+- `AgentChat.vue` - main chat window with message list, input box, status panel, and ODS+DWD-first prompt chips.
 - `ChatMessage.vue` - single message renderer with Markdown support.
-- `QuickActions.vue` - quick action buttons.
-- `TaskExecution.vue` - task execution panel.
-- `ExecutionProgress.vue` - execution progress display.
+- `TaskExecution.vue` / `ExecutionProgress.vue` - compact task progress display used by the Agent panel.
 
 ## 推送脚本(SOP)
 
@@ -235,56 +230,43 @@ uv run python scripts/delete_dwd_nodes.py "业务流程/100_订单信息/MaxComp
 uv run python scripts/delete_dim_nodes.py "业务流程/100_订单信息/MaxCompute/数据开发/01_DIM/"
 ```
 
-## 前端页面(18 个)
+## Frontend pages (slim default)
 
-| 路径 | 页面 | 用途 |
+Default profile keeps only the Agent-first core entry points:
+
+| Path | Page | Purpose |
 |---|---|---|
-| `/` | ModelingDashboard | 首页仪表盘,任务统计/趋势/分布 |
-| `/tasks` | TaskList | 任务列表,筛选/重试 |
-| `/tasks/create` | ModelingWorkbench | 5 步建模向导(DWD 主力) |
-| `/tasks/:id` | TaskDetail | 任务详情 + SSE 实时进度 |
-| `/sync` | SyncManager | dev/prod 双环境差异对比与同步 |
-| `/reconciliation` | ReconciliationView | 协调处置(dangling intents) |
-| `/ownership` | OwnershipView | 产权查询 |
-| `/bus-matrix` | BusMatrixView | 总线矩阵可视化 |
-| `/artifacts` | ArtifactsView | DDL 产物归档 |
-| `/di` | DataIntegration | ODS 数据集成(15 个 API,最复杂) |
-| `/datasources` | DataSourceManager | 数据源管理 |
-| `/pipeline` | PipelineHub | 持久化管道队列 |
-| `/governance` | GovernanceHub | 治理工具(4 Tab) |
-| `/import` | ImportSql | SQL 文件批量导入 |
-| `/dwd` | DwdWorkbench | DWD JSON 模式建模 |
-| `/settings` | Settings | Cookie + 服务状态 |
-| `/semantic` | SemanticHub | 语义层管理 |
-| `/tasks/create-wizard` | TaskCreateWizard | 任务创建向导 |
+| `/` | ModelingDashboard | Agent workspace and conversational ODS+DWD planning |
+| `/tasks` | TaskList | Task list, filtering, retry |
+| `/tasks/:id` | TaskDetail | Task detail + SSE progress |
+| `/artifacts` | ArtifactsView | DDL/DML artifact archive |
 
-## 后端路由(19 个模块)
+Set `VITE_ENABLE_ADVANCED_TOOLS=true` to additionally show backstage tools such as modeling forms, DI, datasources, governance, semantic hub, sync, SQL import, DWD JSON workbench, pipeline queue, and settings.
 
-| 前缀 | 模块 | 端点数 |
+## Backend routes (slim default)
+
+Default profile mounts Agent-first and existing modeling-loop routes. L1-L5 skeleton routes are opt-in.
+
+| Prefix | Module | Default |
 |---|---|---|
-| `/api/modeling` | 建模任务 CRUD + SSE | 7 |
-| `/api/dwd` | DWD 可视化建模 | 4 |
-| `/api/pipeline` | 持久化管道队列 | 5 |
-| `/api/deploy` | 批量部署 | 1 |
-| `/api/governance` | 治理(词根/规范/表名/血缘/标准) | 18 |
-| `/api/sync` | 双环境同步 | 4 |
-| `/api/cookie` | Cookie 管理 | 8 |
-| `/api/lineage` | 血缘追踪(upstream/downstream/graph) | 3 |
-| `/api/import` | SQL 导入 | 3 |
-| `/api/roots` | 词根校验 | 3 |
-| `/api/ownership` | 产权查询 | 1 |
-| `/api/bus-matrix` | 总线矩阵 | 1 |
-| `/api/artifacts` | 产物 | 2 |
-| `/api/monitor` | 监控(任务列表 + dashboard + WebSocket) | 3 |
-| `/api/logs` | 任务日志 | 1 |
-| `/api/system` | 系统(health/settings) | 3 |
-| `/api/semantic` | 语义层(定义/口径/质量) | 7 |
-| `/api/runtime` | Runtime(会话/运行) | 8 |
-| `/agent` | Agent(对话式操作) | 2 |
-| `/api/mcp-server` | MCP Server(工具调用) | 4 |
-| `/api/workspace` | 数据源与工作空间 | 12 |
-| `/api/reconciliation` | 协调 | 2 |
-| `/api/schedule` | 调度配置 | 8 |
+| `/agent` | Agent conversational ODS+DWD / planning | enabled |
+| `/api/modeling` | Modeling task CRUD + SSE | enabled |
+| `/api/dwd` | DWD modeling | enabled |
+| `/api/pipeline` | Persistent pipeline queue | enabled |
+| `/api/deploy` | Batch deploy | enabled |
+| `/api/governance` | Governance checks | enabled |
+| `/api/sync` | Dev/prod sync | enabled |
+| `/api/cookie` | Cookie management | enabled |
+| `/api/lineage` | Lineage tracing | enabled |
+| `/api/import` | SQL import | enabled |
+| `/api/roots` | Word-root validation | enabled |
+| `/api/artifacts` | Artifacts | enabled |
+| `/api/monitor` | Dashboard + WebSocket monitor | enabled |
+| `/api/logs` | Task logs | enabled |
+| `/api/workspace` | Datasource and workspace helpers | enabled |
+| `/api/semantic` | Semantic skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
+| `/api/runtime` | Runtime skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
+| `/api/mcp-server` | MCP Server skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
 
 ## 配置
 
@@ -344,7 +326,7 @@ uv run pytest tests/integration/test_mocked_fixture.py -v
 
 当前已**完全可生产**的能力如上"7 大闭环"所述。**已识别但未实现**的能力:
 
-- 上述"7 大闭环"对应核心数仓建模链路已生产化；§8 语义层与 Agent Runtime(L0-L5)当前为骨架级实现，框架/状态机/路由就位但端到端闭环未完整覆盖，不宜与建模闭环同等视作生产就绪。
+- Core warehouse modeling loops above are productionized; section 8 Semantic / Agent Runtime (L0-L5) remains skeleton-level and is hidden by default, so it should not be treated as equally production-ready.
 - 任务自动监控报警(无失败通知)
 - 血缘预存 + 增量计算(`lineage_edges` 表为空,血缘全是实时算)
 - 中间件(`middleware/`)已实现并注册 4 个:限流/幂等/IP 隔离/熔断;1 个未注册:权限
