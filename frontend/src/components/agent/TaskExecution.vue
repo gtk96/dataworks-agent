@@ -20,7 +20,7 @@
         取消执行
       </el-button>
       <el-button 
-        v-if="status?.failed_steps > 0"
+        v-if="status && status.failed_steps > 0"
         type="warning" 
         size="small"
         @click="$emit('retry')"
@@ -35,12 +35,19 @@
 import { computed } from 'vue'
 import ExecutionProgress from './ExecutionProgress.vue'
 
+interface StepStatus {
+  step_id: string
+  tool: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+}
+
 interface ExecutionStatus {
   task_id: string
   current_step: string | null
   total_steps: number
   completed_steps: number
   failed_steps: number
+  steps: Record<string, StepStatus>
 }
 
 const props = defineProps<{
