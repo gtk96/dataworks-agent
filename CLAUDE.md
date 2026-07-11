@@ -427,4 +427,28 @@ L0: 地基 (AK/SK + pyodps + LLM + Event Log)
 | 自愈流程 | `runtime/self_heal.py` | 调度失败/数据异常诊断 |
 | 评测闭环 | `runtime/evaluator.py` | 质量指标+Badcase沉淀 |
 
+## 11. Agent Phase 2 开发规范
+
+### 新增组件
+
+| 组件 | 位置 | 说明 |
+|------|------|------|
+| 任务拆解器 | `agent/planner/task_decomposer.py` | 复杂任务自动拆解为可执行步骤 |
+| 重试处理器 | `agent/executor/retry_handler.py` | 错误分类 + 指数退避重试 |
+| 执行监控器 | `agent/monitor/execution_monitor.py` | 实时跟踪任务执行状态 |
+| 任务执行面板 | `frontend/src/components/agent/TaskExecution.vue` | 可视化执行进度 |
+| 执行进度显示 | `frontend/src/components/agent/ExecutionProgress.vue` | 步骤状态展示 |
+
+### 扩展点
+
+- `TaskPlanner._llm_plan()` — 集成 LLM 进行复杂任务规划
+- `TaskExecutor._execute_with_retry()` — 错误恢复和重试机制
+- `ExecutionMonitor` — 实时状态更新 API
+
+### 测试要求
+
+- 单元测试覆盖核心逻辑（任务拆解、重试策略、状态跟踪）
+- 集成测试覆盖复杂任务拆解流程
+- 前端组件测试覆盖执行面板渲染
+
 

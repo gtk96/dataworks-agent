@@ -149,14 +149,18 @@ tests/                       # 单元 / 集成 / 冒烟
 - **查询血缘**: "查询ods_user的血缘"
 - **检查状态**: "检查任务状态"
 - **部署节点**: "部署ods_user节点"
+- **复杂任务**: "创建ods_user表并配置调度"（自动拆解）
 
 #### 核心模块
 
 | 模块 | 位置 | 说明 |
 |------|------|------|
 | NLU 解析 | `agent/nlu/` | 意图识别 + 实体抽取 + 模板匹配 |
-| 任务规划 | `agent/planner/` | 任务分解 + 依赖排序 |
+| 任务规划 | `agent/planner/` | 任务分解 + 依赖排序 + LLM 规划 |
+| 任务拆解 | `agent/planner/task_decomposer.py` | 复杂任务自动拆解 |
 | 工具执行 | `agent/executor/` | 调度 MCP/BFF/OpenAPI 完成操作 |
+| 重试处理 | `agent/executor/retry_handler.py` | 错误恢复 + 指数退避 |
+| 执行监控 | `agent/monitor/execution_monitor.py` | 实时状态跟踪 |
 | 核心编排 | `agent/core.py` | 对话管理 + 上下文维护 |
 
 #### API 接口
@@ -167,10 +171,15 @@ tests/                       # 单元 / 集成 / 冒烟
 #### 使用示例
 
 ```bash
-# 通过 API 发送指令
+# 简单任务
 curl -X POST http://localhost:8085/agent/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "创建ods_user表"}'
+
+# 复杂任务（自动拆解）
+curl -X POST http://localhost:8085/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "创建ods_user表并配置调度"}'
 ```
 
 #### 前端对话组件
@@ -178,6 +187,8 @@ curl -X POST http://localhost:8085/agent/chat \
 - `AgentChat.vue` — 主对话窗口（消息列表 + 输入框）
 - `ChatMessage.vue` — 单条消息渲染（支持 Markdown）
 - `QuickActions.vue` — 快捷操作按钮
+- `TaskExecution.vue` — 任务执行面板
+- `ExecutionProgress.vue` — 执行进度显示
 
 ## 推送脚本(SOP)
 

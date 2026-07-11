@@ -96,3 +96,16 @@ def test_lineage_query_returns_task_id(client):
     data = response.json()
     assert data["success"] is True
     assert "task_id" in data["data"]
+
+
+def test_complex_task_decomposition(client):
+    """测试复杂任务拆解"""
+    response = client.post(
+        "/agent/chat",
+        json={"message": "创建ods_user表并配置调度"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    # 复杂任务应该有多个步骤
+    assert data["data"]["steps_completed"] >= 2
