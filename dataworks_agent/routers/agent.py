@@ -39,11 +39,13 @@ manager = ConnectionManager()
 
 class ChatRequest(BaseModel):
     """聊天请求"""
+
     message: str = Field(min_length=1, max_length=10000, description="用户消息")
 
 
 class ChatResponse(BaseModel):
     """聊天响应"""
+
     message: str
     success: bool
     data: dict = {}
@@ -73,14 +75,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             data = await websocket.receive_json()
             message = data.get("message", "")
             response = await _agent.chat(message)
-            await websocket.send_json({
-                "type": "response",
-                "data": {
-                    "message": response.message,
-                    "success": response.success,
-                    "data": response.data,
-                },
-            })
+            await websocket.send_json(
+                {
+                    "type": "response",
+                    "data": {
+                        "message": response.message,
+                        "success": response.success,
+                        "data": response.data,
+                    },
+                }
+            )
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

@@ -19,6 +19,7 @@ def client():
     app.include_router(router, prefix="/agent")
 
     import dataworks_agent.routers.agent as agent_module
+
     original_agent = agent_module._agent
     agent_module._agent = ChatAgent()
 

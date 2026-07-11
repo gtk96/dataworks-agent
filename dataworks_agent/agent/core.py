@@ -2,6 +2,7 @@
 
 提供简化的对话接口，包装现有的 runtime.agent.Agent。
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatResponse:
     """对话响应"""
+
     message: str
     success: bool = True
     data: dict[str, Any] = field(default_factory=dict)

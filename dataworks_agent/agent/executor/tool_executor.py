@@ -1,4 +1,5 @@
 """工具执行器"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any
 @dataclass
 class ToolResult:
     """工具执行结果"""
+
     tool: str
     success: bool
     data: dict[str, Any] | None = None

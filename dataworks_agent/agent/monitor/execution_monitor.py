@@ -1,4 +1,5 @@
 """执行监控器 - 跟踪任务执行状态"""
+
 from __future__ import annotations
 
 import time
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 @dataclass
 class StepStatus:
     """步骤状态"""
+
     step_id: str
     tool: str
     status: str  # pending, running, completed, failed
@@ -19,6 +21,7 @@ class StepStatus:
 @dataclass
 class ExecutionStatus:
     """执行状态"""
+
     task_id: str
     current_step: str | None = None
     total_steps: int = 0

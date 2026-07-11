@@ -71,8 +71,7 @@ def agent():
             success=True,
             task_id=plan.task_id,
             step_results=[
-                StepResult(step_id=s.step_id, tool=s.tool, success=True)
-                for s in plan.steps
+                StepResult(step_id=s.step_id, tool=s.tool, success=True) for s in plan.steps
             ],
             errors=[],
         )

@@ -1,4 +1,5 @@
 """任务执行器"""
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +16,7 @@ logger = logging.getLogger("dataworks_agent.agent.executor")
 @dataclass
 class StepResult:
     """步骤执行结果"""
+
     step_id: str
     tool: str
     success: bool
@@ -25,6 +27,7 @@ class StepResult:
 @dataclass
 class ExecutionResult:
     """执行结果"""
+
     success: bool
     task_id: str
     step_results: list[StepResult] = field(default_factory=list)
@@ -51,12 +54,14 @@ class TaskExecutor:
             if not all(dep in executed for dep in step.depends_on):
                 error = f"步骤 {step.step_id} 依赖未满足"
                 errors.append(error)
-                step_results.append(StepResult(
-                    step_id=step.step_id,
-                    tool=step.tool,
-                    success=False,
-                    error=error,
-                ))
+                step_results.append(
+                    StepResult(
+                        step_id=step.step_id,
+                        tool=step.tool,
+                        success=False,
+                        error=error,
+                    )
+                )
                 continue
 
             # 执行步骤（带重试）
@@ -97,10 +102,13 @@ class TaskExecutor:
 
             # 检查是否应该重试
             if attempt < self._max_retries - 1 and self._should_retry(result.error):
-                delay = 2 ** attempt  # 指数退避
+                delay = 2**attempt  # 指数退避
                 logger.info(
                     "步骤 %s 失败，%d秒后重试 (尝试 %d/%d)",
-                    step.step_id, delay, attempt + 1, self._max_retries
+                    step.step_id,
+                    delay,
+                    attempt + 1,
+                    self._max_retries,
                 )
                 time.sleep(delay)
 

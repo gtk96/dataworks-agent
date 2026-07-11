@@ -1,4 +1,5 @@
 """实体抽取器"""
+
 import re
 from typing import Any
 

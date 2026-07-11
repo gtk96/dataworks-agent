@@ -1,4 +1,5 @@
 """意图模板定义"""
+
 from typing import Any
 
 INTENT_TEMPLATES: dict[str, dict[str, Any]] = {

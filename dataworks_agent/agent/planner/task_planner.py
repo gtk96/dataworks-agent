@@ -1,4 +1,5 @@
 """任务规划器"""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TaskStep:
     """任务步骤"""
+
     step_id: str
     tool: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -23,6 +25,7 @@ class TaskStep:
 @dataclass
 class TaskPlan:
     """任务计划"""
+
     task_id: str
     steps: list[TaskStep] = field(default_factory=list)
     intent: Intent | None = None
@@ -65,16 +68,12 @@ class TaskPlanner:
         steps: list[TaskStep] = []
 
         for i, step_def in enumerate(template):
-            params = {
-                p: intent.params.get(p)
-                for p in step_def["params"]
-                if p in intent.params
-            }
+            params = {p: intent.params.get(p) for p in step_def["params"] if p in intent.params}
             step = TaskStep(
                 step_id=f"step_{i}",
                 tool=step_def["tool"],
                 params=params,
-                depends_on=[f"step_{i-1}"] if i > 0 else [],
+                depends_on=[f"step_{i - 1}"] if i > 0 else [],
             )
             steps.append(step)
 

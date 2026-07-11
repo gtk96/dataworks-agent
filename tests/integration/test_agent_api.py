@@ -21,13 +21,16 @@ def client():
     app.include_router(router, prefix="/agent")
 
     mock_agent = MagicMock(spec=ChatAgent)
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="已成功创建表 ods_user",
-        success=True,
-        data={"task_id": "test-123"},
-    ))
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="已成功创建表 ods_user",
+            success=True,
+            data={"task_id": "test-123"},
+        )
+    )
 
     import dataworks_agent.routers.agent as agent_module
+
     original_agent = agent_module._agent
     agent_module._agent = mock_agent
 
@@ -64,11 +67,13 @@ def test_chat_endpoint_empty_message(client):
 def test_chat_endpoint_agent_error(client):
     """测试 Agent 处理失败"""
     test_client, mock_agent = client
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="处理失败: 连接超时",
-        success=False,
-        error="连接超时",
-    ))
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="处理失败: 连接超时",
+            success=False,
+            error="连接超时",
+        )
+    )
 
     response = test_client.post(
         "/agent/chat",

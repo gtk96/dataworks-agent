@@ -1,4 +1,5 @@
 """任务拆解器 - 将复杂任务拆解为可执行步骤"""
+
 from __future__ import annotations
 
 import re
@@ -9,6 +10,7 @@ from typing import Any, ClassVar
 @dataclass
 class DecomposedStep:
     """拆解后的步骤"""
+
     description: str
     tool: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -18,6 +20,7 @@ class DecomposedStep:
 @dataclass
 class DecompositionResult:
     """拆解结果"""
+
     steps: list[DecomposedStep]
     original_task: str
 
@@ -42,9 +45,9 @@ class TaskDecomposer:
                 steps = []
                 for i, subtask in enumerate(subtasks):
                     step = DecomposedStep(
-                        description=f"子任务 {i+1}: {subtask}",
+                        description=f"子任务 {i + 1}: {subtask}",
                         tool=subtask,
-                        depends_on=[f"step_{i-1}"] if i > 0 else [],
+                        depends_on=[f"step_{i - 1}"] if i > 0 else [],
                     )
                     steps.append(step)
                 return DecompositionResult(steps=steps, original_task=task)

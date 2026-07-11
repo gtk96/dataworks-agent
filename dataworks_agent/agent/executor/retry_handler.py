@@ -1,4 +1,5 @@
 """重试处理器 - 处理执行失败和重试策略"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import ClassVar
 @dataclass
 class RetryStrategy:
     """重试策略"""
+
     should_retry: bool
     delay_seconds: float
     reason: str
@@ -16,6 +18,7 @@ class RetryStrategy:
 @dataclass
 class ErrorPattern:
     """错误模式"""
+
     keyword: str
     is_transient: bool
     base_delay: float = 1.0
@@ -58,7 +61,7 @@ class RetryHandler:
             if pattern.keyword in error_type.lower():
                 if pattern.is_transient:
                     # 指数退避
-                    delay = pattern.base_delay * (2 ** attempts)
+                    delay = pattern.base_delay * (2**attempts)
                     return RetryStrategy(
                         should_retry=True,
                         delay_seconds=delay,

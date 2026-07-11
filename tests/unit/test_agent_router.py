@@ -19,14 +19,17 @@ async def test_chat_router_logic():
 
     # Mock ChatAgent
     mock_agent = MagicMock(spec=ChatAgent)
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="已成功创建表 ods_user",
-        success=True,
-        data={"task_id": "test-123"},
-    ))
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="已成功创建表 ods_user",
+            success=True,
+            data={"task_id": "test-123"},
+        )
+    )
 
     # Patch the module-level agent
     import dataworks_agent.routers.agent as agent_module
+
     original_agent = agent_module._agent
     agent_module._agent = mock_agent
 
@@ -110,13 +113,16 @@ async def test_websocket_message_processing():
 
     # Mock ChatAgent
     mock_agent = MagicMock(spec=ChatAgent)
-    mock_agent.chat = AsyncMock(return_value=ChatResponse(
-        message="已成功创建表 ods_user",
-        success=True,
-        data={"task_id": "test-123"},
-    ))
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="已成功创建表 ods_user",
+            success=True,
+            data={"task_id": "test-123"},
+        )
+    )
 
     import dataworks_agent.routers.agent as agent_module
+
     original_agent = agent_module._agent
     agent_module._agent = mock_agent
 
@@ -130,6 +136,7 @@ async def test_websocket_message_processing():
         ws.send_json = AsyncMock()
 
         from dataworks_agent.routers.agent import websocket_endpoint
+
         await websocket_endpoint(ws)
 
         # 验证连接管理
@@ -162,6 +169,7 @@ async def test_websocket_disconnect_cleans_up():
     ws.receive_json = AsyncMock(side_effect=WebSocketDisconnect())
 
     from dataworks_agent.routers.agent import websocket_endpoint
+
     await websocket_endpoint(ws)
 
     assert ws not in manager._connections
@@ -177,6 +185,7 @@ async def test_websocket_exception_cleans_up():
     ws.receive_json = AsyncMock(side_effect=RuntimeError("connection reset"))
 
     from dataworks_agent.routers.agent import websocket_endpoint
+
     await websocket_endpoint(ws)
 
     assert ws not in manager._connections
