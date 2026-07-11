@@ -34,16 +34,17 @@ test('GovernanceHub 词根搜索 — 输入 order_amt 应过滤响应', async ({
   expect(content!.toLowerCase()).toContain('amt')
 })
 
-test('GovernanceHub 表名解析 Tab — 输入 dwd_ord_ofc_s_order_hour 解析成功', async ({ page }) => {
+test('GovernanceHub 表名解析 — 输入 dwd_ord_ofc_s_order_hour 解析成功', async ({ page }) => {
   await page.goto('/governance')
-  await page.getByRole('tab', { name: '表名解析' }).click()
+  // 表名解析在规范参考 Tab 下的 collapse 中
+  await page.getByRole('tab', { name: '规范参考' }).click()
 
-  const input = page.getByPlaceholder('输入表名 (e.g. dwd_ord_s_order_hour)')
+  // 展开命名工具 collapse
+  await page.getByText('命名工具（表名解析 + 更新方式推断）').click()
+
+  const input = page.getByPlaceholder('输入表名，如 dwd_ord_s_order_hour')
   await input.fill('dwd_ord_ofc_s_order_hour')
-  // fill 不触发 watch,需要再次切 tab 触发 runTabLoader
-  await page.getByRole('tab', { name: 'SQL 血缘' }).click()
-  await page.getByRole('tab', { name: '表名解析' }).click()
-  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: '解析', exact: true }).click()
 
   // 后端返回 {status: "ok", parsed: {layer: "DWD", ...}},前端 JSON.stringify 输出
   await expect(page.locator('pre.code-block')).toContainText('DWD', { timeout: 10000 })
