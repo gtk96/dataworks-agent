@@ -322,7 +322,7 @@ class CreateHoloRequest(BaseModel):
     datasource_name: str = ""
     holo_schema: str = ""
     table_name: str
-    script_path: str = "dataworks_agent/01_ODS"
+    script_path: str = settings.holo_ods_node_path
     granularity: str = "hour"
     resource_group: str = ""
     schedule_minute: int = 1

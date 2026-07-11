@@ -148,9 +148,12 @@ async def mocked_app_state(monkeypatch, temp_db):
     app_state._bff_client = fake_bff
 
     # 3. Cookie decrypt — 返回固定值
-    monkeypatch.setattr(
-        "dataworks_agent.cookie.crypto.decrypt_cookie", lambda: "fake_cookie_for_tests"
-    )
+    def fake_decrypt_cookie():
+        return "fake_cookie_for_tests"
+
+    monkeypatch.setattr("dataworks_agent.cookie.crypto.decrypt_cookie", fake_decrypt_cookie)
+    # routers.cookie imports decrypt_cookie directly, so patch that bound reference too.
+    monkeypatch.setattr("dataworks_agent.routers.cookie.decrypt_cookie", fake_decrypt_cookie)
 
     # 4. Cookie keepalive — 禁用避免后台任务泄漏
     monkeypatch.setattr("dataworks_agent.config.settings.cookie_keepalive_enabled", False)

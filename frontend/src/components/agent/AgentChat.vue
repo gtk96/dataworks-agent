@@ -80,7 +80,7 @@
             </header>
 
             <div class="result-metrics">
-              <div><strong>{{ completedStepCount }}/{{ planSteps.length || completedStepCount }}</strong><span>步骤完成</span></div>
+              <div><strong>{{ completedStepCount }}/{{ planSteps.length || completedStepCount }}</strong><span>{{ stepMetricLabel }}</span></div>
               <div><strong>{{ artifactCards.length }}</strong><span>产物</span></div>
               <div><strong>{{ executionTables.length }}</strong><span>表 / 节点</span></div>
               <div><strong>{{ publishGateText }}</strong><span>发布状态</span></div>
@@ -88,7 +88,7 @@
 
             <ol v-if="planSteps.length" class="compact-plan">
               <li v-for="(step, index) in planSteps" :key="step.step_id || step.step || step.tool || index">
-                <span class="step-check">{{ stepStatus(index) }}</span>
+                <span class="step-check" :class="`step-${String(step.status || 'planned').toLowerCase()}`">{{ stepStatus(step, index) }}</span>
                 <div><strong>{{ humanizeStep(step.title || step.tool || step.step || `步骤 ${index + 1}`) }}</strong><small>{{ phaseLabel(step.phase) }}</small></div>
               </li>
             </ol>
@@ -171,6 +171,8 @@ import {
   Lock,
 } from '@element-plus/icons-vue'
 import ChatMessage from './ChatMessage.vue'
+import { buildCapabilityBadges } from './capabilityStatus'
+import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
@@ -220,7 +222,7 @@ const capabilityPrompts = [
   { title: '逆向建模', icon: Search, text: '逆向分析存量表 dwd_trade_order_detail，读取真实表结构、血缘、分层和语义候选。' },
   { title: '异常排查', icon: Tools, text: '排查最近失败的 DataWorks 任务，检查任务日志、节点依赖和运行底座，给出恢复建议。' },
   { title: '自主问数', icon: DataAnalysis, text: '查数 dws_trade_day 前几条数据。' },
-  { title: 'Cookie 管理', icon: Connection, text: '检查 9222 浏览器 Cookie、AK/SK 和官方 MCP 状态。' },
+  { title: 'Cookie 管理', icon: Connection, text: '从 9222 登录浏览器提取并刷新 Cookie，同时检查 AK/SK 和官方 MCP 状态。' },
 ]
 const starterPrompts = [
   { title: '一句话建完整数仓链路', description: 'ODS、DWD、DIM、DWS 建表与任务一次完成', icon: MagicStick, text: capabilityPrompts[0].text },
@@ -236,23 +238,15 @@ const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_q
 const agentMode = computed(() => lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle'))
 const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
 const resultTitle = computed(() => lastPayload.value?.data?.plan?.summary || lastPayload.value?.message || 'Agent 执行结果')
-const completedStepCount = computed(() => currentStatus.value?.completed_steps ?? (lastPayload.value?.success ? planSteps.value.length : 0))
+const stepSummary = computed(() => summarizeAgentSteps(planSteps.value))
+const completedStepCount = computed(() => planSteps.value.length ? stepSummary.value.completed : (currentStatus.value?.completed_steps ?? 0))
+const stepMetricLabel = computed(() => stepSummary.value.planned ? `已执行 · ${stepSummary.value.planned} 已规划` : '步骤完成')
 const publishGateText = computed(() => lastPayload.value?.data?.publish_request ? '待审批' : lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布')
 const executionTables = computed(() => {
   const rows = lastPayload.value?.data?.executed ?? []
   return rows.map((row) => String(row.table ?? row.node_name ?? '')).filter(Boolean)
 })
-const capabilityBadges = computed(() => {
-  const official = capabilities.value.official_mcp as Record<string, unknown> | undefined
-  return [
-    { label: 'AK/SK', online: Boolean(capabilities.value.ak_sk) },
-    { label: 'OpenAPI', online: Boolean(capabilities.value.openapi) },
-    { label: 'MaxCompute', online: Boolean(capabilities.value.maxcompute) },
-    { label: 'Cookie', online: Boolean(capabilities.value.cookie_bff) },
-    { label: '9222', online: Boolean(capabilities.value.cdp_9222) },
-    { label: '官方 MCP', online: Boolean(official?.connected) },
-  ]
-})
+const capabilityBadges = computed(() => buildCapabilityBadges(capabilities.value))
 const healthyCapabilityCount = computed(() => capabilityBadges.value.filter((item) => item.online).length)
 const artifactCards = computed(() => {
   const result: Array<{ label: string; value: string; isCode: boolean }> = []
@@ -339,7 +333,7 @@ function handleAgentResponse(payload: AgentPayload) {
 function runPrompt(text: string) { input.value = text; sendMessage() }
 function appendQuestion(question: string) { input.value = `${question}：`; nextTick(() => document.querySelector<HTMLTextAreaElement>('.composer-box textarea')?.focus()) }
 function scrollToBottom() { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight }
-function stepStatus(index: number) { return index < completedStepCount.value ? '✓' : index + 1 }
+function stepStatus(step: PlanStep, index: number) { return agentStepMarker(step, index) }
 function phaseLabel(phase?: string) { return ({ understand: '理解目标', inspect: '检查环境', plan: '生成计划', design: '设计模型', orchestrate: '编排任务', guardrail: '安全检查', execute: '开发执行' }[phase ?? ''] ?? '执行步骤') }
 function humanizeStep(value: string) { return value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase()) }
 function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', query_sql: '只读查询 SQL', node_sql: '节点 SQL', table_schema: '表结构', semantic_candidates: '语义候选' }[key] ?? key.replaceAll('_', ' ')) }
@@ -370,7 +364,7 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .message-list { width: min(900px, calc(100% - 48px)); margin: 0 auto; padding: 28px 0 36px; }.thinking-row { display: flex; gap: 12px; margin: 8px 0 22px; }.thinking-row>div { display: flex; align-items: center; gap: 4px; color: #888890; }.thinking-row i { width: 5px; height: 5px; border-radius: 50%; background: #7456f5; animation: pulse 1s infinite alternate; }.thinking-row i:nth-child(2){animation-delay:.2s}.thinking-row i:nth-child(3){animation-delay:.4s}.thinking-row em { margin-left: 6px; font-size: 12px; font-style: normal; }
 .result-card { margin: 16px 0 24px 40px; overflow: hidden; border: 1px solid #e1e1e5; border-radius: 12px; background: #fff; }.result-card>header { display: flex; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid #ededf0; }.result-kicker { color: #9a9aa1; font-size: 9px; font-weight: 800; letter-spacing: .12em; }.result-card h3 { max-width: 650px; margin: 5px 0 0; color: #29292f; font-size: 14px; line-height: 1.5; }.result-state { height: fit-content; padding: 5px 9px; border-radius: 6px; background: #ecf8f2; color: #168552; font-size: 11px; font-weight: 700; }.result-state.blocked { background: #fff0f0; color: #d14343; }.result-state.approval_required,.result-state.needs_context { background: #fff6e8; color: #b66a00; }
 .result-metrics { display: grid; grid-template-columns: repeat(4,1fr); border-bottom: 1px solid #ededf0; }.result-metrics div { padding: 14px 18px; border-right: 1px solid #ededf0; }.result-metrics div:last-child { border-right: 0; }.result-metrics strong,.result-metrics span { display: block; }.result-metrics strong { color: #27272d; font-size: 16px; }.result-metrics span { margin-top: 3px; color: #9a9aa1; font-size: 10px; }
-.compact-plan { margin: 0; padding: 16px 20px; list-style: none; }.compact-plan li { display: flex; align-items: center; gap: 10px; min-height: 38px; }.step-check { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: #eeebff; color: #6748ef; font-size: 10px; font-weight: 800; }.compact-plan strong,.compact-plan small { display: block; }.compact-plan strong { color: #4b4b52; font-size: 12px; }.compact-plan small { margin-top: 2px; color: #a2a2a8; font-size: 10px; }.created-resources { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 16px; }.created-resources span { padding: 5px 8px; border: 1px solid #dedee3; border-radius: 6px; color: #5d5d65; font-family: ui-monospace,monospace; font-size: 10px; }
+.compact-plan { margin: 0; padding: 16px 20px; list-style: none; }.compact-plan li { display: flex; align-items: center; gap: 10px; min-height: 38px; }.step-check { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: #eeebff; color: #6748ef; font-size: 10px; font-weight: 800; }.step-check.step-failed,.step-check.step-error,.step-check.step-blocked { background: #fff0f0; color: #d14343; } .step-check.step-warning { background: #fff6e8; color: #b66a00; } .step-check.step-skipped { background: #f0f0f2; color: #8b8b92; } .step-check.step-approval_required { background: #fff6e8; color: #b66a00; } .compact-plan strong,.compact-plan small { display: block; }.compact-plan strong { color: #4b4b52; font-size: 12px; }.compact-plan small { margin-top: 2px; color: #a2a2a8; font-size: 10px; }.created-resources { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 16px; }.created-resources span { padding: 5px 8px; border: 1px solid #dedee3; border-radius: 6px; color: #5d5d65; font-family: ui-monospace,monospace; font-size: 10px; }
 .technical-collapse { border-top: 1px solid #ededf0; border-bottom: 0; padding: 0 20px; }.technical-collapse :deep(.el-collapse-item__header){font-size:11px;color:#777780}.artifact-list article { margin-bottom: 10px; }.artifact-list strong { color: #55555d; font-size: 11px; }.artifact-list pre,.json-detail { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #17171b; color: #dddde3; font-size: 10px; white-space: pre-wrap; }.artifact-list p { color: #66666e; font-size: 12px; white-space: pre-wrap; }
 .question-card { margin: 14px 0 20px 40px; padding: 16px; border: 1px solid #f0d5a8; border-radius: 10px; background: #fffaf2; }.question-card>strong { display: block; margin-bottom: 8px; color: #8d5b0e; font-size: 12px; }.question-card button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border: 0; border-top: 1px solid #f3e5cb; background: transparent; color: #765723; font-size: 12px; cursor: pointer; text-align: left; }
 .composer-shell { padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }

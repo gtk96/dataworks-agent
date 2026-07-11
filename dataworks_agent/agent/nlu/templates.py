@@ -92,7 +92,11 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
             r"forward.*model",
         ],
         "required_params": [],
-        "optional_params": ["goal", "table_name", "source_table", "layer", "domain", "schedule_cycle"],
+        "optional_params": [
+            "goal", "table_name", "source_table", "layer", "domain", "schedule_cycle",
+            "source_type", "datasource_name", "oss_path", "ods_table", "dwd_table",
+            "granularity", "schedule_minute",
+        ],
     },
     "agent_workflow": {
         "patterns": [
@@ -101,7 +105,11 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
             r"帮我.*?(处理|搞定|完成).*?(dataworks|数仓|建模|节点|调度)",
         ],
         "required_params": [],
-        "optional_params": ["goal", "table_name", "source_table", "layer", "domain", "schedule_cycle"],
+        "optional_params": [
+            "goal", "table_name", "source_table", "layer", "domain", "schedule_cycle",
+            "source_type", "datasource_name", "oss_path", "ods_table", "dwd_table",
+            "granularity", "schedule_minute",
+        ],
     },
     "create_table": {
         "patterns": [

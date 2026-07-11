@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from dataworks_agent.config import settings
+from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import HOURLY_SQL_PARAMETERS
 from dataworks_agent.services.ods_di.constants import DI_DEFAULT_DEPENDENCIES
 from dataworks_agent.services.ods_realtime.helpers import (
@@ -32,6 +33,7 @@ class RealtimeSyncPipeline:
         table_name: str,
         sync_rows: list[dict[str, Any]],
         select_dml: str | None = None,
+        target_table: str | None = None,
         granularity: str = "hour",
         node_path_prefix: str = REALTIME_NODE_PATH_PREFIX,
         schedule_minute: int = 0,
@@ -54,9 +56,13 @@ class RealtimeSyncPipeline:
             result["success"] = False
             return result
 
-        ods_table = prep["ods_table_name"]
+        ods_table = target_table or prep["ods_table_name"]
         delta_table = prep["delta_table"]
-        node_path = prep["node_path"]
+        node_path = (
+            prep["node_path"]
+            if target_table is None
+            else generate_node_path(node_path_prefix, target_table)
+        )
         result["target_table"] = ods_table
 
         fields = extract_fields_from_select_dml(select_dml)

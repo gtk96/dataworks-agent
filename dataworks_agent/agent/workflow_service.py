@@ -114,6 +114,7 @@ class AgentWorkflowService:
             "node_adapter": getattr(app_state, "_node_client", None) is not None,
             "cookie_bff": getattr(app_state, "_bff_client", None) is not None,
             "cdp_9222": getattr(app_state, "_cdp_client", None) is not None,
+            "cookie_health": app_state.cookie_health,
             "official_mcp": official.status.to_dict() if official else {"enabled": False, "connected": False},
         }
 
@@ -135,6 +136,111 @@ class AgentWorkflowService:
             errors=[] if ok else [str(result.get("detail", "cookie refresh failed"))],
         )
 
+    async def _official_call(
+        self, tool: str, arguments: dict[str, Any]
+    ) -> tuple[Any | None, str | None]:
+        client = getattr(app_state, "_official_mcp_client", None)
+        if client is None:
+            return None, "官方 DataWorks MCP 客户端未启用"
+        try:
+            result = await asyncio.wait_for(client.call_tool(tool, arguments), timeout=30)
+            if isinstance(result, dict) and result.get("is_error"):
+                raise RuntimeError(str(result.get("content") or result))
+            return result, None
+        except Exception as exc:
+            logger.warning("官方 DataWorks MCP %s 调用失败，准备降级: %s", tool, exc)
+            return None, str(exc)
+
+    @staticmethod
+    def _find_nested_key(value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            for current_key, current_value in value.items():
+                if str(current_key).lower() == key.lower():
+                    return current_value
+            for current_value in value.values():
+                found = AgentWorkflowService._find_nested_key(current_value, key)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = AgentWorkflowService._find_nested_key(item, key)
+                if found is not None:
+                    return found
+        return None
+
+    @classmethod
+    def _node_from_payload(cls, payload: Any) -> dict[str, Any]:
+        node = cls._find_nested_key(payload, "Node")
+        if isinstance(node, dict):
+            return node
+        if isinstance(payload, dict) and any(key in payload for key in ("Spec", "spec", "Id", "id")):
+            return payload
+        return {}
+
+    @classmethod
+    def _dependencies_from_payload(cls, payload: Any) -> list[Any]:
+        paging = cls._find_nested_key(payload, "PagingInfo")
+        if isinstance(paging, dict):
+            nodes = cls._find_nested_key(paging, "Nodes")
+            if isinstance(nodes, list):
+                return nodes
+        nodes = cls._find_nested_key(payload, "Nodes")
+        return nodes if isinstance(nodes, list) else []
+
+    async def _read_node_metadata(
+        self, node_id: str
+    ) -> tuple[dict[str, Any], list[Any], dict[str, str], list[str]]:
+        sources = {"official_mcp": "not_available", "openapi": "not_used"}
+        warnings: list[str] = []
+        node: dict[str, Any] = {}
+        dependencies: list[Any] = []
+        project_id = settings.dataworks_project_id
+
+        node_arguments: dict[str, Any] = {"Id": node_id}
+        if project_id:
+            node_arguments["ProjectId"] = project_id
+        mcp_node, node_error = await self._official_call("GetNode", node_arguments)
+        if mcp_node is not None:
+            node = self._node_from_payload(mcp_node)
+        if project_id:
+            mcp_dependencies, dependency_error = await self._official_call(
+                "ListNodeDependencies",
+                {"ProjectId": project_id, "Id": node_id, "PageSize": 100, "PageNumber": 1},
+            )
+        else:
+            mcp_dependencies, dependency_error = None, "缺少 DATAWORKS_PROJECT_ID，节点依赖已转 OpenAPI 兜底"
+        if mcp_dependencies is not None:
+            dependencies = self._dependencies_from_payload(mcp_dependencies)
+        if node:
+            sources["official_mcp"] = "completed"
+            if dependency_error:
+                sources["official_mcp"] = "warning"
+                warnings.append(dependency_error)
+        else:
+            sources["official_mcp"] = "warning"
+            if node_error:
+                warnings.append(node_error)
+
+        api = getattr(app_state, "_openapi_client", None)
+        if (not node or not dependencies) and api is not None:
+            from dataworks_agent.api_clients.openapi_node_adapter import _to_map
+
+            sources["openapi"] = "fallback"
+            if not node:
+                try:
+                    node = _to_map(await api.get_node(node_id)).get("Node") or {}
+                except Exception as exc:
+                    warnings.append(str(exc))
+            if not dependencies:
+                try:
+                    dependency_body = _to_map(await api.list_node_dependencies(node_id))
+                    dependencies = (dependency_body.get("PagingInfo") or {}).get("Nodes") or []
+                except Exception as exc:
+                    warnings.append(str(exc))
+        elif node:
+            sources["openapi"] = "not_needed"
+        return node, dependencies, sources, list(dict.fromkeys(warnings))
+
     async def _reverse_model(
         self, message: str, params: dict[str, Any], mode: ExecutionMode
     ) -> WorkflowResult:
@@ -143,24 +249,27 @@ class AgentWorkflowService:
             or params.get("source_table")
             or self._extractor.extract_table_name(message)
         )
+        explicit_node = params.get("node_id")
         node_match = re.search(r"(?:节点|node)\s*[:：]?\s*([A-Za-z0-9_-]+)", message, re.I)
+        node_id = str(explicit_node or (node_match.group(1) if node_match else ""))
         mc = getattr(app_state, "_maxcompute_client", None)
-        api = getattr(app_state, "_openapi_client", None)
 
-        if node_match and api is not None:
-            from dataworks_agent.api_clients.openapi_node_adapter import _to_map
-
-            node_id = node_match.group(1)
-            body = _to_map(await api.get_node(node_id)).get("Node") or {}
-            spec = json.loads(body.get("Spec") or "{}")
+        if node_id:
+            body, dependencies, metadata_sources, warnings = await self._read_node_metadata(node_id)
+            if not body:
+                return WorkflowResult(
+                    False,
+                    f"无法读取节点 {node_id}；官方 MCP 与 OpenAPI 均未返回节点信息。",
+                    "reverse_modeling",
+                    mode,
+                    steps=[{"step": "read_node_flowspec", "status": "failed"}],
+                    data={"metadata_sources": metadata_sources},
+                    errors=warnings or ["node metadata unavailable"],
+                )
+            spec_value = body.get("Spec") or body.get("spec") or "{}"
+            spec = json.loads(spec_value) if isinstance(spec_value, str) else spec_value
             nodes = (spec.get("spec") or {}).get("nodes") or []
             script = (nodes[0].get("script") if nodes else {}) or {}
-            dependencies: Any = []
-            try:
-                dependency_body = _to_map(await api.list_node_dependencies(node_id))
-                dependencies = (dependency_body.get("PagingInfo") or {}).get("Nodes") or []
-            except Exception as exc:
-                dependencies = {"warning": str(exc)}
             sql = script.get("content", "")
             upstream_tables = self._extract_sql_sources(sql) if sql else []
             return WorkflowResult(
@@ -171,7 +280,7 @@ class AgentWorkflowService:
                 steps=[
                     {"step": "read_node_flowspec", "status": "completed"},
                     {"step": "parse_node_sql", "status": "completed"},
-                    {"step": "read_node_dependencies", "status": "completed"},
+                    {"step": "read_node_dependencies", "status": "completed" if dependencies else "warning"},
                 ],
                 artifacts=[{"type": "node_sql", "name": node_id, "content": sql}],
                 data={
@@ -180,7 +289,9 @@ class AgentWorkflowService:
                     "flowspec": spec,
                     "dependencies": dependencies,
                     "upstream_tables": upstream_tables,
+                    "metadata_sources": metadata_sources,
                 },
+                errors=warnings,
             )
 
         if not table:
@@ -254,6 +365,10 @@ class AgentWorkflowService:
         self, message: str, params: dict[str, Any], mode: ExecutionMode
     ) -> WorkflowResult:
         task_id = params.get("task_id") or self._extractor.extract_task_id(message)
+        instance_match = re.search(
+            r"(?:实例|instance)\s*(?:id)?\s*[:：]?\s*([A-Za-z0-9_-]+)", message, re.I
+        )
+        instance_id = params.get("instance_id") or (instance_match.group(1) if instance_match else None)
         checks = self.capability_status()
         details: dict[str, Any] = {"capabilities": checks, "startup": app_state.smoke_results}
         errors: list[str] = []
@@ -301,26 +416,43 @@ class AgentWorkflowService:
                         errors.append(task.error_message)
                 details["task"] = task_data
 
-        node_id = (task_data or {}).get("node_uuid")
-        api = getattr(app_state, "_openapi_client", None)
-        if node_id and api is not None:
-            try:
-                from dataworks_agent.api_clients.openapi_node_adapter import _to_map
+        evidence_sources: dict[str, str] = {}
+        if instance_id:
+            instance_payload, instance_error = await self._official_call(
+                "GetTaskInstance", {"Id": str(instance_id)}
+            )
+            log_payload, log_error = await self._official_call(
+                "GetTaskInstanceLog", {"Id": str(instance_id)}
+            )
+            if instance_payload is not None:
+                details["task_instance"] = instance_payload
+            if log_payload is not None:
+                details["task_instance_log"] = log_payload
+            if instance_error or log_error:
+                errors.extend(value for value in (instance_error, log_error) if value)
+                evidence_sources["official_mcp_instance"] = "warning"
+            else:
+                evidence_sources["official_mcp_instance"] = "completed"
 
-                details["node"] = (_to_map(await api.get_node(node_id)).get("Node") or {})
-                dependency_body = _to_map(await api.list_node_dependencies(node_id))
-                details["node_dependencies"] = (dependency_body.get("PagingInfo") or {}).get("Nodes") or []
-            except Exception as exc:
-                details["node_warning"] = str(exc)
+        node_id = str(params.get("node_id") or (task_data or {}).get("node_uuid") or "")
+        node_warnings: list[str] = []
+        if node_id:
+            node, dependencies, node_sources, node_warnings = await self._read_node_metadata(node_id)
+            if node:
+                details["node"] = node
+            if dependencies:
+                details["node_dependencies"] = dependencies
+            evidence_sources.update({f"node_{key}": value for key, value in node_sources.items()})
+            errors.extend(node_warnings)
 
         from dataworks_agent.runtime.self_heal import IssueReport, IssueType, SelfHealFlow
 
         issue_type = self._infer_issue_type(message, errors)
         proposal = await SelfHealFlow().diagnose(
             IssueReport(
-                issue_id=task_id or f"diag_{uuid.uuid4().hex[:8]}",
+                issue_id=task_id or str(instance_id or f"diag_{uuid.uuid4().hex[:8]}"),
                 issue_type=IssueType(issue_type),
-                source=task_id or "agent_health",
+                source=task_id or str(instance_id or "agent_health"),
                 description="; ".join(dict.fromkeys(errors)) or message,
                 context={
                     "affected_tables": [
@@ -340,17 +472,21 @@ class AgentWorkflowService:
         }
 
         execution_ready = checks["ak_sk"] and checks["maxcompute"] and checks["node_adapter"]
-        task_failed = bool(task_data and task_data.get("status") in {"failed", "error"})
-        success = execution_ready and not task_failed
+        diagnosed_status = (task_data or {}).get("status") or self._find_nested_key(
+            details.get("task_instance"), "Status"
+        )
+        details["diagnosed_task_status"] = diagnosed_status
+        details["health_degraded"] = not execution_ready or diagnosed_status in {"failed", "error", "Failed", "Error"}
+        details["evidence_sources"] = evidence_sources
         return WorkflowResult(
-            success,
+            True,
             "异常排查已完成：已汇总任务日志、节点依赖、AK/SK、官方 MCP、Cookie/CDP，并生成恢复建议。",
             "diagnose_issue",
             mode,
             steps=[
                 {"step": "health_matrix", "status": "completed" if execution_ready else "warning"},
-                {"step": "task_and_step_logs", "status": "completed" if task_id else "skipped"},
-                {"step": "node_dependency_inspection", "status": "completed" if node_id else "skipped"},
+                {"step": "task_and_step_logs", "status": "completed" if task_id or instance_id else "skipped"},
+                {"step": "node_dependency_inspection", "status": "completed" if node_id and details.get("node") else ("warning" if node_id else "skipped")},
                 {"step": "self_heal_proposal", "status": "completed"},
             ],
             data=details,
@@ -358,21 +494,39 @@ class AgentWorkflowService:
         )
 
     async def _ask_data(self, message: str, mode: ExecutionMode) -> WorkflowResult:
-        mc = getattr(app_state, "_maxcompute_client", None)
-        if mc is None:
-            return WorkflowResult(False, "MaxCompute AK/SK 客户端不可用，无法执行只读问数。", "ask_data", mode, errors=["maxcompute client unavailable"])
         sql = await self._build_readonly_sql(message)
         self._validate_readonly_sql(sql)
-        instance = await mc.submit_query(sql)
-        result = await asyncio.wait_for(mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds)
+        sql = self._enforce_query_limit(sql)
+        artifact = {"type": "query_sql", "name": "readonly_query", "content": sql}
+        if mode == "plan":
+            return WorkflowResult(
+                True,
+                "已生成并校验只读查询 SQL；规划模式不会提交 MaxCompute 查询。",
+                "ask_data",
+                mode,
+                steps=[{"step": "generate_readonly_sql", "status": "completed"}, {"step": "execute_query", "status": "planned"}],
+                artifacts=[artifact],
+                data={"query": {"sql": sql, "executed": False, "limit": settings.ask_data_default_limit}},
+            )
+
+        mc = getattr(app_state, "_maxcompute_client", None)
+        if mc is None:
+            return WorkflowResult(False, "MaxCompute AK/SK 客户端不可用，无法执行只读问数。", "ask_data", mode, artifacts=[artifact], errors=["maxcompute client unavailable"])
+        instance = await asyncio.wait_for(
+            mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
+        )
+        result = await asyncio.wait_for(
+            mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
+        )
         rows = result.rows[: settings.ask_data_default_limit]
         return WorkflowResult(
             True,
             f"问数完成，返回 {len(rows)} 行（最多 {settings.ask_data_default_limit} 行）。",
             "ask_data",
             mode,
-            artifacts=[{"type": "query_sql", "name": "readonly_query", "content": sql}],
-            data={"query": {"sql": sql, "columns": result.columns, "rows": rows, "row_count": len(rows)}},
+            steps=[{"step": "generate_readonly_sql", "status": "completed"}, {"step": "execute_query", "status": "completed"}],
+            artifacts=[artifact],
+            data={"query": {"sql": sql, "columns": result.columns, "rows": rows, "row_count": len(rows), "executed": True}},
         )
 
     async def _build_readonly_sql(self, message: str) -> str:
@@ -407,6 +561,19 @@ class AgentWorkflowService:
         if any(statement.find(kind) for statement in statements for kind in forbidden):
             raise ValueError("自主问数检测到写入或 DDL 操作，已阻止")
 
+    @staticmethod
+    def _enforce_query_limit(sql: str) -> str:
+        statement = sqlglot.parse_one(sql, read="hive")
+        limit = statement.args.get("limit")
+        max_rows = settings.ask_data_default_limit
+        if limit is not None and isinstance(limit.expression, exp.Literal):
+            try:
+                if int(limit.expression.this) <= max_rows:
+                    return statement.sql(dialect="hive")
+            except (TypeError, ValueError):
+                pass
+        return statement.limit(max_rows, copy=True).sql(dialect="hive")
+
     async def _forward_model(
         self,
         message: str,
@@ -426,50 +593,165 @@ class AgentWorkflowService:
                 by_layer[layer].append(table)
         source_table = params.get("source_table") or self._extractor.extract_source_table(message)
         datasource = params.get("datasource_name") or self._extractor.extract_datasource_name(message)
+        source_type = (
+            params.get("source_type") or self._extractor.extract_source_type(message) or "mysql"
+        ).lower()
         granularity = params.get("granularity") or self._extractor.extract_granularity(message) or "day"
         schedule_minute = params.get("schedule_minute") or 1
-        plan = self._build_forward_plan(by_layer, source_table, datasource, initialize_data)
+        plan = self._build_forward_plan(
+            by_layer, source_table, datasource, initialize_data, source_type
+        )
         if mode == "plan":
-            return WorkflowResult(True, "已生成 ODS→DWD/DIM→DWS 全链路开发执行计划；切换到开发执行即可建表、建草稿节点并初始化。", "forward_modeling", mode, steps=plan, data={"capabilities": self.capability_status(), "publish_gate": "required_for_publish"})
-        if not source_table:
-            return WorkflowResult(False, "缺少源表。请在一句话中说明数据源和源表。", "forward_modeling", mode, steps=plan, errors=["missing source_table"])
-        if not getattr(app_state, "_node_client", None) or not getattr(app_state, "_maxcompute_client", None):
-            return WorkflowResult(False, "AK/SK 执行底座未就绪，无法进行开发环境真实写入。", "forward_modeling", mode, steps=plan, data={"capabilities": self.capability_status()}, errors=["execution clients unavailable"])
+            return WorkflowResult(
+                True,
+                "已生成 ODS→DWD/DIM→DWS 全链路开发执行计划；切换到开发执行即可建表、建草稿节点并初始化。",
+                "forward_modeling",
+                mode,
+                steps=plan,
+                data={
+                    "capabilities": self.capability_status(),
+                    "publish_gate": "required_for_publish",
+                    "source_type": source_type,
+                },
+            )
 
+        execution_steps = [dict(step) for step in plan]
+        clients_ready = bool(
+            getattr(app_state, "_node_client", None)
+            and getattr(app_state, "_maxcompute_client", None)
+        )
+        self._set_step_status(
+            execution_steps, "credential_and_cookie_health", "completed" if clients_ready else "failed"
+        )
+        if not clients_ready:
+            return WorkflowResult(
+                False,
+                "AK/SK 执行底座未就绪，无法进行开发环境真实写入。",
+                "forward_modeling",
+                mode,
+                steps=execution_steps,
+                data={"capabilities": self.capability_status()},
+                errors=["execution clients unavailable"],
+            )
+        if not source_table and source_type != "oss":
+            return WorkflowResult(
+                False,
+                "缺少源表。请在一句话中说明数据源和源表。",
+                "forward_modeling",
+                mode,
+                steps=execution_steps,
+                errors=["missing source_table"],
+            )
+        if not any(by_layer.values()):
+            return WorkflowResult(
+                False,
+                "请在一句话中给出至少一个 ods_/dwd_/dim_/dws_ 目标表名。",
+                "forward_modeling",
+                mode,
+                steps=execution_steps,
+                errors=["missing target tables"],
+            )
+
+        preflight = await self._official_datasource_preflight(datasource)
+        self._set_step_status(execution_steps, "official_mcp_health", preflight["status"])
         executed: list[dict[str, Any]] = []
-        upstream = source_table
+        upstream = source_table or ""
         if by_layer["ods"]:
             ods_table = by_layer["ods"][0]
-            ods_result = await self._execute_ods(datasource, source_table, ods_table, granularity, schedule_minute, initialize_data)
+            ods_result = await self._execute_ods(
+                message=message,
+                params=params,
+                source_type=source_type,
+                datasource=datasource,
+                source_table=source_table or "",
+                target_table=ods_table,
+                granularity=granularity,
+                schedule_minute=schedule_minute,
+                initialize=initialize_data,
+            )
             executed.append({"layer": "ODS", "table": ods_table, "result": ods_result})
+            self._set_step_status(
+                execution_steps,
+                "discover_source_schema",
+                "completed" if ods_result.get("success") else "warning",
+            )
+            self._set_step_status(
+                execution_steps,
+                "create_ods_table_and_source_node",
+                "completed" if ods_result.get("success") else "failed",
+            )
+            if initialize_data:
+                init_status = "completed" if source_type not in {"oss", "hologres", "holo", "realtime"} and ods_result.get("success") else "skipped"
+                self._set_step_status(execution_steps, "initialize_ods_data", init_status)
             if not ods_result.get("success"):
-                return WorkflowResult(False, "ODS 建表、节点或初始化失败，已停止下游建模。", "forward_modeling", mode, steps=plan, data={"executed": executed}, errors=["ODS execution failed"])
+                return WorkflowResult(
+                    False,
+                    "ODS 建表、节点或初始化失败，已停止下游建模。",
+                    "forward_modeling",
+                    mode,
+                    steps=execution_steps,
+                    data={"executed": executed, "official_mcp_preflight": preflight},
+                    errors=[str(ods_result.get("error") or "ODS execution failed")],
+                )
             upstream = ods_table
+
         for layer in ("dwd", "dim"):
             for table in by_layer[layer]:
-                layer_result = await self._deploy_warehouse_layer(layer.upper(), upstream, table, granularity, schedule_minute)
+                layer_result = await self._deploy_warehouse_layer(
+                    layer.upper(), upstream, table, granularity, schedule_minute
+                )
                 executed.append({"layer": layer.upper(), "table": table, "result": layer_result})
+                self._set_step_status(
+                    execution_steps,
+                    f"create_{layer}_tables_nodes_schedule",
+                    "completed" if layer_result.get("success") else "failed",
+                )
                 if not layer_result.get("success"):
-                    return WorkflowResult(False, f"{layer.upper()} 开发任务创建失败。", "forward_modeling", mode, steps=plan, data={"executed": executed}, errors=[f"{layer} execution failed"])
+                    return WorkflowResult(
+                        False,
+                        f"{layer.upper()} 开发任务创建失败。",
+                        "forward_modeling",
+                        mode,
+                        steps=execution_steps,
+                        data={"executed": executed, "official_mcp_preflight": preflight},
+                        errors=[f"{layer} execution failed"],
+                    )
                 if layer == "dwd":
                     upstream = table
         for table in by_layer["dws"]:
-            layer_result = await self._deploy_warehouse_layer("DWS", upstream, table, granularity, schedule_minute)
+            layer_result = await self._deploy_warehouse_layer(
+                "DWS", upstream, table, granularity, schedule_minute
+            )
             executed.append({"layer": "DWS", "table": table, "result": layer_result})
+            self._set_step_status(
+                execution_steps,
+                "create_dws_tables_nodes_schedule",
+                "completed" if layer_result.get("success") else "failed",
+            )
             if not layer_result.get("success"):
-                return WorkflowResult(False, "DWS 开发任务创建失败。", "forward_modeling", mode, steps=plan, data={"executed": executed}, errors=["dws execution failed"])
+                return WorkflowResult(
+                    False,
+                    "DWS 开发任务创建失败。",
+                    "forward_modeling",
+                    mode,
+                    steps=execution_steps,
+                    data={"executed": executed, "official_mcp_preflight": preflight},
+                    errors=["dws execution failed"],
+                )
             upstream = table
-        if not any(by_layer.values()):
-            return WorkflowResult(False, "请在一句话中给出至少一个 ods_/dwd_/dim_/dws_ 目标表名。", "forward_modeling", mode, steps=plan, errors=["missing target tables"])
+
         result_data: dict[str, Any] = {
             "executed": executed,
             "capabilities": self.capability_status(),
+            "official_mcp_preflight": preflight,
             "publish_gate": "not_requested",
+            "source_type": source_type,
         }
         message_text = (
             "开发环境全链路已完成：表已创建，节点与调度已保存；"
             "初始化按请求执行，正式发布仍等待 Publish Gate。"
         )
+        self._set_step_status(execution_steps, "publish_gate", "skipped")
         if publish:
             from dataworks_agent.runtime.publish_gate import PublishGate
 
@@ -485,6 +767,7 @@ class AgentWorkflowService:
             )
             result_data["publish_request"] = request.__dict__
             result_data["publish_gate"] = "approval_required"
+            self._set_step_status(execution_steps, "publish_gate", "approval_required")
             message_text = (
                 f"开发环境全链路已完成，并已创建发布审批 {request.request_id}；"
                 "未绕过 Publish Gate 上线。"
@@ -494,39 +777,279 @@ class AgentWorkflowService:
             message_text,
             "forward_modeling",
             mode,
-            steps=plan,
+            steps=execution_steps,
             artifacts=self._execution_artifacts(executed),
             data=result_data,
         )
 
     @staticmethod
-    def _build_forward_plan(by_layer: dict[str, list[str]], source_table: str | None, datasource: str | None, initialize: bool) -> list[dict[str, Any]]:
-        steps = [{"step": "credential_and_cookie_health", "status": "planned"}, {"step": "official_mcp_health", "status": "planned"}]
+    def _build_forward_plan(
+        by_layer: dict[str, list[str]],
+        source_table: str | None,
+        datasource: str | None,
+        initialize: bool,
+        source_type: str = "mysql",
+    ) -> list[dict[str, Any]]:
+        steps = [
+            {"step": "credential_and_cookie_health", "status": "planned"},
+            {"step": "official_mcp_health", "status": "planned"},
+        ]
         if by_layer["ods"]:
-            steps.extend([{"step": "discover_source_schema", "datasource": datasource, "source_table": source_table, "status": "planned"}, {"step": "create_ods_table_and_di_node", "tables": by_layer["ods"], "status": "planned"}])
+            steps.extend(
+                [
+                    {
+                        "step": "discover_source_schema",
+                        "datasource": datasource,
+                        "source_table": source_table,
+                        "source_type": source_type,
+                        "status": "planned",
+                    },
+                    {
+                        "step": "create_ods_table_and_source_node",
+                        "tables": by_layer["ods"],
+                        "source_type": source_type,
+                        "status": "planned",
+                    },
+                ]
+            )
             if initialize:
                 steps.append({"step": "initialize_ods_data", "status": "planned"})
         for layer in ("dwd", "dim", "dws"):
             if by_layer[layer]:
-                steps.append({"step": f"create_{layer}_tables_nodes_schedule", "tables": by_layer[layer], "status": "planned"})
+                steps.append(
+                    {
+                        "step": f"create_{layer}_tables_nodes_schedule",
+                        "tables": by_layer[layer],
+                        "status": "planned",
+                    }
+                )
         steps.append({"step": "publish_gate", "status": "required_only_for_publish"})
         return steps
 
-    async def _execute_ods(self, datasource: str | None, source_table: str, target_table: str, granularity: str, schedule_minute: int, initialize: bool) -> dict[str, Any]:
+    @staticmethod
+    def _set_step_status(steps: list[dict[str, Any]], step_name: str, status: str) -> None:
+        for step in steps:
+            if step.get("step") == step_name:
+                step["status"] = status
+
+    async def _official_datasource_preflight(
+        self, datasource: str | None
+    ) -> dict[str, Any]:
+        if not datasource:
+            return {"status": "skipped", "reason": "datasource not required or missing"}
+        if not settings.dataworks_project_id:
+            return {"status": "warning", "error": "missing DATAWORKS_PROJECT_ID", "fallback": "cookie_bff"}
+        payload, error = await self._official_call(
+            "ListDataSources",
+            {
+                "ProjectId": settings.dataworks_project_id,
+                "Name": datasource,
+                "EnvType": "Dev",
+                "PageSize": 10,
+                "PageNumber": 1,
+            },
+        )
+        if error:
+            return {"status": "warning", "error": error, "fallback": "cookie_bff"}
+        return {"status": "completed", "datasource": datasource, "result": payload}
+
+    @staticmethod
+    def _extract_inline_columns(message: str) -> list[dict[str, str]]:
+        match = re.search(r"(?:字段|columns?)\s*[:：]?\s*([^。；;]+)", message, re.I)
+        if not match:
+            return []
+        columns: list[dict[str, str]] = []
+        for item in re.split(r"[,，]", match.group(1)):
+            parts = item.strip().split()
+            if len(parts) < 2 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", parts[0]):
+                continue
+            columns.append({"name": parts[0], "type": parts[1]})
+        return columns
+
+    async def _ensure_oss_table(
+        self, target_table: str, granularity: str, columns: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        mc = app_state._maxcompute_client
+        if await mc.table_exists(target_table, project=settings.dataworks_dev_schema):
+            return {"status": "exists"}
+        if not columns:
+            return {
+                "status": "failed",
+                "error": "OSS 新表无法自动推断文件字段；请在同一句话中补充“字段 id bigint, name string”。",
+            }
+        ddl_columns = ",\n".join(
+            f"  \u0060{column['name']}\u0060 {self._normalize_mc_type(str(column.get('type', 'string')))}"
+            for column in columns
+        )
+        partitions = "\u0060dt\u0060 STRING, \u0060ht\u0060 STRING" if granularity in {"hour", "hourly"} else "\u0060dt\u0060 STRING"
+        ddl = (
+            f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
+            f"{ddl_columns}\n) PARTITIONED BY ({partitions}) COMMENT 'OSS Agent generated';"
+        )
+        ddl_result = await mc.execute_ddl(ddl)
+        return {
+            "status": "created" if ddl_result.success else "failed",
+            "ddl": ddl,
+            "error": ddl_result.error,
+        }
+
+    async def _ensure_table_from_source(
+        self, source_table: str, target_table: str, granularity: str
+    ) -> dict[str, Any]:
+        mc = app_state._maxcompute_client
+        if await mc.table_exists(target_table, project=settings.dataworks_dev_schema):
+            return {"status": "exists"}
+        schema = await mc.get_table_schema(source_table)
+        columns = [column for column in schema.columns if column.name.lower() not in {"dt", "ht"}]
+        if not columns:
+            return {"status": "failed", "error": f"源表 {source_table} 无业务字段"}
+        ddl_columns = ",\n".join(
+            f"  \u0060{column.name}\u0060 {self._normalize_mc_type(str(column.type))}"
+            for column in columns
+        )
+        partitions = "\u0060dt\u0060 STRING, \u0060ht\u0060 STRING" if granularity in {"hour", "hourly"} else "\u0060dt\u0060 STRING"
+        ddl = (
+            f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
+            f"{ddl_columns}\n) PARTITIONED BY ({partitions}) COMMENT 'Realtime Agent generated';"
+        )
+        ddl_result = await mc.execute_ddl(ddl)
+        return {
+            "status": "created" if ddl_result.success else "failed",
+            "ddl": ddl,
+            "error": ddl_result.error,
+            "columns": columns,
+        }
+
+    async def _execute_ods(
+        self,
+        *,
+        message: str,
+        params: dict[str, Any],
+        source_type: str,
+        datasource: str | None,
+        source_table: str,
+        target_table: str,
+        granularity: str,
+        schedule_minute: int,
+        initialize: bool,
+    ) -> dict[str, Any]:
+        bff = getattr(app_state, "_bff_client", None)
+        nodes = getattr(app_state, "_node_client", None)
+        normalized_granularity = "hour" if granularity in {"hour", "hourly"} else "day"
+
+        if source_type in {"hologres", "holo"}:
+            if bff is None or nodes is None:
+                return {"success": False, "error": "Hologres ODS 需要 Cookie/BFF 元数据兜底和 AK/SK 节点客户端"}
+            holo_schema = str(params.get("holo_schema") or datasource or "").strip().lower()
+            if not holo_schema:
+                return {"success": False, "error": "Hologres ODS 需要 holo_schema 或 datasource_name"}
+            from dataworks_agent.services.ods_holo import HoloOdsPipeline
+
+            pipeline = HoloOdsPipeline(
+                bff,
+                app_state.mcp_pool,
+                node_client=nodes,
+                mc_client=app_state._maxcompute_client,
+            )
+            return await pipeline.run(
+                holo_schema=holo_schema,
+                source_table=source_table,
+                target_table=target_table,
+                granularity=normalized_granularity,
+                script_path=str(params.get("script_path") or settings.holo_ods_node_path),
+                schedule_minute=schedule_minute,
+                where_mode=str(params.get("where_mode") or "auto"),
+            )
+
+        if source_type == "oss":
+            oss_path = params.get("oss_path") or self._extractor.extract_oss_path(message)
+            if not oss_path:
+                return {"success": False, "error": "OSS ODS 需要 oss:// 路径"}
+            columns = params.get("columns") or self._extract_inline_columns(message)
+            ensure_result = await self._ensure_oss_table(target_table, granularity, columns)
+            if ensure_result.get("status") == "failed":
+                return {"success": False, "error": ensure_result.get("error"), "steps": {"ensure_table": ensure_result}}
+            from dataworks_agent.services.ods_oss import OssImportPipeline
+
+            file_format = str(params.get("file_format") or str(oss_path).rsplit(".", 1)[-1]).lower()
+            if file_format not in {"csv", "json", "parquet"}:
+                file_format = "csv"
+            result = await OssImportPipeline(nodes).run(
+                oss_path=str(oss_path),
+                target_table=target_table,
+                file_format=file_format,
+                wildcard=str(params.get("wildcard") or ""),
+                schedule_type=normalized_granularity,
+                schedule_minute=schedule_minute,
+                publish=False,
+            )
+            result.setdefault("steps", {})["ensure_table"] = ensure_result
+            return result
+
+        if source_type == "realtime":
+            database_schema = str(params.get("database_schema") or datasource or "").strip()
+            if not database_schema:
+                return {"success": False, "error": "实时 ODS 需要 database_schema 或 datasource_name"}
+            delta_table = str(
+                params.get("delta_table") or f"{database_schema}__{source_table}_delta"
+            )
+            ensure_result = await self._ensure_table_from_source(
+                delta_table, target_table, "hour"
+            )
+            if ensure_result.get("status") == "failed":
+                return {"success": False, "error": ensure_result.get("error"), "steps": {"ensure_table": ensure_result}}
+            select_dml = params.get("select_dml")
+            if not select_dml:
+                columns = ensure_result.get("columns")
+                if not columns:
+                    schema = await app_state._maxcompute_client.get_table_schema(delta_table)
+                    columns = [column for column in schema.columns if column.name.lower() not in {"dt", "ht"}]
+                select_dml = "SELECT " + ", ".join(
+                    f"\u0060{column.name}\u0060" for column in columns
+                ) + f" FROM {delta_table}"
+            sync_rows = params.get("sync_rows") or [{"dst_table": delta_table}]
+            from dataworks_agent.services.ods_realtime import RealtimeSyncPipeline
+
+            result = await RealtimeSyncPipeline(nodes).run(
+                database_schema=database_schema,
+                table_name=source_table,
+                sync_rows=sync_rows,
+                select_dml=str(select_dml),
+                target_table=target_table,
+                granularity="hour",
+                schedule_minute=schedule_minute,
+                publish=False,
+            )
+            result.setdefault("steps", {})["ensure_table"] = ensure_result
+            return result
+
         if not datasource:
             return {"success": False, "error": "ODS DI 需要 datasource_name"}
-        bff = getattr(app_state, "_bff_client", None)
         if bff is None:
             return {"success": False, "error": "Cookie/BFF 不可用，无法发现数据源字段或手动初始化 DI"}
         from dataworks_agent.services.ods_di.pipeline import DIPipeline
 
-        pipeline = DIPipeline(bff, app_state.mcp_pool, node_client=app_state._node_client, mc_client=app_state._maxcompute_client)
+        pipeline = DIPipeline(
+            bff,
+            app_state.mcp_pool,
+            node_client=nodes,
+            mc_client=app_state._maxcompute_client,
+        )
         return await pipeline.run(
-            datasource_name=datasource, source_table=source_table, target_table=target_table,
-            granularity="hour" if granularity in {"hour", "hourly"} else "day", schedule_minute=schedule_minute,
-            mc_project=settings.dataworks_dev_schema, with_initialization=initialize,
-            init_config={"dev_mc_project": settings.dataworks_dev_schema, "prod_mc_project": settings.dataworks_prod_schema,
-                         "copy_to_prod": False, "publish_incremental_after_init": False},
+            datasource_name=datasource,
+            source_table=source_table,
+            target_table=target_table,
+            granularity=normalized_granularity,
+            schedule_minute=schedule_minute,
+            source_type=source_type,
+            mc_project=settings.dataworks_dev_schema,
+            with_initialization=initialize,
+            init_config={
+                "dev_mc_project": settings.dataworks_dev_schema,
+                "prod_mc_project": settings.dataworks_prod_schema,
+                "copy_to_prod": False,
+                "publish_incremental_after_init": False,
+            },
         )
 
     async def _deploy_warehouse_layer(self, layer: str, source_table: str, target_table: str, granularity: str, schedule_minute: int) -> dict[str, Any]:
@@ -663,4 +1186,9 @@ class AgentWorkflowService:
             for kind in ("ddl", "sql"):
                 if result.get(kind):
                     artifacts.append({"type": kind, "name": item["table"], "content": result[kind]})
+            ensure_table = (result.get("steps") or {}).get("ensure_table") or {}
+            if ensure_table.get("ddl") and not result.get("ddl"):
+                artifacts.append(
+                    {"type": "ddl", "name": item["table"], "content": ensure_table["ddl"]}
+                )
         return artifacts

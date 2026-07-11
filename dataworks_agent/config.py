@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     holo_node_datasource: str = (
         "dataworks_holo"  # 建 Holo 数据开发节点时的 datasource 名（真机核实）
     )
+    holo_ods_node_path: str = "业务流程/100_订单信息/Hologres/数据开发/00_ODS"
 
     # ── 服务 ──
     dw_modeling_port: int = 8085
