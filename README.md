@@ -57,6 +57,31 @@ npm run dev
 - 当前“有效订单数”由订单专辑（album 888）的 DWS 表 `giikin_aliyun.tb_dws_ord_order_si_crt_df` 汇总，并用同专辑 DWD 表 `giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df` 的有效订单明细对账；不再使用 RP 预警表。
 - 未认证指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
 
+## Unified Loop Engineering Runtime
+
+The five conversational workflows (data Q&A, forward modeling, reverse modeling,
+issue diagnosis, and Cookie management) now share one bounded execution loop:
+
+```text
+Objective -> Act -> Verify -> Repair -> Retry -> Stop
+```
+
+- **Outcome Contract**: workflow `success` flags are not trusted without observable
+  query verification, layer execution results, metadata evidence, diagnosis evidence,
+  or Cookie health evidence.
+- **Stop Policy**: maximum iterations, repeated actions, no-progress rounds, and
+  deadlines are bounded; missing context and publish approval stop immediately.
+- **EventLog / Checkpoint**: each act/verify/repair iteration is recorded and
+  checkpointed without allowing logging failures to block the workflow.
+- **Badcase Gate**: CI runs `uv run python -m dataworks_agent.scripts.verify_agent_loop`
+  and requires every corpus case to pass with `false_success_rate == 0`.
+- **Safety Boundary**: automatic repair is limited to transient retry and 9222 Cookie
+  refresh. Development writes remain bounded and publication still uses Publish Gate.
+
+This is a unified Loop Kernel integrated into the five workflow entry paths. It does
+not claim every self-evolution, long-term-memory, or production-autonomy capability
+from the research literature.
+
 ## 目录结构
 
 ```

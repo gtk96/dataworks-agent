@@ -15,6 +15,7 @@ from sqlglot import exp
 
 from dataworks_agent.agent.nlu.entity_extractor import EntityExtractor
 from dataworks_agent.agent.nlu.templates import BUSINESS_QUERY_PATTERNS
+from dataworks_agent.agent.outcome_verifier import WorkflowOutcomeVerifier
 from dataworks_agent.config import settings
 from dataworks_agent.governance.closed_loop_verifier import (
     ClosedLoopVerifier,
@@ -25,6 +26,14 @@ from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,
     HOURLY_SQL_PARAMETERS,
     generate_cron,
+)
+from dataworks_agent.runtime.evaluator import Evaluator
+from dataworks_agent.runtime.loop import (
+    LoopDecision,
+    LoopKernel,
+    LoopPolicy,
+    RepairResult,
+    StopReason,
 )
 from dataworks_agent.schemas import assert_safe_table_name
 from dataworks_agent.semantic.album_context import DataAlbumContextResolver
@@ -78,6 +87,8 @@ class AgentWorkflowService:
         self._closed_loop_verifier = ClosedLoopVerifier()
         self._album_context_resolver = DataAlbumContextResolver()
         self._metric_query_planner = MetricQueryPlanner()
+        self._outcome_verifier = WorkflowOutcomeVerifier()
+        self._evaluator = Evaluator()
 
     def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
@@ -103,6 +114,73 @@ class AgentWorkflowService:
     ) -> WorkflowResult:
         routed = self._route_action(message, action)
         mode = self.infer_mode(message, execution_mode, routed)
+        policy = self._loop_policy(routed, mode)
+        kernel: LoopKernel[WorkflowResult] = LoopKernel(policy)
+        event_log, event_run_id = self._start_loop_event_log(client_ip, routed)
+
+        async def run_once(state: dict[str, Any], iteration: int) -> WorkflowResult:
+            return await self._execute_once(
+                routed=routed,
+                message=message,
+                params=params,
+                mode=mode,
+                initialize_data=initialize_data,
+                publish=publish,
+                client_ip=client_ip,
+            )
+
+        def verify(result: WorkflowResult, iteration: int) -> LoopDecision:
+            return self._outcome_verifier.verify(
+                result,
+                workflow_type=routed,
+                mode=mode,
+                objective=message,
+                publish_requested=publish,
+            )
+
+        async def repair(
+            state: dict[str, Any],
+            result: WorkflowResult,
+            decision: LoopDecision,
+            iteration: int,
+        ) -> RepairResult:
+            return await self._repair_loop(decision, iteration)
+
+        outcome = await kernel.run(
+            objective=message,
+            action=run_once,
+            verify=verify,
+            repair=repair,
+            initial_state={"workflow_type": routed, "mode": mode},
+            observer=self._loop_observer(event_log, event_run_id),
+            run_id=event_run_id or None,
+        )
+        result = outcome.result
+        self._attach_loop_evaluation(result, outcome.to_dict(), routed)
+        if not outcome.success and outcome.stop_reason not in {
+            StopReason.NEEDS_CONTEXT,
+            StopReason.APPROVAL_REQUIRED,
+        }:
+            result.success = False
+            contract_error = f"Loop 验收停止：{outcome.stop_reason.value}"
+            if contract_error not in result.errors:
+                result.errors.append(contract_error)
+            if result.message and "不会标记为完成" not in result.message:
+                result.message += " 结果未通过统一 Loop 验收，不会标记为完成。"
+        self._finish_loop_event_log(event_log, event_run_id, outcome.success)
+        return result
+
+    async def _execute_once(
+        self,
+        *,
+        routed: str,
+        message: str,
+        params: dict[str, Any],
+        mode: ExecutionMode,
+        initialize_data: bool,
+        publish: bool,
+        client_ip: str,
+    ) -> WorkflowResult:
         if routed == "cookie_manage":
             return await self._manage_cookie(message, mode)
         if routed == "ask_data":
@@ -119,6 +197,137 @@ class AgentWorkflowService:
             publish=publish,
             client_ip=client_ip,
         )
+
+    @staticmethod
+    def _loop_policy(workflow_type: str, mode: ExecutionMode) -> LoopPolicy:
+        if mode == "plan":
+            return LoopPolicy(max_iterations=1, max_same_action=1, deadline_seconds=180)
+        if workflow_type == "forward_modeling":
+            return LoopPolicy(
+                max_iterations=2,
+                max_same_action=2,
+                max_no_progress_rounds=1,
+                deadline_seconds=900,
+            )
+        return LoopPolicy(
+            max_iterations=3,
+            max_same_action=2,
+            max_no_progress_rounds=1,
+            deadline_seconds=max(180, settings.ask_data_timeout_seconds * 2),
+        )
+
+    async def _repair_loop(self, decision: LoopDecision, iteration: int) -> RepairResult:
+        if decision.failure_class == "authentication":
+            bff = getattr(app_state, "_bff_client", None)
+            if bff is None:
+                return RepairResult(False, "refresh_cookie", "Cookie/BFF 客户端不可用。")
+            outcome = await self._refresh_cookie_auth(bff)
+            status = str(outcome.get("status") or "")
+            applied = status in {"success", "refreshed", "healthy"}
+            return RepairResult(
+                applied,
+                "refresh_cookie_from_9222",
+                str(outcome.get("detail") or status or "Cookie 刷新完成"),
+                {"cookie_refresh": outcome},
+            )
+        if decision.failure_class == "transient":
+            delay = min(0.25 * (2 ** max(iteration - 1, 0)), 1.0)
+            await asyncio.sleep(delay)
+            return RepairResult(
+                True,
+                "bounded_retry",
+                f"瞬时错误退避 {delay:.2f}s 后重试。",
+                {"retry_delay_seconds": delay},
+            )
+        return RepairResult(False, "", "没有安全、确定性的自动修复动作。")
+
+    @staticmethod
+    def _start_loop_event_log(client_ip: str, workflow_type: str) -> tuple[Any | None, str]:
+        try:
+            from dataworks_agent.eventlog.store import EventLog
+
+            event_log = EventLog()
+            run_id = event_log.create_run(
+                f"agent:{client_ip}",
+                channel="agent_loop",
+                created_by_ip=client_ip,
+                status="running",
+            )
+            event_log.append(
+                run_id=run_id,
+                session_id=f"agent:{client_ip}",
+                event_type="loop_started",
+                payload={"workflow_type": workflow_type},
+            )
+            return event_log, run_id
+        except Exception as exc:
+            logger.warning("Loop EventLog 初始化失败，继续执行主链路: %s", exc)
+            return None, ""
+
+    @staticmethod
+    def _loop_observer(event_log: Any | None, run_id: str):
+        if event_log is None or not run_id:
+            return None
+
+        def observe(event: str, payload: dict[str, Any]) -> None:
+            try:
+                event_log.append(
+                    run_id=run_id,
+                    session_id=str(event_log.get_run(run_id).session_id),
+                    event_type=event,
+                    payload=payload,
+                )
+                if event == "iteration_verified":
+                    event_log.save_checkpoint(
+                        run_id,
+                        step_seq=int(payload.get("iteration", 0)),
+                        state=payload,
+                    )
+            except Exception as exc:
+                logger.warning("Loop EventLog 写入失败，继续执行主链路: %s", exc)
+
+        return observe
+
+    @staticmethod
+    def _finish_loop_event_log(event_log: Any | None, run_id: str, success: bool) -> None:
+        if event_log is None or not run_id:
+            return
+        try:
+            event_log.update_run(run_id, status="completed" if success else "failed")
+        except Exception as exc:
+            logger.warning("Loop EventLog 完成状态写入失败: %s", exc)
+
+    def _attach_loop_evaluation(
+        self,
+        result: WorkflowResult,
+        loop_data: dict[str, Any],
+        workflow_type: str,
+    ) -> None:
+        result.data["loop"] = loop_data
+        iterations = int(loop_data.get("iteration_count") or 0)
+        success = bool(loop_data.get("success"))
+        self._evaluator.record_metric("loop_verified_success", 1.0 if success else 0.0, "ratio")
+        self._evaluator.record_metric("loop_iterations", float(iterations), "count")
+        if not success and loop_data.get("stop_reason") not in {
+            StopReason.NEEDS_CONTEXT.value,
+            StopReason.APPROVAL_REQUIRED.value,
+        }:
+            self._evaluator.record_badcase(
+                input_data={
+                    "workflow_type": workflow_type,
+                    "objective": loop_data.get("objective"),
+                },
+                output_data={"loop": loop_data, "errors": result.errors},
+                failure_reason=str(loop_data.get("stop_reason") or "verification_failed"),
+                run_id=str(loop_data.get("run_id") or ""),
+                category=f"{workflow_type}_loop",
+            )
+        result.data["evaluation"] = {
+            "verified_success": success,
+            "false_success_prevented": bool(result.success and not success),
+            "iteration_count": iterations,
+            "stop_reason": loop_data.get("stop_reason"),
+        }
 
     @staticmethod
     def _route_action(message: str, action: str) -> str:
@@ -701,8 +910,18 @@ class AgentWorkflowService:
             "Failed",
             "Error",
         }
+        if task_data:
+            evidence_sources["local_task"] = "completed"
         details["evidence_sources"] = evidence_sources
+        target_requested = bool(task_id or instance_id or node_id)
         target_resolved = bool(task_data or details.get("task_instance") or details.get("node"))
+        details["target_requested"] = target_requested
+        details["target_resolved"] = target_resolved
+        if target_requested and not target_resolved:
+            details["needs_clarification"] = True
+            details["clarifying_questions"] = [
+                "未找到目标对象；请确认任务 ID、实例 ID 或节点 ID 后重试。"
+            ]
         if not any((task_id, instance_id, node_id)):
             message_text = "执行底座健康检查已完成，并已生成恢复建议；提供任务、实例或节点 ID 可继续定位到具体故障。"
         elif target_resolved:

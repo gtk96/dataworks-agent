@@ -39,6 +39,9 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format --check dataworks_agent/ tests/
 
+      - name: Run Agent Loop badcase gate
+        run: uv run python -m dataworks_agent.scripts.verify_agent_loop
+
       - name: Run all tests + coverage
         run: |
           uv run pytest tests/ \

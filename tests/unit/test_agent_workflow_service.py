@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dataworks_agent.agent.workflow_service import AgentWorkflowService
+from dataworks_agent.agent.workflow_service import AgentWorkflowService, WorkflowResult
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ModelingTaskModel, TaskStepLogModel
+from dataworks_agent.runtime.loop import RepairResult
 from dataworks_agent.semantic.album_context import AlbumTable, DataAlbumContext
 from dataworks_agent.state import app_state
 
@@ -1097,3 +1098,75 @@ async def test_effective_order_query_is_blocked_when_album_does_not_contain_metr
     service._validate_semantic_plan_metadata.assert_not_awaited()
     app_state._bff_client.execute_sql.assert_not_awaited()
     app_state._maxcompute_client.submit_query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_loop_retries_transient_failure_until_verified():
+    service = AgentWorkflowService()
+    service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")
+    service._execute_once = AsyncMock(
+        side_effect=[
+            WorkflowResult(
+                False,
+                "query timed out",
+                "ask_data",
+                "dev_execute",
+                errors=["gateway timeout"],
+            ),
+            WorkflowResult(
+                True,
+                "query verified",
+                "ask_data",
+                "dev_execute",
+                data={
+                    "query": {"executed": True, "rows": [[1]]},
+                    "verification": {
+                        "status": "passed",
+                        "checks": [{"name": "execution", "passed": True}],
+                    },
+                },
+            ),
+        ]
+    )
+    service._repair_loop = AsyncMock(return_value=RepairResult(True, "retry_transient", "retry"))
+
+    result = await service.execute(
+        message="count orders today",
+        action="ask_data",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["loop"]["iteration_count"] == 2
+    assert result.data["loop"]["stop_reason"] == "verified_success"
+    assert result.data["evaluation"]["verified_success"] is True
+    assert service._execute_once.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_prevents_raw_success_without_outcome_evidence():
+    service = AgentWorkflowService()
+    service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")
+    service._execute_once = AsyncMock(
+        return_value=WorkflowResult(
+            True,
+            "query returned",
+            "ask_data",
+            "dev_execute",
+            data={"query": {"executed": True, "rows": [[1]]}},
+        )
+    )
+
+    result = await service.execute(
+        message="count orders today",
+        action="ask_data",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is False
+    assert result.data["evaluation"]["verified_success"] is False
+    assert result.data["evaluation"]["false_success_prevented"] is True
+    assert result.data["loop"]["stop_reason"] == "non_retryable"
+    assert "Loop" in result.errors[-1]

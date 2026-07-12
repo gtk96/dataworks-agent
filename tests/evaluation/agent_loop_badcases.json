@@ -1,0 +1,115 @@
+[
+  {
+    "id": "orders_total_routes_to_ask_data",
+    "kind": "route",
+    "message": "今天的总有效订单是多少",
+    "action": "agent_workflow",
+    "expected": "ask_data"
+  },
+  {
+    "id": "orders_family_routes_to_ask_data",
+    "kind": "route",
+    "message": "查一下今天各家族的有效订单数",
+    "action": "agent_workflow",
+    "expected": "ask_data"
+  },
+  {
+    "id": "ask_data_missing_verification",
+    "kind": "outcome",
+    "workflow_type": "ask_data",
+    "mode": "dev_execute",
+    "objective": "今天的总有效订单是多少",
+    "raw_success": true,
+    "data": {
+      "query": {
+        "executed": true,
+        "rows": [
+          [
+            67547
+          ]
+        ]
+      }
+    },
+    "expected_passed": false
+  },
+  {
+    "id": "forward_failed_layer",
+    "kind": "outcome",
+    "workflow_type": "forward_modeling",
+    "mode": "dev_execute",
+    "objective": "创建 ODS 到 DWS 全链路",
+    "raw_success": true,
+    "steps": [
+      {
+        "step": "create_dwd",
+        "status": "completed"
+      }
+    ],
+    "data": {
+      "executed": [
+        {
+          "layer": "ODS",
+          "result": {
+            "success": true
+          }
+        },
+        {
+          "layer": "DWD",
+          "result": {
+            "success": false
+          }
+        }
+      ],
+      "publish_gate": "not_requested"
+    },
+    "expected_passed": false
+  },
+  {
+    "id": "reverse_missing_metadata",
+    "kind": "outcome",
+    "workflow_type": "reverse_modeling",
+    "mode": "dev_execute",
+    "objective": "逆向分析 ods_orders",
+    "raw_success": true,
+    "data": {
+      "source_type": "table",
+      "table": "ods_orders",
+      "columns": []
+    },
+    "expected_passed": false
+  },
+  {
+    "id": "diagnose_missing_target",
+    "kind": "outcome",
+    "workflow_type": "diagnose_issue",
+    "mode": "dev_execute",
+    "objective": "排查任务 missing",
+    "raw_success": true,
+    "data": {
+      "needs_clarification": true,
+      "clarifying_questions": [
+        "confirm id"
+      ],
+      "target_requested": true,
+      "target_resolved": false
+    },
+    "expected_passed": false,
+    "expected_needs_context": true
+  },
+  {
+    "id": "cookie_refresh_expired",
+    "kind": "outcome",
+    "workflow_type": "cookie_manage",
+    "mode": "dev_execute",
+    "objective": "刷新 cookie",
+    "raw_success": true,
+    "data": {
+      "capabilities": {
+        "cookie_bff": true,
+        "cdp_9222": true,
+        "cookie_health": "expired"
+      }
+    },
+    "expected_passed": false
+  }
+]
