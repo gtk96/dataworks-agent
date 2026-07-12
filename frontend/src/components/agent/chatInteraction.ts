@@ -1,4 +1,4 @@
-﻿export type AgentExecutionMode = 'plan' | 'dev_execute'
+﻿export type AgentExecutionMode = 'auto' | 'plan' | 'dev_execute'
 
 export interface AgentChatRequest {
   message: string

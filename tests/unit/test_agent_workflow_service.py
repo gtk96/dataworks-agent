@@ -179,6 +179,7 @@ async def test_ask_data_dev_execute_runs_bounded_query():
 @pytest.mark.asyncio
 async def test_ask_data_permission_denied_preserves_sql_artifact():
     service = AgentWorkflowService()
+    app_state._bff_client = None
     app_state._maxcompute_client = SimpleNamespace(
         submit_query=AsyncMock(
             side_effect=RuntimeError("NoPermission: no privilege odps:CreateInstance")
@@ -197,8 +198,77 @@ async def test_ask_data_permission_denied_preserves_sql_artifact():
     assert result.steps[-1]["status"] == "blocked"
     assert result.data["query"]["executed"] is False
     assert result.artifacts[0]["type"] == "query_sql"
-    assert "odps:CreateInstance" in result.message
+    assert "odps:CreateInstance" in result.errors[0]
     app_state._maxcompute_client.wait_and_fetch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_business_query_recipe_uses_effective_order_table():
+    service = AgentWorkflowService()
+    sql = await service._build_readonly_sql("查一下今天各家族的有效订单数")
+
+    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+    assert "family_name" in sql
+    assert "effective_order_cnt" in sql
+    assert "statis_type = 'hf'" in sql
+
+
+@pytest.mark.asyncio
+async def test_ask_data_falls_back_to_cookie_bff_when_ak_sk_cannot_query():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        submit_query=AsyncMock(side_effect=RuntimeError("NoPermission: odps:CreateInstance")),
+        wait_and_fetch=AsyncMock(),
+    )
+    app_state._bff_client = SimpleNamespace(
+        execute_sql=AsyncMock(return_value="job-1"),
+        wait_job=AsyncMock(return_value=True),
+        get_query_result=AsyncMock(
+            return_value={
+                "headerList": [{"name": "family_name"}, {"name": "effective_order_cnt"}],
+                "bodyList": [["吉喵云", "6560"]],
+            }
+        ),
+        last_error=None,
+    )
+
+    result = await service.execute(
+        message="查一下今天各家族的有效订单数",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.mode == "dev_execute"
+    assert result.data["query"]["executed"] is True
+    assert result.data["query"]["execution_channel"] == "cookie_bff"
+    assert result.data["query"]["rows"] == [["吉喵云", "6560"]]
+    app_state._bff_client.execute_sql.assert_awaited_once()
+    app_state._bff_client.wait_job.assert_awaited_once_with("job-1")
+    app_state._bff_client.get_query_result.assert_awaited_once_with("job-1")
+
+
+@pytest.mark.asyncio
+async def test_explicit_plan_business_query_never_executes_any_channel():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        submit_query=AsyncMock(), wait_and_fetch=AsyncMock()
+    )
+    app_state._bff_client = SimpleNamespace(execute_sql=AsyncMock())
+
+    result = await service.execute(
+        message="查一下今天各家族的有效订单数",
+        action="ask_data",
+        params={},
+        execution_mode="plan",
+    )
+
+    assert result.success is True
+    assert result.mode == "plan"
+    assert result.data["query"]["executed"] is False
+    app_state._maxcompute_client.submit_query.assert_not_awaited()
+    app_state._bff_client.execute_sql.assert_not_awaited()
 
 
 @dataclass

@@ -2,6 +2,15 @@
 import { buildAgentChatRequest, requestAgentChat } from '@/components/agent/chatInteraction'
 
 describe('Agent chat interaction', () => {
+  it('builds an automatic execution request for conversational use', () => {
+    expect(buildAgentChatRequest('  查一下今天各家族的有效订单数  ', 'auto', true, false)).toEqual({
+      message: '查一下今天各家族的有效订单数',
+      execution_mode: 'auto',
+      initialize_data: true,
+      publish: false,
+    })
+  })
+
   it('builds an explicit safe planning request', () => {
     expect(buildAgentChatRequest('  查询 ods_order  ', 'plan', true, false)).toEqual({
       message: '查询 ods_order',

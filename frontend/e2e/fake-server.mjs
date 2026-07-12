@@ -190,10 +190,42 @@ const server = http.createServer((req, res) => {
           table: 'dataworks.dim_pub_column_dictionary_static',
         })
       }
+      if (url === '/agent/chat') {
+        return OK(res, {
+          success: true,
+          message: '真实问数完成，返回 2 行。',
+          data: {
+            workflow_type: 'ask_data',
+            execution_mode: 'dev_execute',
+            agent_mode: 'executed',
+            plan: { summary: '今日各家族有效订单数', steps: [
+              { step: 'generate_readonly_sql', status: 'completed' },
+              { step: 'execute_query', status: 'completed' },
+            ] },
+            artifacts: [{ type: 'query_sql', content: 'SELECT family_name, effective_order_cnt FROM sample' }],
+            query: {
+              executed: true,
+              execution_channel: 'cookie_bff',
+              columns: ['family_name', 'effective_order_cnt'],
+              rows: [['吉喵云', '6560'], ['神龙家族', '4015']],
+              row_count: 2,
+            },
+          },
+          error: null,
+        })
+      }
       // POST 兜底 — 404，避免 E2E 测试盲区（与 GET 兜底保持一致）
       return NOT_MOCKED(res, url)
     })
     return
+  }
+
+  if (url === '/agent/capabilities') {
+    return OK(res, { capabilities: {
+      ak_sk: true, openapi: true, maxcompute: true, node_adapter: true,
+      cookie_bff: true, cdp_9222: true, cookie_health: 'degraded',
+      official_mcp: { enabled: true, connected: true, tool_count: 20 },
+    } })
   }
 
   // GET 查表

@@ -64,3 +64,13 @@ def test_parse_query_table_without_lineage_keyword(parser):
     assert result.action == "query_lineage"
     assert result.params["table_name"] == "ods_user"
     assert result.confidence >= 0.5
+
+
+def test_parse_natural_business_query_as_ask_data(parser):
+    result = parser.parse("查一下今天各家族的有效订单数")
+    assert result.action == "ask_data"
+
+
+def test_query_lineage_is_not_shadowed_by_business_query(parser):
+    result = parser.parse("查询 ods_user 的血缘")
+    assert result.action == "query_lineage"

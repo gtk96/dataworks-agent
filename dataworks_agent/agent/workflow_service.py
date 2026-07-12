@@ -59,10 +59,14 @@ class AgentWorkflowService:
     def __init__(self) -> None:
         self._extractor = EntityExtractor()
 
-    def infer_mode(self, message: str, requested: str) -> ExecutionMode:
+    def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
             return "plan"
         if requested == "dev_execute":
+            return "dev_execute"
+        if any(word in message for word in ("先规划", "只规划", "不要执行")):
+            return "plan"
+        if action in {"ask_data", "reverse_modeling", "diagnose_issue", "cookie_manage"}:
             return "dev_execute"
         return "dev_execute" if any(word in message for word in _WRITE_WORDS) else "plan"
 
@@ -77,8 +81,8 @@ class AgentWorkflowService:
         publish: bool = False,
         client_ip: str = "127.0.0.1",
     ) -> WorkflowResult:
-        mode = self.infer_mode(message, execution_mode)
         routed = self._route_action(message, action)
+        mode = self.infer_mode(message, execution_mode, routed)
         if routed == "cookie_manage":
             return await self._manage_cookie(message, mode)
         if routed == "ask_data":
@@ -101,7 +105,16 @@ class AgentWorkflowService:
         lower = message.lower()
         if action == "cookie_manage" or "cookie" in lower or "9222" in lower or "登录态" in message:
             return "cookie_manage"
-        if action == "ask_data" or any(k in message for k in ("问数", "查数", "多少条", "前几条")):
+        business_query = re.search(
+            r"(?:查一下|查询|看看|统计).*?(?:有效订单(?:数|量)?|订单(?:数|量)|销售额|gmv|转化率|人数|数量)",
+            message,
+            re.I,
+        )
+        if (
+            action == "ask_data"
+            or business_query
+            or any(k in message for k in ("问数", "查数", "多少条", "前几条"))
+        ):
             return "ask_data"
         return action
 
@@ -612,7 +625,7 @@ class AgentWorkflowService:
         if mode == "plan":
             return WorkflowResult(
                 True,
-                "已生成并校验只读查询 SQL；规划模式不会提交 MaxCompute 查询。",
+                "已生成并校验只读查询 SQL；规划模式不会提交真实查询。",
                 "ask_data",
                 mode,
                 steps=[
@@ -629,78 +642,94 @@ class AgentWorkflowService:
                 },
             )
 
+        errors: list[str] = []
         mc = getattr(app_state, "_maxcompute_client", None)
-        if mc is None:
-            return WorkflowResult(
-                False,
-                "MaxCompute AK/SK 客户端不可用，无法执行只读问数。",
-                "ask_data",
-                mode,
-                artifacts=[artifact],
-                errors=["maxcompute client unavailable"],
-            )
-        try:
-            instance = await asyncio.wait_for(
-                mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
-            )
-            result = await asyncio.wait_for(
-                mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
-            )
-        except Exception as exc:
-            error = self._brief_error(exc)
-            lower_error = error.lower()
-            if isinstance(exc, TimeoutError):
-                message_text = "只读 SQL 已生成，但 MaxCompute 查询超时，未返回数据。"
-            elif any(
-                token in lower_error
-                for token in ("nopermission", "no privilege", "accessdenied", "permission")
-            ):
-                message_text = (
-                    "只读 SQL 已生成，但当前 AK/SK 缺少 MaxCompute 查询权限"
-                    "（常见为 odps:CreateInstance），本次未执行查询。"
+        if mc is not None:
+            try:
+                instance = await asyncio.wait_for(
+                    mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
                 )
-            else:
-                message_text = (
-                    "只读 SQL 已生成，但 MaxCompute 查询执行失败；请检查项目、表名和权限。"
+                result = await asyncio.wait_for(
+                    mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
                 )
-            return WorkflowResult(
-                False,
-                message_text,
-                "ask_data",
-                mode,
-                steps=[
-                    {"step": "generate_readonly_sql", "status": "completed"},
-                    {"step": "execute_query", "status": "blocked"},
-                ],
-                artifacts=[artifact],
-                data={
-                    "query": {
-                        "sql": sql,
-                        "executed": False,
-                        "limit": settings.ask_data_default_limit,
-                    },
-                    "next_actions": ["切换到规划模式查看 SQL", "核对 MaxCompute 项目和查询权限"],
-                },
-                errors=[error],
-            )
-        rows = result.rows[: settings.ask_data_default_limit]
+                rows = result.rows[: settings.ask_data_default_limit]
+                return self._query_success(
+                    sql, artifact, list(result.columns), rows, "maxcompute_ak_sk"
+                )
+            except Exception as exc:
+                errors.append(self._brief_error(exc))
+                logger.warning("MaxCompute AK/SK 问数失败，准备切换 Cookie BFF: %s", exc)
+        else:
+            errors.append("maxcompute client unavailable")
+
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is not None:
+            try:
+                job_code = await asyncio.wait_for(
+                    bff.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
+                )
+                if not job_code:
+                    raise RuntimeError(getattr(bff, "last_error", None) or "BFF 未返回查询任务")
+                completed = await asyncio.wait_for(
+                    bff.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
+                )
+                if not completed:
+                    raise RuntimeError(getattr(bff, "last_error", None) or "BFF 查询任务未成功")
+                result = await asyncio.wait_for(
+                    bff.get_query_result(job_code), timeout=settings.ask_data_timeout_seconds
+                )
+                if not isinstance(result, dict):
+                    raise RuntimeError("BFF 未返回查询结果")
+                headers = result.get("headerList") or []
+                columns = [
+                    str(item.get("name", "")) if isinstance(item, dict) else str(item)
+                    for item in headers
+                ]
+                rows = (result.get("bodyList") or [])[: settings.ask_data_default_limit]
+                return self._query_success(sql, artifact, columns, rows, "cookie_bff")
+            except Exception as exc:
+                errors.append(self._brief_error(exc))
+                logger.warning("Cookie BFF 问数兜底失败: %s", exc)
+
         return WorkflowResult(
-            True,
-            f"问数完成，返回 {len(rows)} 行（最多 {settings.ask_data_default_limit} 行）。",
+            False,
+            "只读 SQL 已生成，但 AK/SK 与 Cookie BFF 查询通道均未成功执行。",
             "ask_data",
             mode,
             steps=[
                 {"step": "generate_readonly_sql", "status": "completed"},
-                {"step": "execute_query", "status": "completed"},
+                {"step": "execute_query", "status": "blocked"},
+            ],
+            artifacts=[artifact],
+            data={
+                "query": {"sql": sql, "executed": False, "limit": settings.ask_data_default_limit},
+                "next_actions": ["检查 9222 登录态与 Cookie BFF", "核对 MaxCompute 查询权限"],
+            },
+            errors=list(dict.fromkeys(errors)),
+        )
+
+    @staticmethod
+    def _query_success(
+        sql: str, artifact: dict[str, Any], columns: list[Any], rows: list[Any], channel: str
+    ) -> WorkflowResult:
+        return WorkflowResult(
+            True,
+            f"真实问数完成，返回 {len(rows)} 行。",
+            "ask_data",
+            "dev_execute",
+            steps=[
+                {"step": "generate_readonly_sql", "status": "completed"},
+                {"step": "execute_query", "status": "completed", "channel": channel},
             ],
             artifacts=[artifact],
             data={
                 "query": {
                     "sql": sql,
-                    "columns": result.columns,
+                    "columns": columns,
                     "rows": rows,
                     "row_count": len(rows),
                     "executed": True,
+                    "execution_channel": channel,
                 }
             },
         )
@@ -718,6 +747,27 @@ class AgentWorkflowService:
         return text[:180] or exc.__class__.__name__
 
     async def _build_readonly_sql(self, message: str) -> str:
+        if all(token in message for token in ("家族", "有效订单")) and any(
+            token in message for token in ("今天", "今日")
+        ):
+            return """
+SELECT
+  family_name,
+  effective_order_cnt
+FROM giikin_aliyun.tb_rp_ord_order_cnt_hi
+WHERE pt = MAX_PT('giikin_aliyun.tb_rp_ord_order_cnt_hi')
+  AND ht = (
+    SELECT MAX(ht)
+    FROM giikin_aliyun.tb_rp_ord_order_cnt_hi
+    WHERE pt = MAX_PT('giikin_aliyun.tb_rp_ord_order_cnt_hi')
+  )
+  AND line_name = '合计'
+  AND befrom = '合计'
+  AND statis_type = 'hf'
+  AND time_interval = '合计'
+  AND family_name <> '合计'
+ORDER BY effective_order_cnt DESC
+""".strip()
         fenced = re.search(r"```sql\s*(.*?)```", message, re.I | re.S)
         if fenced:
             return fenced.group(1).strip()

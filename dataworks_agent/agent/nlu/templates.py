@@ -16,6 +16,7 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
     "ask_data": {
         "patterns": [
             r"(\u81ea\u4e3b\u95ee\u6570|\u95ee\u6570|\u67e5\u6570|\u67e5\u8be2\u6570\u636e|\u770b\u6570\u636e|\u591a\u5c11\u6761|\u524d\u51e0\u6761)",
+            r"(\u67e5\u4e00\u4e0b|\u67e5\u8be2|\u770b\u770b|\u7edf\u8ba1).*?(\u6709\u6548\u8ba2\u5355(?:\u6570|\u91cf)?|\u8ba2\u5355(?:\u6570|\u91cf)|\u9500\u552e\u989d|gmv|\u8f6c\u5316\u7387|\u4eba\u6570|\u6570\u91cf)",
             r"```sql[\s\S]*?select",
         ],
         "required_params": [],
