@@ -51,8 +51,8 @@ npm run dev
 ```
 
 - `dataworks_agent/semantic/metrics.json` 是可版本化的 baseline，`SemanticLayer` 中更高版本的 approved 定义优先。
-- 数据专辑负责证明认证表属于当前业务主题；指标定义负责 measure、dimension、filter 和 freshness 口径。
-- 认证表不在专辑中、DDL 不可读、字段不一致或总计结果不唯一时，Agent 会阻止执行，不猜口径。
+- 数据专辑负责缩小业务域和候选表；approved 指标定义负责官方表、measure、dimension、filter 和 freshness 口径。
+- 若专辑命中业务域但未收录认证表，Agent 会如实展示该差异，只有 approved 指标定义且真实 DDL 校验通过才继续执行。DDL 不可读、字段不一致或总计结果不唯一时仍会阻止执行。
 - 未认证指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
 
 ## 目录结构

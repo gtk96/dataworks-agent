@@ -63,9 +63,9 @@ def test_latest_snapshot_metric_does_not_guess_historical_time_scope():
     assert planner.candidate_tables("上个月的有效订单是多少") == set()
 
 
-def test_certified_metric_cannot_bypass_album_membership():
+def test_certified_metric_uses_album_as_domain_context_when_table_is_not_listed():
     planner = MetricQueryPlanner()
-    wrong_album = [
+    order_domain_album = [
         DataAlbumContext(
             album_id=1,
             name="订单",
@@ -74,7 +74,15 @@ def test_certified_metric_cannot_bypass_album_membership():
     ]
 
     assert planner.has_certified_metric("今天有效订单是多少") is True
-    assert planner.plan("今天有效订单是多少", wrong_album) is None
+    plan = planner.plan("今天有效订单是多少", order_domain_album)
+
+    assert plan is not None
+    assert plan.albums[0]["name"] == "订单"
+    assert plan.album_validation == {
+        "status": "domain_context",
+        "certified_table_present": False,
+    }
+    assert "approved 指标定义" in plan.selection_evidence[1]
 
 
 @pytest.mark.asyncio

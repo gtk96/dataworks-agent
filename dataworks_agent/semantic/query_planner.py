@@ -30,6 +30,7 @@ class MetricQueryPlan:
     caliber: dict[str, Any] = field(default_factory=dict)
     selection_evidence: list[str] = field(default_factory=list)
     metadata_validation: dict[str, Any] = field(default_factory=dict)
+    album_validation: dict[str, Any] = field(default_factory=dict)
 
     def semantic_artifact(self) -> dict[str, Any]:
         return {
@@ -45,6 +46,7 @@ class MetricQueryPlan:
                 "caliber": self.caliber,
                 "selection_evidence": self.selection_evidence,
                 "metadata_validation": self.metadata_validation,
+                "album_validation": self.album_validation,
             },
         }
 
@@ -78,8 +80,7 @@ class MetricQueryPlanner:
 
         table = str(definition["table"])
         matched_albums = self._albums_containing_table(table, album_contexts)
-        if not matched_albums:
-            return None
+        supporting_albums = matched_albums or album_contexts[:1]
 
         selected_dimensions = self._selected_dimensions(question, definition)
         sql = self._build_sql(definition, selected_dimensions)
@@ -89,13 +90,36 @@ class MetricQueryPlanner:
                 "name": context.name,
                 "categories": context.categories,
             }
-            for context in matched_albums
+            for context in supporting_albums
         ]
         metric_id = str(definition["id"])
         metric_name = str(definition.get("name") or metric_id)
+        if matched_albums:
+            album_validation = {
+                "status": "direct_match",
+                "certified_table_present": True,
+            }
+            album_evidence = f"官方表 {table} 已在数据专辑中直接命中"
+        elif supporting_albums:
+            album_validation = {
+                "status": "domain_context",
+                "certified_table_present": False,
+            }
+            album_evidence = (
+                f"数据专辑已命中业务域，但未收录官方表 {table}；"
+                "最终表由 approved 指标定义决定，并须通过真实 DDL 校验"
+            )
+        else:
+            album_validation = {
+                "status": "unavailable",
+                "certified_table_present": False,
+            }
+            album_evidence = (
+                "数据专辑当前未返回候选；仅允许 approved 指标定义在真实 DDL 校验通过后执行"
+            )
         evidence = [
             f"问题命中已批准指标 {metric_name} ({metric_id})",
-            f"官方表 {table} 已在数据专辑中核验",
+            album_evidence,
             "查询口径来自版本化语义定义，而非对话代码分支",
         ]
         return MetricQueryPlan(
@@ -115,6 +139,7 @@ class MetricQueryPlanner:
                 "source": definition.get("source", ""),
             },
             selection_evidence=evidence,
+            album_validation=album_validation,
         )
 
     def _definitions(self) -> list[dict[str, Any]]:

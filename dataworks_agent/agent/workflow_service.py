@@ -1134,12 +1134,6 @@ class AgentWorkflowService:
         if semantic_plan is not None:
             await self._validate_semantic_plan_metadata(semantic_plan)
             return semantic_plan
-        if candidate_tables:
-            raise QueryNeedsClarificationError(
-                message,
-                album_contexts,
-                "已识别到认证指标，但认证表未出现在匹配的数据专辑中，已阻止绕过专辑直接查询。",
-            )
         if not settings.llm_api_key:
             raise QueryNeedsClarificationError(message, album_contexts)
 

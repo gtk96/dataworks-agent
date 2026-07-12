@@ -82,6 +82,7 @@ def test_query_lineage_is_not_shadowed_by_business_query(parser):
         "\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11",
         "\u4eca\u5929\u6bcf\u4e2a\u5bb6\u65cf\u6709\u591a\u5c11\u6709\u6548\u8ba2\u5355",
         "\u5404\u5bb6\u65cf\u4eca\u65e5\u6709\u6548\u8ba2\u5355\u6570\u662f\u591a\u5c11",
+        "\u4eca\u5929\u7684\u51c0\u8d21\u732e\u8ba2\u5355\u662f\u591a\u5c11",
     ],
 )
 def test_parse_declarative_business_questions_as_ask_data(parser, message):

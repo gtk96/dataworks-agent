@@ -108,6 +108,7 @@
                 <div><small>数据专辑</small><strong>{{ semanticAlbumText }}</strong></div>
                 <div><small>DDL 核验</small><strong>{{ semanticValidationText }}</strong></div>
               </div>
+              <div v-if="semanticAlbumStatusText" class="semantic-proof-row"><small>专辑关系</small><span>{{ semanticAlbumStatusText }}</span></div>
               <div v-if="semanticDimensionText" class="semantic-proof-row"><small>分析维度</small><span>{{ semanticDimensionText }}</span></div>
               <div v-if="semanticFilterText" class="semantic-proof-row"><small>固定口径</small><code>{{ semanticFilterText }}</code></div>
               <ul v-if="semanticEvidence.length"><li v-for="item in semanticEvidence" :key="item">{{ item }}</li></ul>
@@ -237,6 +238,7 @@ interface SemanticPlan {
   caliber?: { fixed_filters?: Record<string, unknown> }
   selection_evidence?: string[]
   metadata_validation?: { status?: string; channel?: string }
+  album_validation?: { status?: string; certified_table_present?: boolean }
 }
 interface AgentPayload {
   message: string
@@ -337,6 +339,13 @@ const semanticPlan = computed(() => {
 })
 const semanticMetricVersion = computed(() => semanticPlan.value ? `approved v${semanticPlan.value.metric_version ?? 1}` : '')
 const semanticAlbumText = computed(() => (semanticPlan.value?.albums ?? []).map((item: any) => item.name).filter(Boolean).join('、') || '未匹配')
+const semanticAlbumStatusText = computed(() => {
+  const status = semanticPlan.value?.album_validation?.status
+  if (status === 'direct_match') return '认证表已在专辑中直接命中'
+  if (status === 'domain_context') return '专辑命中业务域；认证表由 approved 指标 + DDL 校验确定'
+  if (status === 'unavailable') return '专辑不可用；仅 approved 指标 + DDL 校验通过后可执行'
+  return ''
+})
 const semanticValidationText = computed(() => {
   const validation = semanticPlan.value?.metadata_validation
   if (validation?.status !== 'passed') return '未通过'
