@@ -113,7 +113,6 @@ def test_plan_create_table_dependencies(planner):
     assert plan.steps[3].depends_on == ["step_2"]
 
 
-
 def test_plan_with_llm_fallback(planner):
     """DataWorks-shaped unknown goals use a deterministic safe fallback plan."""
     intent = Intent(

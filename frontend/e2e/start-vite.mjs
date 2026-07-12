@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 const env = {
   ...process.env,
   VITE_PROXY_TARGET: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8086',
+  VITE_ENABLE_ADVANCED_TOOLS: 'true',
 }
 
 const child = spawn(

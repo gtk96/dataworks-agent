@@ -1,4 +1,4 @@
-﻿"""阿里云官方 DataWorks MCP stdio 客户端。"""
+"""阿里云官方 DataWorks MCP stdio 客户端。"""
 
 from __future__ import annotations
 

@@ -142,7 +142,6 @@ def test_complex_task_decomposition(client):
     assert data["data"]["steps_completed"] >= 2
 
 
-
 def test_ods_dwd_conversational_flow(client):
     """Verify ODS+DWD conversations return route and preview artifacts."""
     response = client.post(

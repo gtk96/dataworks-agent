@@ -25,7 +25,9 @@ class EntityExtractor:
 
         tables = self.extract_table_names(text)
         if not tables:
-            generic_match = re.search(r"([a-zA-Z][a-zA-Z0-9_]{2,})(?:\u8868|\u6570\u636e\u8868)", text)
+            generic_match = re.search(
+                r"([a-zA-Z][a-zA-Z0-9_]{2,})(?:\u8868|\u6570\u636e\u8868)", text
+            )
             return generic_match.group(1) if generic_match else None
 
         for table in tables:
@@ -114,7 +116,10 @@ class EntityExtractor:
 
     def extract_domain(self, text: str) -> str | None:
         """Extract business domain."""
-        match = re.search(r"(?:\u4e1a\u52a1\u57df|\u4e3b\u9898\u57df|\u57df)\s*(?:\u4e3a|\u662f|\uff1a|:)?\s*([\u4e00-\u9fa5A-Za-z0-9_-]{2,32})", text)
+        match = re.search(
+            r"(?:\u4e1a\u52a1\u57df|\u4e3b\u9898\u57df|\u57df)\s*(?:\u4e3a|\u662f|\uff1a|:)?\s*([\u4e00-\u9fa5A-Za-z0-9_-]{2,32})",
+            text,
+        )
         return match.group(1) if match else None
 
     def extract_schedule_cycle(self, text: str) -> str | None:
@@ -249,7 +254,11 @@ class EntityExtractor:
 
     def extract_metric_id(self, text: str) -> str | None:
         """Extract metric identifier."""
-        match = re.search(r"(?:\u6307\u6807|\u53e3\u5f84|metric)\s*(?:\u4e3a|\u662f|\uff1a|:)?\s*([a-zA-Z][a-zA-Z0-9_]{2,})", text, re.IGNORECASE)
+        match = re.search(
+            r"(?:\u6307\u6807|\u53e3\u5f84|metric)\s*(?:\u4e3a|\u662f|\uff1a|:)?\s*([a-zA-Z][a-zA-Z0-9_]{2,})",
+            text,
+            re.IGNORECASE,
+        )
         return match.group(1) if match else None
 
     def extract_params(self, text: str, template: dict[str, Any]) -> dict[str, Any]:

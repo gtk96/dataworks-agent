@@ -39,7 +39,9 @@ class ToolExecutor:
                     "summary": f"No concrete handler is registered for {tool}; recorded as a dry-run step.",
                     "params": params,
                 },
-                warnings=["This step did not call DataWorks. Add a concrete handler before online execution."],
+                warnings=[
+                    "This step did not call DataWorks. Add a concrete handler before online execution."
+                ],
             )
         return handler(params)
 
@@ -135,7 +137,9 @@ class ToolExecutor:
                 return generate_ods_realtime_table_name(datasource, source_name, granularity)
             from dataworks_agent.naming import generate_ods_di_table_name
 
-            return generate_ods_di_table_name(datasource, source_name, granularity, source_type=source_type)
+            return generate_ods_di_table_name(
+                datasource, source_name, granularity, source_type=source_type
+            )
         except Exception:
             return f"ods_{source_type}_{datasource}__{source_name}_{granularity}"
 
@@ -150,7 +154,19 @@ class ToolExecutor:
                 "module": None,
                 "reason": "Conversation already points to an ODS table; only DWD preview/dependency planning is needed.",
             }
-        if source_type in {"mysql", "polardb", "postgres", "oracle", "sqlserver", "mongodb", "mongo", "elasticsearch", "ftp", "maxcompute", "odps"}:
+        if source_type in {
+            "mysql",
+            "polardb",
+            "postgres",
+            "oracle",
+            "sqlserver",
+            "mongodb",
+            "mongo",
+            "elasticsearch",
+            "ftp",
+            "maxcompute",
+            "odps",
+        }:
             return {
                 "route": "ods_di",
                 "pipeline": "DIPipeline.run",
@@ -211,7 +227,11 @@ class ToolExecutor:
             data={
                 "mode": "guardrail",
                 "summary": "Table request passed deterministic guardrails.",
-                "checks": ["safe_table_name", "destructive_guard_required", "publish_gate_required"],
+                "checks": [
+                    "safe_table_name",
+                    "destructive_guard_required",
+                    "publish_gate_required",
+                ],
                 "table_name": table_name,
                 "layer": params.get("layer"),
             },
@@ -227,7 +247,9 @@ class ToolExecutor:
                 "artifact_type": "holo_or_ods_table_draft",
                 "table_name": params.get("table_name"),
                 "source_table": params.get("source_table"),
-                "notes": ["Holo SQL should stay in DataWorks HOLOGRES_SQL nodes; this agent does not connect to Holo directly."],
+                "notes": [
+                    "Holo SQL should stay in DataWorks HOLOGRES_SQL nodes; this agent does not connect to Holo directly."
+                ],
             },
         )
 
@@ -251,7 +273,9 @@ class ToolExecutor:
                 "table_name": table_name,
                 "source_table": source_table,
             },
-            warnings=["DDL is a scaffold. Review columns, comments, partition keys, and lifecycle before publishing."],
+            warnings=[
+                "DDL is a scaffold. Review columns, comments, partition keys, and lifecycle before publishing."
+            ],
         )
 
     def _execute_create_node(self, params: dict[str, Any]) -> ToolResult:
@@ -330,7 +354,13 @@ class ToolExecutor:
                 "artifact_type": "lineage_impact_summary",
                 "lineage": {
                     "table_name": params.get("table_name"),
-                    "sections": ["upstreams", "downstreams", "schedule risk", "data quality", "recommended actions"],
+                    "sections": [
+                        "upstreams",
+                        "downstreams",
+                        "schedule risk",
+                        "data quality",
+                        "recommended actions",
+                    ],
                 },
                 "table_name": params.get("table_name"),
             },
@@ -353,7 +383,9 @@ class ToolExecutor:
         missing: list[str] = []
         if not params.get("table_name"):
             missing.append("target table")
-        if not params.get("source_table") and any(word in goal.lower() for word in ("建模", "model", "dwd", "dws", "dim")):
+        if not params.get("source_table") and any(
+            word in goal.lower() for word in ("建模", "model", "dwd", "dws", "dim")
+        ):
             missing.append("source table")
         return ToolResult(
             tool="analyze_requirement",
@@ -378,7 +410,13 @@ class ToolExecutor:
                 "mode": "read_plan",
                 "summary": "Prepare context collection across workspace metadata, lineage, governance, and artifacts.",
                 "artifact_type": "context_collection_plan",
-                "sources": ["workspace metadata", "lineage graph", "governance checks", "existing artifacts", "task history"],
+                "sources": [
+                    "workspace metadata",
+                    "lineage graph",
+                    "governance checks",
+                    "existing artifacts",
+                    "task history",
+                ],
                 "table_name": params.get("table_name"),
                 "source_table": params.get("source_table"),
             },
@@ -391,7 +429,15 @@ class ToolExecutor:
             data={
                 "mode": "plan",
                 "summary": "Draft an end-to-end DataWorks workflow.",
-                "workflow": ["requirement analysis", "context collection", "DDL/DML draft", "FlowSpec draft", "guardrails", "approval", "publish"],
+                "workflow": [
+                    "requirement analysis",
+                    "context collection",
+                    "DDL/DML draft",
+                    "FlowSpec draft",
+                    "guardrails",
+                    "approval",
+                    "publish",
+                ],
             },
         )
 
@@ -448,10 +494,17 @@ class ToolExecutor:
             data={
                 "mode": "guardrail",
                 "summary": "Guardrail checklist prepared; table-specific checks need table_name.",
-                "checks": ["B1 import path", "B2 destructive guard", "B3 table identifier", "Publish Gate"],
+                "checks": [
+                    "B1 import path",
+                    "B2 destructive guard",
+                    "B3 table identifier",
+                    "Publish Gate",
+                ],
                 "requires_approval": True,
             },
-            warnings=["No table_name/ods_table/dwd_table was provided, so the B3 identifier check was not executed."],
+            warnings=[
+                "No table_name/ods_table/dwd_table was provided, so the B3 identifier check was not executed."
+            ],
         )
 
     def _execute_draft_execution_artifacts(self, params: dict[str, Any]) -> ToolResult:
@@ -461,9 +514,22 @@ class ToolExecutor:
             data={
                 "mode": "draft",
                 "summary": "Draft execution artifacts for review.",
-                "artifacts": ["DDL scaffold", "DML scaffold", "FlowSpec outline", "dependency plan", "schedule plan"],
-                "schedule": {"cycle": params.get("schedule_cycle") or "daily", "parameter": "bizdate"},
-                "risk_report": {"publish_gate": "required", "destructive_guard": "required", "online_writes": "blocked in proposal mode"},
+                "artifacts": [
+                    "DDL scaffold",
+                    "DML scaffold",
+                    "FlowSpec outline",
+                    "dependency plan",
+                    "schedule plan",
+                ],
+                "schedule": {
+                    "cycle": params.get("schedule_cycle") or "daily",
+                    "parameter": "bizdate",
+                },
+                "risk_report": {
+                    "publish_gate": "required",
+                    "destructive_guard": "required",
+                    "online_writes": "blocked in proposal mode",
+                },
                 "requires_approval": True,
             },
         )
@@ -492,10 +558,15 @@ class ToolExecutor:
                 "source_table": source_table,
                 "ddl": ddl,
                 "sql": sql,
-                "schedule": {"cycle": params.get("schedule_cycle") or "daily", "parameter": "bizdate"},
+                "schedule": {
+                    "cycle": params.get("schedule_cycle") or "daily",
+                    "parameter": "bizdate",
+                },
                 "requires_approval": True,
             },
-            warnings=["This is a scaffold. Connect ModelingEngine for production-grade DDL/DML generation before publish."],
+            warnings=[
+                "This is a scaffold. Connect ModelingEngine for production-grade DDL/DML generation before publish."
+            ],
         )
 
     def _execute_analyze_ods_dwd_requirement(self, params: dict[str, Any]) -> ToolResult:
@@ -507,7 +578,11 @@ class ToolExecutor:
         source_table = params.get("source_table") or params.get("oss_path")
         if not ods_table and not source_table:
             missing.append("source_table/oss_path or ods_table")
-        if not params.get("ods_table") and not source_type and not str(source_table or "").lower().startswith("ods_"):
+        if (
+            not params.get("ods_table")
+            and not source_type
+            and not str(source_table or "").lower().startswith("ods_")
+        ):
             missing.append("source_type")
         if not dwd_table:
             missing.append("dwd_table")
@@ -545,12 +620,15 @@ class ToolExecutor:
                 "dwd_table": dwd_table,
                 "table_name": dwd_table,
                 "granularity": granularity,
-                "schedule_cycle": params.get("schedule_cycle") or ("hourly" if granularity == "hour" else "daily"),
+                "schedule_cycle": params.get("schedule_cycle")
+                or ("hourly" if granularity == "hour" else "daily"),
                 "schedule_minute": params.get("schedule_minute"),
                 "missing_context": missing,
                 "requires_approval_for_online_write": True,
             },
-            warnings=["Missing context must be filled before real ODS/DWD execution."] if missing else [],
+            warnings=["Missing context must be filled before real ODS/DWD execution."]
+            if missing
+            else [],
         )
 
     def _execute_classify_ods_source(self, params: dict[str, Any]) -> ToolResult:
@@ -617,7 +695,9 @@ class ToolExecutor:
             "target_table": ods_table,
             "granularity": granularity,
             "script_path": "dataworks_agent/01_ODS",
-            "schedule_minute": params.get("schedule_minute") if params.get("schedule_minute") is not None else 1,
+            "schedule_minute": params.get("schedule_minute")
+            if params.get("schedule_minute") is not None
+            else 1,
             "validation": validation,
             "missing_context": missing,
             "online_boundary": {
@@ -660,18 +740,24 @@ class ToolExecutor:
                     ],
                     "dwd_preview_capability": True,
                 },
-                warnings=["Provide ODS and DWD table names to render deterministic DDL/SQL preview."],
+                warnings=[
+                    "Provide ODS and DWD table names to render deterministic DDL/SQL preview."
+                ],
             )
 
         granularity = self._normalize_granularity(params.get("granularity"))
-        update_mode = "hourly" if granularity == "hour" else "full" if granularity == "full" else "daily"
+        update_mode = (
+            "hourly" if granularity == "hour" else "full" if granularity == "full" else "daily"
+        )
         partition_fields = ["dt", "ht"] if update_mode == "hourly" else ["dt"]
         target_fields = [
             {"name": "id", "type": "STRING", "comment": "business primary key"},
             {"name": "updated_at", "type": "DATETIME", "comment": "business update time"},
             {"name": "source_table", "type": "STRING", "comment": "source table marker"},
         ]
-        target_fields.extend({"name": pf, "type": "STRING", "comment": "partition field"} for pf in partition_fields)
+        target_fields.extend(
+            {"name": pf, "type": "STRING", "comment": "partition field"} for pf in partition_fields
+        )
         structured_metadata = {
             "targets": [
                 {
@@ -685,7 +771,12 @@ class ToolExecutor:
             ],
             "sources": [{"table_name": ods_table, "alias": "T1", "is_master": True}],
             "field_mappings": [
-                {"source_alias": "T1", "source_field_name": "id", "target_field_name": "id", "field_category": "normal"},
+                {
+                    "source_alias": "T1",
+                    "source_field_name": "id",
+                    "target_field_name": "id",
+                    "field_category": "normal",
+                },
                 {
                     "source_alias": "T1",
                     "source_field_name": "updated_at",
@@ -748,11 +839,15 @@ class ToolExecutor:
                 "sql": sql,
                 "schedule": {
                     "cycle": "hourly" if update_mode == "hourly" else "daily",
-                    "parameters": ["gmtdate", "hour_last1h"] if update_mode == "hourly" else ["bizdate", "pre_bizdate"],
+                    "parameters": ["gmtdate", "hour_last1h"]
+                    if update_mode == "hourly"
+                    else ["bizdate", "pre_bizdate"],
                 },
                 "requires_approval": True,
             },
-            warnings=["Preview uses a minimal field mapping scaffold; replace with real metadata before publish."],
+            warnings=[
+                "Preview uses a minimal field mapping scaffold; replace with real metadata before publish."
+            ],
         )
 
     def _execute_plan_ods_dwd_dependencies(self, params: dict[str, Any]) -> ToolResult:
@@ -776,7 +871,9 @@ class ToolExecutor:
             "self_dependency": {"type": "CrossCycleDependsOnSelf"},
             "schedule": {
                 "cycle": "hourly" if granularity == "hour" else "daily",
-                "minute": params.get("schedule_minute") if params.get("schedule_minute") is not None else 1,
+                "minute": params.get("schedule_minute")
+                if params.get("schedule_minute") is not None
+                else 1,
             },
             "publish_gate": "required",
         }
@@ -829,7 +926,10 @@ class ToolExecutor:
                 "summary": "Prepare a self-heal diagnosis and recovery proposal.",
                 "artifact_type": "self_heal_proposal",
                 "task_id": params.get("task_id"),
-                "risk_report": {"auto_recovery": "proposal_only", "approval_required_for_mutation": True},
+                "risk_report": {
+                    "auto_recovery": "proposal_only",
+                    "approval_required_for_mutation": True,
+                },
                 "requires_approval": True,
             },
         )
@@ -845,7 +945,10 @@ class ToolExecutor:
                 "table_name": params.get("table_name"),
                 "publish_gate": "required",
                 "requires_approval": True,
-                "risk_report": {"online_write": "blocked", "delete_or_overwrite": "requires explicit approval"},
+                "risk_report": {
+                    "online_write": "blocked",
+                    "delete_or_overwrite": "requires explicit approval",
+                },
             },
             warnings=["Agent stopped at the approval boundary; no online publish was executed."],
         )
@@ -859,5 +962,9 @@ class ToolExecutor:
         return ToolResult(
             tool="recommend_next_actions",
             success=True,
-            data={"mode": "next_actions", "summary": "Recommended next actions prepared.", "actions": actions},
+            data={
+                "mode": "next_actions",
+                "summary": "Recommended next actions prepared.",
+                "actions": actions,
+            },
         )

@@ -354,9 +354,7 @@ async def run_with_initialization(
         init_partition_hour=cfg.init_partition_hour,
     )
     result["initialization"]["dev_validation"] = dev_validation
-    filter_valid = bool(
-        field_info.get("where_field") or granularity in {"all", "hourly", "hour"}
-    )
+    filter_valid = bool(field_info.get("where_field") or granularity in {"all", "hourly", "hour"})
 
     if cfg.copy_to_prod:
         prod_table = await ensure_table(
@@ -374,10 +372,9 @@ async def run_with_initialization(
 
         standard_ddl = init_run.get("standard_ddl") or prod_table.get("standard_ddl") or ""
         di_config = init_run.get("di_config") or {}
-        writer_columns = (
-            ((di_config.get("steps") or [{}, {}, {}])[2].get("parameter") or {}).get("column")
-            or field_info.get("columns", [])
-        )
+        writer_columns = ((di_config.get("steps") or [{}, {}, {}])[2].get("parameter") or {}).get(
+            "column"
+        ) or field_info.get("columns", [])
         copy_ok = False
         copy_job = None
         if dev_validation.get("passed"):
@@ -392,9 +389,7 @@ async def run_with_initialization(
                 init_partition_hour=cfg.init_partition_hour,
             )
             copy_job = await bff.execute_sql_ida(copy_sql)
-            copy_ok = bool(
-                copy_job and await bff.wait_ida_job(copy_job, max_retry=36, interval=5)
-            )
+            copy_ok = bool(copy_job and await bff.wait_ida_job(copy_job, max_retry=36, interval=5))
         result["initialization"]["prod_copy"] = {
             "status": "ok" if copy_ok else "failed",
             "job_code": copy_job,
@@ -485,12 +480,8 @@ async def run_with_initialization(
                 result["success"] = False
                 return result
         if cfg.copy_to_prod and cfg.publish_incremental_after_init:
-            deployed = await bff.deploy_nodes(
-                [str(incr_uuid)], comment=f"auto deploy {ods_table}"
-            )
-            result["incremental"]["deploy"] = {
-                "status": "ok" if deployed else "failed"
-            }
+            deployed = await bff.deploy_nodes([str(incr_uuid)], comment=f"auto deploy {ods_table}")
+            result["incremental"]["deploy"] = {"status": "ok" if deployed else "failed"}
         else:
             result["incremental"]["deploy"] = {
                 "status": "skipped",

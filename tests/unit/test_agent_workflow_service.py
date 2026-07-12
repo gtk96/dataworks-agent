@@ -71,8 +71,15 @@ async def test_dev_execute_builds_all_layers():
 
     assert result.success is True
     assert [item["layer"] for item in result.data["executed"]] == ["ODS", "DWD", "DIM", "DWS"]
-    assert next(step for step in result.steps if step["step"] == "create_ods_table_and_source_node")["status"] == "completed"
-    assert next(step for step in result.steps if step["step"] == "publish_gate")["status"] == "skipped"
+    assert (
+        next(step for step in result.steps if step["step"] == "create_ods_table_and_source_node")[
+            "status"
+        ]
+        == "completed"
+    )
+    assert (
+        next(step for step in result.steps if step["step"] == "publish_gate")["status"] == "skipped"
+    )
     service._execute_ods.assert_awaited_once()
     assert service._deploy_warehouse_layer.await_count == 3
 
@@ -102,7 +109,10 @@ async def test_publish_request_is_created_after_dev_execution():
 
     assert result.success is True
     assert result.data["publish_gate"] == "approval_required"
-    assert next(step for step in result.steps if step["step"] == "publish_gate")["status"] == "approval_required"
+    assert (
+        next(step for step in result.steps if step["step"] == "publish_gate")["status"]
+        == "approval_required"
+    )
     gate.interrupt_for_approval.assert_awaited_once()
 
 
@@ -170,7 +180,9 @@ async def test_ask_data_dev_execute_runs_bounded_query():
 async def test_ask_data_permission_denied_preserves_sql_artifact():
     service = AgentWorkflowService()
     app_state._maxcompute_client = SimpleNamespace(
-        submit_query=AsyncMock(side_effect=RuntimeError("NoPermission: no privilege odps:CreateInstance")),
+        submit_query=AsyncMock(
+            side_effect=RuntimeError("NoPermission: no privilege odps:CreateInstance")
+        ),
         wait_and_fetch=AsyncMock(),
     )
 
@@ -256,7 +268,12 @@ async def test_reverse_node_prefers_official_mcp():
     async def call_tool(name, arguments):
         calls.append((name, arguments))
         if name == "GetNode":
-            return {"Node": {"Id": "node-1", "Spec": '{"spec":{"nodes":[{"script":{"content":"SELECT * FROM ods_a"}}]}}'}}
+            return {
+                "Node": {
+                    "Id": "node-1",
+                    "Spec": '{"spec":{"nodes":[{"script":{"content":"SELECT * FROM ods_a"}}]}}',
+                }
+            }
         return {"PagingInfo": {"Nodes": [{"Id": "parent-1"}]}}
 
     app_state._official_mcp_client = SimpleNamespace(
@@ -286,8 +303,17 @@ async def test_reverse_node_falls_back_to_openapi():
         status=SimpleNamespace(to_dict=lambda: {"enabled": True, "connected": False}),
     )
     app_state._openapi_client = SimpleNamespace(
-        get_node=AsyncMock(return_value={"Node": {"Id": "node-2", "Spec": '{"spec":{"nodes":[{"script":{"content":"SELECT 1"}}]}}'}}),
-        list_node_dependencies=AsyncMock(return_value={"PagingInfo": {"Nodes": [{"Id": "parent-2"}]}}),
+        get_node=AsyncMock(
+            return_value={
+                "Node": {
+                    "Id": "node-2",
+                    "Spec": '{"spec":{"nodes":[{"script":{"content":"SELECT 1"}}]}}',
+                }
+            }
+        ),
+        list_node_dependencies=AsyncMock(
+            return_value={"PagingInfo": {"Nodes": [{"Id": "parent-2"}]}}
+        ),
     )
 
     result = await service.execute(
@@ -452,7 +478,9 @@ async def test_execute_ods_routes_oss_without_publish(monkeypatch):
     service = AgentWorkflowService()
     app_state._node_client = object()
     app_state._maxcompute_client = object()
-    service._ensure_oss_table = AsyncMock(return_value={"status": "created", "ddl": "CREATE TABLE x"})
+    service._ensure_oss_table = AsyncMock(
+        return_value={"status": "created", "ddl": "CREATE TABLE x"}
+    )
     run = AsyncMock(return_value={"success": True, "steps": {}})
     monkeypatch.setattr(OssImportPipeline, "run", run)
 
@@ -482,7 +510,11 @@ async def test_execute_ods_routes_realtime_without_publish(monkeypatch):
     app_state._node_client = object()
     app_state._maxcompute_client = object()
     service._ensure_table_from_source = AsyncMock(
-        return_value={"status": "created", "ddl": "CREATE TABLE x", "columns": [Column("id", "bigint")]}
+        return_value={
+            "status": "created",
+            "ddl": "CREATE TABLE x",
+            "columns": [Column("id", "bigint")],
+        }
     )
     run = AsyncMock(return_value={"success": True, "steps": {}})
     monkeypatch.setattr(RealtimeSyncPipeline, "run", run)
@@ -500,7 +532,9 @@ async def test_execute_ods_routes_realtime_without_publish(monkeypatch):
     )
 
     assert result["success"] is True
-    service._ensure_table_from_source.assert_awaited_once_with("shop__orders_delta", "ods_shop_order", "hour")
+    service._ensure_table_from_source.assert_awaited_once_with(
+        "shop__orders_delta", "ods_shop_order", "hour"
+    )
     assert run.await_args.kwargs["publish"] is False
     assert run.await_args.kwargs["target_table"] == "ods_shop_order"
     assert run.await_args.kwargs["sync_rows"] == [{"dst_table": "shop__orders_delta"}]
