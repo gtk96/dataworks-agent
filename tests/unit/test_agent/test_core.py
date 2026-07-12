@@ -116,6 +116,27 @@ async def test_chat_agent_response_has_status_and_no_garbled_text():
 
 
 @pytest.mark.asyncio
+async def test_chat_agent_routes_bare_ask_data_to_auto_workflow():
+    agent = ChatAgent()
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="query completed",
+            workflow_type="ask_data",
+            mode="dev_execute",
+        )
+    )
+
+    response = await agent.chat(
+        "\u4eca\u5929\u7684\u603b\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11"
+    )
+
+    assert response.success is True
+    assert response.data["workflow_type"] == "ask_data"
+    assert agent._workflow_service.execute.await_args.kwargs["execution_mode"] == "auto"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "expected_action"),
     [

@@ -991,6 +991,15 @@ class AgentWorkflowService:
                 },
                 errors=["metric result is not unique"],
             )
+        reconciliation = await self._reconcile_metric_result(query_plan, columns, rows, channel)
+        if query_plan.reconciliation_sql:
+            artifacts.append(
+                {
+                    "type": "reconciliation_sql",
+                    "name": "metric_reconciliation",
+                    "content": query_plan.reconciliation_sql,
+                }
+            )
         task_id = f"ask_data_{uuid.uuid4().hex[:12]}"
         verification = await self._closed_loop_verifier.verify(
             task_id,
@@ -1001,6 +1010,12 @@ class AgentWorkflowService:
                 "columns": columns,
                 "rows": rows,
                 "row_count": len(rows),
+                "semantic_required": query_plan.metric_id != "ad_hoc_query",
+                "album_validation": query_plan.album_validation,
+                "metadata_validation": query_plan.metadata_validation,
+                "grain_validation": query_plan.grain_validation,
+                "freshness_validation": query_plan.freshness_validation,
+                "reconciliation": reconciliation,
             },
         )
         verification_data = {
@@ -1036,6 +1051,12 @@ class AgentWorkflowService:
                 {"step": "generate_readonly_sql", "status": "completed"},
                 {"step": "execute_query", "status": "completed", "channel": channel},
                 {
+                    "step": "reconcile_metric_result",
+                    "status": "completed" if reconciliation.get("passed") else "failed",
+                }
+                if query_plan.metric_id != "ad_hoc_query"
+                else {"step": "reconcile_metric_result", "status": "not_applicable"},
+                {
                     "step": "closed_loop_verification",
                     "status": "completed" if verified else "failed",
                 },
@@ -1052,10 +1073,108 @@ class AgentWorkflowService:
                     "executed": True,
                     "execution_channel": channel,
                 },
+                "reconciliation": reconciliation,
                 "verification": verification_data,
             },
             errors=[] if verified else [verification.summary],
         )
+
+    async def _reconcile_metric_result(
+        self,
+        query_plan: MetricQueryPlan,
+        columns: list[Any],
+        rows: list[Any],
+        channel: str,
+    ) -> dict[str, Any]:
+        if query_plan.metric_id == "ad_hoc_query":
+            return {"required": False, "passed": True, "status": "not_applicable"}
+        if not query_plan.reconciliation_sql:
+            return {
+                "required": True,
+                "passed": False,
+                "status": "missing_contract",
+                "message": "语义指标缺少对账契约",
+            }
+        try:
+            self._validate_readonly_sql(query_plan.reconciliation_sql)
+            reconciliation_sql = self._enforce_query_limit(query_plan.reconciliation_sql)
+            if channel == "cookie_bff":
+                other_columns, other_rows = await self._run_cookie_bff_query(reconciliation_sql)
+            else:
+                other_columns, other_rows = await self._run_maxcompute_query(reconciliation_sql)
+            passed, details = self._compare_metric_results(
+                query_plan, columns, rows, other_columns, other_rows
+            )
+            return {
+                "required": True,
+                "passed": passed,
+                "status": "passed" if passed else "mismatch",
+                "sql": reconciliation_sql,
+                "details": details,
+            }
+        except Exception as exc:
+            return {
+                "required": True,
+                "passed": False,
+                "status": "execution_failed",
+                "message": self._brief_error(exc),
+            }
+
+    @staticmethod
+    def _compare_metric_results(
+        query_plan: MetricQueryPlan,
+        columns: list[Any],
+        rows: list[Any],
+        other_columns: list[Any],
+        other_rows: list[Any],
+    ) -> tuple[bool, dict[str, Any]]:
+        from decimal import Decimal, InvalidOperation
+
+        names = [str(getattr(column, "name", column)) for column in columns]
+        other_names = [str(getattr(column, "name", column)) for column in other_columns]
+        dimension_columns = [
+            str(item.get("column") or "")
+            for item in query_plan.caliber.get("dimensions", [])
+            if str(item.get("name") or "") in query_plan.selected_dimensions
+        ]
+        measure = query_plan.caliber.get("measure", {})
+        measure_alias = str(measure.get("alias") or measure.get("column") or "value")
+        result_column = (
+            measure_alias if query_plan.selected_dimensions else f"total_{measure_alias}"
+        )
+        key_columns = ["data_date", "data_hour", *dimension_columns]
+
+        def normalize(row_names: list[str], result_rows: list[Any]) -> dict[tuple[str, ...], str]:
+            normalized: dict[tuple[str, ...], str] = {}
+            for row in result_rows:
+                mapped = (
+                    row
+                    if isinstance(row, dict)
+                    else dict(
+                        zip(
+                            row_names,
+                            row if isinstance(row, (list, tuple)) else [row],
+                            strict=False,
+                        )
+                    )
+                )
+                key = tuple(str(mapped.get(name) or "") for name in key_columns)
+                raw = mapped.get(result_column)
+                try:
+                    value = str(Decimal(str(raw)).normalize())
+                except (InvalidOperation, TypeError, ValueError):
+                    value = str(raw)
+                normalized[key] = value
+            return normalized
+
+        primary = normalize(names, rows)
+        reference = normalize(other_names, other_rows)
+        return primary == reference, {
+            "primary_rows": len(primary),
+            "reference_rows": len(reference),
+            "primary": {"|".join(key): value for key, value in primary.items()},
+            "reference": {"|".join(key): value for key, value in reference.items()},
+        }
 
     @staticmethod
     def _format_query_answer(
@@ -1079,10 +1198,16 @@ class AgentWorkflowService:
             display_value = str(raw_value)
         date = str(mapped.get("data_date") or "")
         hour = str(mapped.get("data_hour") or "")
-        snapshot = f"（数据日期 {date}，截至 {hour}:00）" if date and hour else ""
+        snapshot = (
+            f"（数据日期 {date}，截至 {hour}:00）"
+            if date and hour
+            else f"（数据日期 {date}）"
+            if date
+            else ""
+        )
         album_names = "、".join(item["name"] for item in query_plan.albums)
         evidence = (
-            f"；选表依据：数据专辑“{album_names}”+ 已批准指标 v{query_plan.metric_version}"
+            f"；选表依据：数据专辑“{album_names}”资产直接命中 + 已批准指标 v{query_plan.metric_version}"
             if album_names
             else f"；规划依据：{query_plan.selection_evidence[0]}"
         )
@@ -1127,11 +1252,23 @@ class AgentWorkflowService:
             return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table)
 
         candidate_tables = self._metric_query_planner.candidate_tables(message)
+        required_album_ids = self._metric_query_planner.required_album_ids(message)
         album_contexts = await self._album_context_resolver.resolve(
-            message, required_tables=candidate_tables
+            message,
+            required_tables=candidate_tables,
+            required_album_ids=required_album_ids,
         )
         semantic_plan = self._metric_query_planner.plan(message, album_contexts)
         if semantic_plan is not None:
+            if semantic_plan.album_validation.get("status") not in {
+                "direct_match",
+                "lineage_match",
+            }:
+                raise QueryNeedsClarificationError(
+                    message,
+                    album_contexts,
+                    f"指标表 {semantic_plan.table} 未在声明的数据专辑资产中直接命中，也没有已验证血缘，已阻止执行。",
+                )
             await self._validate_semantic_plan_metadata(semantic_plan)
             return semantic_plan
         if not settings.llm_api_key:

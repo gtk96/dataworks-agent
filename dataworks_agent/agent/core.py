@@ -67,6 +67,8 @@ class ChatAgent:
                 "cookie_manage",
                 "ask_data",
             }
+            if intent.action == "ask_data" and execution_mode is None:
+                execution_mode = "auto"
             if intent.action in workflow_actions and execution_mode is not None:
                 workflow = await self._workflow_service.execute(
                     message=message,

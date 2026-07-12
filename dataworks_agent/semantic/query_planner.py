@@ -31,6 +31,9 @@ class MetricQueryPlan:
     selection_evidence: list[str] = field(default_factory=list)
     metadata_validation: dict[str, Any] = field(default_factory=dict)
     album_validation: dict[str, Any] = field(default_factory=dict)
+    grain_validation: dict[str, Any] = field(default_factory=dict)
+    freshness_validation: dict[str, Any] = field(default_factory=dict)
+    reconciliation_sql: str = ""
 
     def semantic_artifact(self) -> dict[str, Any]:
         return {
@@ -47,6 +50,8 @@ class MetricQueryPlan:
                 "selection_evidence": self.selection_evidence,
                 "metadata_validation": self.metadata_validation,
                 "album_validation": self.album_validation,
+                "grain_validation": self.grain_validation,
+                "freshness_validation": self.freshness_validation,
             },
         }
 
@@ -66,6 +71,17 @@ class MetricQueryPlanner:
         definition = self._match_metric(question)
         return {str(definition["table"])} if definition is not None else set()
 
+    def required_album_ids(self, question: str) -> set[int]:
+        definition = self._match_metric(question)
+        if definition is None:
+            return set()
+        provenance = definition.get("asset_provenance") or {}
+        album_id = provenance.get("album_id") if isinstance(provenance, dict) else None
+        try:
+            return {int(album_id)} if album_id is not None else set()
+        except (TypeError, ValueError):
+            return set()
+
     def has_certified_metric(self, question: str) -> bool:
         return self._match_metric(question) is not None
 
@@ -79,48 +95,77 @@ class MetricQueryPlanner:
             return None
 
         table = str(definition["table"])
-        matched_albums = self._albums_containing_table(table, album_contexts)
-        supporting_albums = matched_albums or album_contexts[:1]
-
+        provenance = definition.get("asset_provenance") or {}
+        required_album_id = int(provenance["album_id"])
+        reconciliation = definition.get("reconciliation") or {}
+        required_tables = [table]
+        if reconciliation.get("table"):
+            required_tables.append(str(reconciliation["table"]))
+        matched_albums = self._albums_containing_tables(
+            required_tables,
+            album_contexts,
+            required_album_id=required_album_id,
+        )
         selected_dimensions = self._selected_dimensions(question, definition)
         sql = self._build_sql(definition, selected_dimensions)
+        reconciliation_sql = self._build_reconciliation_sql(definition, selected_dimensions)
         albums = [
             {
                 "album_id": context.album_id,
                 "name": context.name,
                 "categories": context.categories,
             }
-            for context in supporting_albums
+            for context in matched_albums
         ]
         metric_id = str(definition["id"])
         metric_name = str(definition.get("name") or metric_id)
         if matched_albums:
+            matched_assets = [
+                {
+                    "table": candidate.full_name,
+                    "entity_guid": candidate.entity_guid,
+                    "qualified_name": candidate.qualified_name,
+                    "relation_id": candidate.relation_id,
+                }
+                for context in matched_albums
+                for candidate in context.tables
+                if candidate.full_name.lower() in {item.lower() for item in required_tables}
+            ]
             album_validation = {
                 "status": "direct_match",
                 "certified_table_present": True,
+                "assets": matched_assets,
+                "required_album_id": required_album_id,
+                "required_tables": required_tables,
             }
-            album_evidence = f"官方表 {table} 已在数据专辑中直接命中"
-        elif supporting_albums:
-            album_validation = {
-                "status": "domain_context",
-                "certified_table_present": False,
-            }
-            album_evidence = (
-                f"数据专辑已命中业务域，但未收录官方表 {table}；"
-                "最终表由 approved 指标定义决定，并须通过真实 DDL 校验"
-            )
+            album_evidence = f"数据专辑资产直接命中 {table}"
         else:
             album_validation = {
-                "status": "unavailable",
+                "status": "ungrounded",
                 "certified_table_present": False,
+                "assets": [],
+                "required_album_id": required_album_id,
+                "required_tables": required_tables,
             }
-            album_evidence = (
-                "数据专辑当前未返回候选；仅允许 approved 指标定义在真实 DDL 校验通过后执行"
-            )
+            album_evidence = f"数据专辑未证明 {table} 的资产关系，禁止执行"
+
+        aggregation = str(definition["measure"].get("aggregation") or "").lower()
+        grain_validation = {
+            "status": "passed" if aggregation in {"sum", "count", "snapshot"} else "failed",
+            "aggregation": aggregation,
+            "dimensions": [str(item["column"]) for item in selected_dimensions],
+        }
+        freshness = definition.get("freshness", {})
+        freshness_validation = {
+            "status": "passed" if freshness.get("date_partition") else "failed",
+            "strategy": freshness.get("strategy", "latest_partition"),
+            "date_partition": freshness.get("date_partition", ""),
+            "hour_partition": freshness.get("hour_partition", ""),
+        }
         evidence = [
-            f"问题命中已批准指标 {metric_name} ({metric_id})",
+            f"已批准语义指标 {metric_name} ({metric_id})",
             album_evidence,
-            "查询口径来自版本化语义定义，而非对话代码分支",
+            "查询须通过专辑资产、DDL 字段、粒度、时效和 DWS/DWD 对账验收",
         ]
         return MetricQueryPlan(
             sql=sql,
@@ -134,12 +179,17 @@ class MetricQueryPlanner:
                 "measure": definition["measure"],
                 "fixed_filters": definition.get("fixed_filters", {}),
                 "dimensions": definition.get("dimensions", []),
-                "freshness": definition.get("freshness", {}),
+                "freshness": freshness,
                 "description": definition.get("description", ""),
                 "source": definition.get("source", ""),
+                "asset_provenance": definition.get("asset_provenance", {}),
+                "reconciliation": definition.get("reconciliation", {}),
             },
             selection_evidence=evidence,
             album_validation=album_validation,
+            grain_validation=grain_validation,
+            freshness_validation=freshness_validation,
+            reconciliation_sql=reconciliation_sql,
         )
 
     def _definitions(self) -> list[dict[str, Any]]:
@@ -170,7 +220,7 @@ class MetricQueryPlanner:
             candidate.setdefault("source", definition.source)
             metric_id = str(candidate.get("id") or "")
             if not self._is_executable_definition(candidate):
-                logger.warning(
+                logger.debug(
                     "忽略不完整的 approved 指标定义: %s",
                     definition.key,
                 )
@@ -186,14 +236,18 @@ class MetricQueryPlanner:
             return False
         measure = value.get("measure")
         freshness = value.get("freshness")
+        provenance = value.get("asset_provenance")
         return bool(
             value.get("id")
             and value.get("table")
             and isinstance(measure, dict)
             and measure.get("column")
+            and measure.get("aggregation")
             and isinstance(freshness, dict)
             and freshness.get("date_partition")
-            and freshness.get("hour_partition")
+            and isinstance(provenance, dict)
+            and provenance.get("type") == "data_album"
+            and provenance.get("album_id")
         )
 
     def _match_metric(self, question: str) -> dict[str, Any] | None:
@@ -214,15 +268,18 @@ class MetricQueryPlanner:
         return matches[0][1] if matches else None
 
     @staticmethod
-    def _albums_containing_table(
-        table: str,
+    def _albums_containing_tables(
+        tables: list[str],
         contexts: list[DataAlbumContext],
+        *,
+        required_album_id: int,
     ) -> list[DataAlbumContext]:
-        normalized = table.lower()
+        required = {table.lower() for table in tables}
         return [
             context
             for context in contexts
-            if any(candidate.full_name.lower() == normalized for candidate in context.tables)
+            if context.album_id == required_album_id
+            and required <= {candidate.full_name.lower() for candidate in context.tables}
         ]
 
     @staticmethod
@@ -241,13 +298,16 @@ class MetricQueryPlanner:
         table = self._safe_table(str(definition["table"]))
         measure = definition["measure"]
         measure_column = self._safe_identifier(str(measure["column"]))
-        date_partition = self._safe_identifier(str(definition["freshness"]["date_partition"]))
-        hour_partition = self._safe_identifier(str(definition["freshness"]["hour_partition"]))
+        aggregation = str(measure.get("aggregation") or "").lower()
+        measure_expression = self._aggregate_expression(aggregation, measure_column)
+        freshness = definition["freshness"]
+        date_partition = self._safe_identifier(str(freshness["date_partition"]))
+        hour_value = freshness.get("hour_partition")
+        hour_partition = self._safe_identifier(str(hour_value)) if hour_value else ""
 
-        select_lines = [
-            f"  {date_partition} AS data_date",
-            f"  {hour_partition} AS data_hour",
-        ]
+        select_lines = [f"  {date_partition} AS data_date"]
+        if hour_partition:
+            select_lines.append(f"  {hour_partition} AS data_hour")
         for dimension in selected_dimensions:
             select_lines.append(f"  {self._safe_identifier(str(dimension['column']))}")
         measure_alias = (
@@ -255,33 +315,57 @@ class MetricQueryPlanner:
             if selected_dimensions
             else f"total_{measure.get('alias') or measure_column}"
         )
-        select_lines.append(f"  {measure_column} AS {self._safe_identifier(measure_alias)}")
+        select_lines.append(f"  {measure_expression} AS {self._safe_identifier(measure_alias)}")
 
-        filters = [
-            f"{date_partition} = MAX_PT('{table}')",
-            (
+        filters = [f"{date_partition} = MAX_PT('{table}')"]
+        if hour_partition:
+            filters.append(
                 f"{hour_partition} = (SELECT MAX({hour_partition}) FROM {table} "
                 f"WHERE {date_partition} = MAX_PT('{table}'))"
-            ),
-        ]
-        selected_ids = {str(item["id"]) for item in selected_dimensions}
+            )
         for column, value in definition.get("fixed_filters", {}).items():
             filters.append(f"{self._safe_identifier(str(column))} = {self._literal(value)}")
-        for dimension in definition.get("dimensions", []):
-            column = self._safe_identifier(str(dimension["column"]))
-            total_value = dimension.get("total_value")
-            if total_value is None:
-                continue
-            operator = "<>" if str(dimension["id"]) in selected_ids else "="
-            filters.append(f"{column} {operator} {self._literal(total_value)}")
 
         lines = ["SELECT", ",\n".join(select_lines), f"FROM {table}", "WHERE"]
         lines.append("  " + "\n  AND ".join(filters))
+        group_columns = [date_partition]
+        if hour_partition:
+            group_columns.append(hour_partition)
+        group_columns.extend(
+            self._safe_identifier(str(item["column"])) for item in selected_dimensions
+        )
+        if aggregation in {"sum", "count"}:
+            lines.append("GROUP BY " + ", ".join(group_columns))
         if selected_dimensions:
-            lines.append(f"ORDER BY {measure_column} DESC")
+            lines.append(f"ORDER BY {self._safe_identifier(measure_alias)} DESC")
         else:
-            lines.append("LIMIT 2")
+            lines.append("LIMIT 1")
         return "\n".join(lines)
+
+    def _build_reconciliation_sql(
+        self,
+        definition: dict[str, Any],
+        selected_dimensions: list[dict[str, Any]],
+    ) -> str:
+        reconciliation = definition.get("reconciliation")
+        if not isinstance(reconciliation, dict) or not reconciliation.get("table"):
+            return ""
+        mirror = dict(definition)
+        mirror["table"] = reconciliation["table"]
+        mirror["measure"] = reconciliation["measure"]
+        mirror["fixed_filters"] = reconciliation.get("fixed_filters", {})
+        mirror["freshness"] = reconciliation.get("freshness", definition["freshness"])
+        return self._build_sql(mirror, selected_dimensions)
+
+    @staticmethod
+    def _aggregate_expression(aggregation: str, column: str) -> str:
+        if aggregation == "sum":
+            return f"SUM({column})"
+        if aggregation == "count":
+            return "COUNT(*)"
+        if aggregation == "snapshot":
+            return column
+        raise ValueError(f"unsupported semantic aggregation: {aggregation}")
 
     @staticmethod
     def _safe_identifier(value: str) -> str:

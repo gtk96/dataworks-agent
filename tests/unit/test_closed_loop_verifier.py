@@ -186,7 +186,7 @@ async def test_verify_ask_data_success(verifier):
         },
     )
     assert result.status == VerificationStatus.PASSED
-    assert result.passed_count == 3
+    assert result.passed_count == 8
 
 
 @pytest.mark.asyncio
@@ -205,3 +205,62 @@ async def test_verify_ask_data_rejects_plan_only_result(verifier):
     assert result.status == VerificationStatus.FAILED
     failed = {check.check_name for check in result.checks if not check.passed}
     assert {"query_executed", "query_result_shape"} <= failed
+
+
+@pytest.mark.asyncio
+async def test_verify_semantic_ask_data_requires_grounded_asset(verifier):
+    result = await verifier.verify(
+        task_id="ask_data_ungrounded",
+        task_type="ASK_DATA",
+        context={
+            "sql": "SELECT COUNT(*) FROM sample",
+            "executed": True,
+            "columns": ["value"],
+            "rows": [[1]],
+            "row_count": 1,
+            "semantic_required": True,
+            "album_validation": {"status": "ungrounded"},
+            "metadata_validation": {"status": "passed"},
+            "grain_validation": {"status": "passed"},
+            "freshness_validation": {"status": "passed"},
+            "reconciliation": {"passed": True},
+        },
+    )
+
+    assert result.status == VerificationStatus.FAILED
+    failed = {check.check_name for check in result.checks if not check.passed}
+    assert "album_asset_grounding" in failed
+
+
+@pytest.mark.asyncio
+async def test_verify_semantic_ask_data_passes_all_eight_checks(verifier):
+    result = await verifier.verify(
+        task_id="ask_data_grounded",
+        task_type="ASK_DATA",
+        context={
+            "sql": "SELECT SUM(effect_order_cnt) FROM sample",
+            "executed": True,
+            "columns": ["total_effective_order_cnt"],
+            "rows": [[62782]],
+            "row_count": 1,
+            "semantic_required": True,
+            "album_validation": {"status": "direct_match"},
+            "metadata_validation": {"status": "passed"},
+            "grain_validation": {"status": "passed"},
+            "freshness_validation": {"status": "passed"},
+            "reconciliation": {"passed": True},
+        },
+    )
+
+    assert result.status == VerificationStatus.PASSED
+    assert result.passed_count == 8
+    assert {check.check_name for check in result.checks} == {
+        "album_asset_grounding",
+        "metric_column_grounding",
+        "grain_grounding",
+        "freshness_grounding",
+        "readonly_sql",
+        "query_executed",
+        "query_result_shape",
+        "result_reconciliation",
+    }

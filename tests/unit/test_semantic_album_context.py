@@ -24,6 +24,9 @@ class FakeAlbumClient:
                 },
             ]
         )
+        self.get_meta_album = AsyncMock(
+            return_value={"id": 888, "albumName": "订单", "albumDesc": "订单主题"}
+        )
         self.list_meta_album_categories = AsyncMock(
             return_value=[{"id": 1, "categoryName": "\u8ba2\u5355\u4fe1\u606f"}]
         )
@@ -150,7 +153,7 @@ async def test_required_certified_table_is_kept_beyond_normal_candidate_limit():
             },
             {
                 "project": "giikin_aliyun",
-                "table_name": "tb_rp_ord_order_cnt_hi",
+                "table_name": "tb_dws_ord_order_si_crt_df",
                 "comment": "小时预警",
                 "entity_type": "odps-table",
             },
@@ -161,8 +164,29 @@ async def test_required_certified_table_is_kept_beyond_normal_candidate_limit():
     contexts = await resolver.resolve(
         "今天有效订单是多少",
         max_tables=1,
-        required_tables={"giikin_aliyun.tb_rp_ord_order_cnt_hi"},
+        required_tables={"giikin_aliyun.tb_dws_ord_order_si_crt_df"},
     )
 
     names = {table.full_name for table in contexts[0].tables}
-    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in names
+    assert "giikin_aliyun.tb_dws_ord_order_si_crt_df" in names
+
+
+@pytest.mark.asyncio
+async def test_required_album_is_loaded_when_album_listing_is_empty():
+    client = FakeAlbumClient()
+    client.list_meta_albums = AsyncMock(return_value=[])
+    resolver = DataAlbumContextResolver(client)
+
+    contexts = await resolver.resolve(
+        "今天有效订单是多少",
+        required_tables={"giikin_aliyun.tb_dws_ord_order_si_crt_df"},
+        required_album_ids={888},
+    )
+
+    assert [context.album_id for context in contexts] == [888]
+    assert contexts[0].name == "订单"
+    assert any(
+        table.full_name == "giikin_aliyun.tb_dws_ord_order_si_crt_df"
+        for table in contexts[0].tables
+    )
+    client.get_meta_album.assert_awaited_once_with(888)

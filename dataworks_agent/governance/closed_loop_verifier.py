@@ -98,9 +98,14 @@ VERIFICATION_CHECKLISTS: dict[str, list[str]] = {
         "layer_dependency",
     ],
     "ASK_DATA": [
+        "album_asset_grounding",
+        "metric_column_grounding",
+        "grain_grounding",
+        "freshness_grounding",
         "readonly_sql",
         "query_executed",
         "query_result_shape",
+        "result_reconciliation",
     ],
 }
 
@@ -127,6 +132,11 @@ class ClosedLoopVerifier:
         self._checks["readonly_sql"] = self._check_readonly_sql
         self._checks["query_executed"] = self._check_query_executed
         self._checks["query_result_shape"] = self._check_query_result_shape
+        self._checks["album_asset_grounding"] = self._check_album_asset_grounding
+        self._checks["metric_column_grounding"] = self._check_metric_column_grounding
+        self._checks["grain_grounding"] = self._check_grain_grounding
+        self._checks["freshness_grounding"] = self._check_freshness_grounding
+        self._checks["result_reconciliation"] = self._check_result_reconciliation
 
     def register_check(
         self,
@@ -466,6 +476,116 @@ class ClosedLoopVerifier:
             if passed
             else "\u67e5\u8be2\u7ed3\u679c\u7f3a\u5c11\u5217\u6216\u884c\u6570\u4e0d\u4e00\u81f4",
             details={"column_count": len(columns), "row_count": len(rows)},
+        )
+
+    @staticmethod
+    def _semantic_check(
+        check_name: str,
+        semantic_required: bool,
+        passed: bool,
+        passed_message: str,
+        failed_message: str,
+        details: dict[str, Any] | None = None,
+    ) -> CheckResult:
+        if not semantic_required:
+            return CheckResult(
+                check_name=check_name,
+                passed=True,
+                severity=CheckSeverity.WARNING,
+                message="用户显式表名或 SQL，不适用语义资产验收",
+            )
+        return CheckResult(
+            check_name=check_name,
+            passed=passed,
+            severity=CheckSeverity.ERROR,
+            message=passed_message if passed else failed_message,
+            details=details or {},
+        )
+
+    async def _check_album_asset_grounding(
+        self,
+        task_id: str,
+        semantic_required: bool = False,
+        album_validation: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> CheckResult:
+        validation = album_validation or {}
+        passed = validation.get("status") in {"direct_match", "lineage_match"}
+        return self._semantic_check(
+            "album_asset_grounding",
+            semantic_required,
+            passed,
+            "指标表已由数据专辑资产直接命中或验证血缘证明",
+            "指标表未获得数据专辑资产或验证血缘证明",
+            validation,
+        )
+
+    async def _check_metric_column_grounding(
+        self,
+        task_id: str,
+        semantic_required: bool = False,
+        metadata_validation: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> CheckResult:
+        validation = metadata_validation or {}
+        return self._semantic_check(
+            "metric_column_grounding",
+            semantic_required,
+            validation.get("status") == "passed",
+            "指标字段已通过真实 DDL 校验",
+            "指标字段未通过真实 DDL 校验",
+            validation,
+        )
+
+    async def _check_grain_grounding(
+        self,
+        task_id: str,
+        semantic_required: bool = False,
+        grain_validation: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> CheckResult:
+        validation = grain_validation or {}
+        return self._semantic_check(
+            "grain_grounding",
+            semantic_required,
+            validation.get("status") == "passed",
+            "查询粒度已通过语义契约校验",
+            "查询粒度未通过语义契约校验",
+            validation,
+        )
+
+    async def _check_freshness_grounding(
+        self,
+        task_id: str,
+        semantic_required: bool = False,
+        freshness_validation: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> CheckResult:
+        validation = freshness_validation or {}
+        return self._semantic_check(
+            "freshness_grounding",
+            semantic_required,
+            validation.get("status") == "passed",
+            "最新分区时效策略已通过校验",
+            "最新分区时效策略未通过校验",
+            validation,
+        )
+
+    async def _check_result_reconciliation(
+        self,
+        task_id: str,
+        semantic_required: bool = False,
+        reconciliation: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> CheckResult:
+        validation = reconciliation or {}
+        return self._semantic_check(
+            "result_reconciliation",
+            semantic_required,
+            validation.get("passed") is True,
+            "主查询结果与明细口径对账一致",
+            "主查询结果与明细口径对账不一致或未执行",
+            validation,
         )
 
     async def _check_daily_schedule_params(

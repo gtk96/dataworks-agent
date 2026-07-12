@@ -47,12 +47,14 @@ npm run dev
 业务问数不再在 `workflow_service.py` 里按问句硬编码 SQL，而是按下列链路生成和验证查询：
 
 ```text
-自然语言 -> DataWorks 数据专辑选表 -> approved 语义指标 -> 真实 DDL 校验 -> 只读 SQL -> AK/SK / Cookie 查询
+自然语言 -> 数据专辑资产直接命中/验证血缘 -> approved 语义指标 -> 真实 DDL 字段 -> 粒度 -> 最新分区 -> 只读 SQL -> DWS/DWD 对账 -> 验收
 ```
 
 - `dataworks_agent/semantic/metrics.json` 是可版本化的 baseline，`SemanticLayer` 中更高版本的 approved 定义优先。
-- 数据专辑负责缩小业务域和候选表；approved 指标定义负责官方表、measure、dimension、filter 和 freshness 口径。
-- 若专辑命中业务域但未收录认证表，Agent 会如实展示该差异，只有 approved 指标定义且真实 DDL 校验通过才继续执行。DDL 不可读、字段不一致或总计结果不唯一时仍会阻止执行。
+- 数据专辑不是“业务域提示”，而是选表资产证据。指标表和对账表必须在指标声明的专辑中直接命中，或存在已验证血缘；只有同业务域但没有资产关系时禁止执行。
+- approved 指标定义负责 measure、dimension、filter、freshness 与对账契约；DDL 存在只能证明字段可用，不能证明选表正确。
+- 语义问数必须同时通过 8 项硬验收：专辑资产、指标字段、查询粒度、最新分区、只读 SQL、真实执行、结果结构、DWS/DWD 对账。任一失败都不能显示“验收通过”。
+- 当前“有效订单数”由订单专辑（album 888）的 DWS 表 `giikin_aliyun.tb_dws_ord_order_si_crt_df` 汇总，并用同专辑 DWD 表 `giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df` 的有效订单明细对账；不再使用 RP 预警表。
 - 未认证指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
 
 ## 目录结构

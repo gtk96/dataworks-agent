@@ -3,7 +3,7 @@
   "metrics": [
     {
       "id": "effective_order_cnt",
-      "version": 1,
+      "version": 2,
       "status": "approved",
       "name": "有效订单数",
       "aliases": [
@@ -12,15 +12,15 @@
         "总有效订单",
         "总有效订单数"
       ],
-      "description": "按最新小时快照统计的今日有效订单量",
+      "description": "订单专辑 DWS 有效订单汇总，按最新日分区统计，并与 DWD 明细有效标识对账",
       "album_terms": [
         "订单"
       ],
-      "table": "giikin_aliyun.tb_rp_ord_order_cnt_hi",
+      "table": "giikin_aliyun.tb_dws_ord_order_si_crt_df",
       "measure": {
-        "column": "effective_order_cnt",
+        "column": "effect_order_cnt",
         "alias": "effective_order_cnt",
-        "aggregation": "snapshot"
+        "aggregation": "sum"
       },
       "dimensions": [
         {
@@ -34,25 +34,48 @@
           "total_value": "合计"
         }
       ],
-      "fixed_filters": {
-        "line_name": "合计",
-        "befrom": "合计",
-        "statis_type": "hf",
-        "time_interval": "合计"
-      },
+      "fixed_filters": {},
       "freshness": {
-        "strategy": "latest_hour_snapshot",
-        "date_partition": "pt",
-        "hour_partition": "ht"
+        "strategy": "latest_daily_partition",
+        "date_partition": "pt"
       },
       "owner": "dataworks-agent",
-      "source": "certified_semantic_contract",
+      "source": "data_album_grounded_semantic_contract",
       "time_terms": [
         "今天",
         "今日",
         "当前",
         "最新"
-      ]
+      ],
+      "asset_provenance": {
+        "type": "data_album",
+        "album_id": 888,
+        "album_name": "订单",
+        "entity_guid": "odps.giikin_aliyun.tb_dws_ord_order_si_crt_df",
+        "qualified_name": "maxcompute-table.giikin_aliyun.tb_dws_ord_order_si_crt_df",
+        "relation_id": 8836
+      },
+      "reconciliation": {
+        "table": "giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df",
+        "measure": {
+          "column": "order_id",
+          "alias": "effective_order_cnt",
+          "aggregation": "count"
+        },
+        "fixed_filters": {
+          "is_effective_order": 1
+        },
+        "freshness": {
+          "strategy": "latest_daily_partition",
+          "date_partition": "pt"
+        },
+        "asset_provenance": {
+          "type": "data_album",
+          "album_id": 888,
+          "entity_guid": "odps.giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df",
+          "relation_id": 8837
+        }
+      }
     }
   ]
 }

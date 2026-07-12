@@ -99,7 +99,7 @@
 
             <section v-if="semanticPlan" class="semantic-proof" data-testid="semantic-proof">
               <div class="semantic-proof-title">
-                <div><strong>语义选表依据</strong><span>不是对话硬编码 SQL</span></div>
+                <div><strong>语义选表与闭环证据</strong><span>展示资产、字段、粒度、时效与对账证据</span></div>
                 <span>{{ semanticMetricVersion }}</span>
               </div>
               <div class="semantic-proof-grid">
@@ -112,6 +112,11 @@
               <div v-if="semanticDimensionText" class="semantic-proof-row"><small>分析维度</small><span>{{ semanticDimensionText }}</span></div>
               <div v-if="semanticFilterText" class="semantic-proof-row"><small>固定口径</small><code>{{ semanticFilterText }}</code></div>
               <ul v-if="semanticEvidence.length"><li v-for="item in semanticEvidence" :key="item">{{ item }}</li></ul>
+              <div v-if="semanticVerificationChecks.length" class="semantic-checks">
+                <span v-for="check in semanticVerificationChecks" :key="check.name" :class="{ passed: check.passed }">
+                  {{ check.passed ? '✓' : '×' }} {{ check.label }}
+                </span>
+              </div>
             </section>
 
             <section v-if="queryResult?.executed" class="query-result" data-testid="query-result">
@@ -341,9 +346,10 @@ const semanticMetricVersion = computed(() => semanticPlan.value ? `approved v${s
 const semanticAlbumText = computed(() => (semanticPlan.value?.albums ?? []).map((item: any) => item.name).filter(Boolean).join('、') || '未匹配')
 const semanticAlbumStatusText = computed(() => {
   const status = semanticPlan.value?.album_validation?.status
-  if (status === 'direct_match') return '认证表已在专辑中直接命中'
-  if (status === 'domain_context') return '专辑命中业务域；认证表由 approved 指标 + DDL 校验确定'
-  if (status === 'unavailable') return '专辑不可用；仅 approved 指标 + DDL 校验通过后可执行'
+  if (status === 'direct_match') return '指标表与对账表已在专辑资产中直接命中'
+  if (status === 'lineage_match') return '指标表与对账表已通过验证血缘关联'
+  if (status === 'ungrounded') return '仅业务域匹配，资产未证明，已阻止执行'
+  if (status === 'unavailable') return '专辑不可用，已阻止语义指标执行'
   return ''
 })
 const semanticValidationText = computed(() => {
@@ -357,6 +363,24 @@ const semanticFilterText = computed(() => {
   return Object.entries(filters).map(([key, value]) => `${key}=${String(value)}`).join(' · ')
 })
 const semanticEvidence = computed(() => semanticPlan.value?.selection_evidence ?? [])
+const semanticCheckLabels: Record<string, string> = {
+  album_asset_grounding: '专辑资产',
+  metric_column_grounding: 'DDL 字段',
+  grain_grounding: '查询粒度',
+  freshness_grounding: '最新分区',
+  readonly_sql: '只读 SQL',
+  query_executed: '真实执行',
+  query_result_shape: '结果结构',
+  result_reconciliation: 'DWS/DWD 对账',
+}
+const semanticVerificationChecks = computed(() => {
+  const verification = lastPayload.value?.data?.verification as any
+  return (verification?.checks ?? []).map((check: any) => ({
+    name: String(check.check_name ?? ''),
+    label: semanticCheckLabels[String(check.check_name ?? '')] ?? String(check.check_name ?? ''),
+    passed: Boolean(check.passed),
+  }))
+})
 const artifactCards = computed(() => {
   const result: Array<{ label: string; value: string; isCode: boolean }> = []
   const artifacts = lastPayload.value?.data?.artifacts
@@ -479,7 +503,7 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .semantic-proof { margin: 14px 20px 0; padding: 14px; border: 1px solid #dfe8ff; border-radius: 10px; background: #f8faff; }
 .semantic-proof-title { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.semantic-proof-title div { display:flex; flex-direction:column; gap:3px; }.semantic-proof-title strong { color:#252536; font-size:13px; }.semantic-proof-title div span { color:#7b7b87; font-size:10px; }.semantic-proof-title>span { padding:3px 7px; border-radius:5px; background:#e9edff; color:#5946d8; font-size:10px; font-weight:700; }
 .semantic-proof-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }.semantic-proof-grid div { min-width:0; padding:9px; border-radius:7px; background:#fff; }.semantic-proof-grid small,.semantic-proof-row small { display:block; margin-bottom:3px; color:#92929c; font-size:9px; }.semantic-proof-grid strong { display:block; overflow:hidden; color:#454550; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
-.semantic-proof-row { margin-top:8px; color:#5e5e68; font-size:10px; }.semantic-proof-row code { white-space:normal; word-break:break-all; }.semantic-proof ul { margin:9px 0 0; padding-left:16px; color:#686873; font-size:10px; line-height:1.6; }
+.semantic-proof-row { margin-top:8px; color:#5e5e68; font-size:10px; }.semantic-proof-row code { white-space:normal; word-break:break-all; }.semantic-proof ul { margin:9px 0 0; padding-left:16px; color:#686873; font-size:10px; line-height:1.6; }.semantic-checks{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.semantic-checks span{padding:4px 7px;border-radius:6px;background:#fff0f0;color:#b33;font-size:10px}.semantic-checks span.passed{background:#eaf8ef;color:#247a43}
 .technical-collapse { border-top: 1px solid #ededf0; border-bottom: 0; padding: 0 20px; }.technical-collapse :deep(.el-collapse-item__header){font-size:11px;color:#777780}.artifact-list article { margin-bottom: 10px; }.artifact-list strong { color: #55555d; font-size: 11px; }.artifact-list pre,.json-detail { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #17171b; color: #dddde3; font-size: 10px; white-space: pre-wrap; }.artifact-list p { color: #66666e; font-size: 12px; white-space: pre-wrap; }
 .question-card { margin: 14px 0 20px 40px; padding: 16px; border: 1px solid #f0d5a8; border-radius: 10px; background: #fffaf2; }.question-card>strong { display: block; margin-bottom: 8px; color: #8d5b0e; font-size: 12px; }.question-card button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border: 0; border-top: 1px solid #f3e5cb; background: transparent; color: #765723; font-size: 12px; cursor: pointer; text-align: left; }
 .composer-shell { min-height: 0; flex-shrink: 0; padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }

@@ -37,14 +37,24 @@ def _effective_order_album_contexts() -> list[DataAlbumContext]:
             album_id=888,
             name="订单",
             description="订单主题",
-            categories=["订单指标"],
+            categories=["订单"],
             tables=[
                 AlbumTable(
                     project="giikin_aliyun",
-                    name="tb_rp_ord_order_cnt_hi",
-                    comment="当日小时订单量预警表",
-                    remark="有效订单认证指标表",
-                )
+                    name="tb_dws_ord_order_si_crt_df",
+                    comment="订单指标汇总表，保存订单相关高度汇总数据",
+                    entity_guid="odps.giikin_aliyun.tb_dws_ord_order_si_crt_df",
+                    qualified_name="maxcompute-table.giikin_aliyun.tb_dws_ord_order_si_crt_df",
+                    relation_id=8836,
+                ),
+                AlbumTable(
+                    project="giikin_aliyun",
+                    name="tb_dwd_ord_gk_order_info_crt_df",
+                    comment="订单表-按照创建时间存储",
+                    entity_guid="odps.giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df",
+                    qualified_name="maxcompute-table.giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df",
+                    relation_id=8837,
+                ),
             ],
         )
     ]
@@ -54,7 +64,11 @@ def _wire_effective_order_semantics(service: AgentWorkflowService) -> None:
     service._album_context_resolver.resolve = AsyncMock(
         return_value=_effective_order_album_contexts()
     )
-    service._validate_semantic_plan_metadata = AsyncMock()
+    service._validate_semantic_plan_metadata = AsyncMock(
+        side_effect=lambda plan: plan.metadata_validation.update(
+            {"status": "passed", "channel": "test", "required_fields": []}
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -247,7 +261,7 @@ async def test_declarative_business_question_uses_album_semantic_plan():
     sql = await service._build_readonly_sql(
         "\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11"
     )
-    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+    assert "giikin_aliyun.tb_dws_ord_order_si_crt_df" in sql
 
 
 @pytest.mark.asyncio
@@ -256,10 +270,10 @@ async def test_business_query_album_semantics_uses_certified_effective_order_tab
     _wire_effective_order_semantics(service)
     sql = await service._build_readonly_sql("查一下今天各家族的有效订单数")
 
-    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+    assert "giikin_aliyun.tb_dws_ord_order_si_crt_df" in sql
     assert "family_name" in sql
-    assert "effective_order_cnt" in sql
-    assert "statis_type = 'hf'" in sql
+    assert "SUM(effect_order_cnt) AS effective_order_cnt" in sql
+    assert "GROUP BY pt, family_name" in sql
 
 
 @pytest.mark.asyncio
@@ -271,13 +285,27 @@ async def test_ask_data_falls_back_to_cookie_bff_when_ak_sk_cannot_query():
         wait_and_fetch=AsyncMock(),
     )
     app_state._bff_client = SimpleNamespace(
-        execute_sql=AsyncMock(return_value="job-1"),
+        execute_sql=AsyncMock(side_effect=["job-main", "job-reconcile"]),
         wait_job=AsyncMock(return_value=True),
         get_query_result=AsyncMock(
-            return_value={
-                "headerList": [{"name": "family_name"}, {"name": "effective_order_cnt"}],
-                "bodyList": [["吉喵云", "6560"]],
-            }
+            side_effect=[
+                {
+                    "headerList": [
+                        {"name": "data_date"},
+                        {"name": "family_name"},
+                        {"name": "effective_order_cnt"},
+                    ],
+                    "bodyList": [["20260712", "吉喵云", "6560"]],
+                },
+                {
+                    "headerList": [
+                        {"name": "data_date"},
+                        {"name": "family_name"},
+                        {"name": "effective_order_cnt"},
+                    ],
+                    "bodyList": [["20260712", "吉喵云", "6560"]],
+                },
+            ]
         ),
         last_error=None,
     )
@@ -295,10 +323,11 @@ async def test_ask_data_falls_back_to_cookie_bff_when_ak_sk_cannot_query():
     assert result.data["query"]["execution_channel"] == "cookie_bff"
     assert result.data["verification"]["status"] == "passed"
     assert result.steps[-1]["step"] == "closed_loop_verification"
-    assert result.data["query"]["rows"] == [["吉喵云", "6560"]]
-    app_state._bff_client.execute_sql.assert_awaited_once()
-    app_state._bff_client.wait_job.assert_awaited_once_with("job-1")
-    app_state._bff_client.get_query_result.assert_awaited_once_with("job-1")
+    assert result.data["query"]["rows"] == [["20260712", "吉喵云", "6560"]]
+    assert result.data["reconciliation"]["passed"] is True
+    assert app_state._bff_client.execute_sql.await_count == 2
+    assert app_state._bff_client.wait_job.await_count == 2
+    assert app_state._bff_client.get_query_result.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -726,7 +755,7 @@ async def test_effective_order_plan_requires_data_album_membership():
         "\u67e5\u4e00\u4e0b\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u6570"
     )
 
-    assert plan.table == "giikin_aliyun.tb_rp_ord_order_cnt_hi"
+    assert plan.table == "giikin_aliyun.tb_dws_ord_order_si_crt_df"
     assert plan.albums[0]["name"] == "订单"
     assert plan.selected_dimensions == ["家族"]
     service._album_context_resolver.resolve.assert_awaited_once()
@@ -805,10 +834,10 @@ async def test_total_effective_order_phrasings_use_album_semantics_without_llm(q
 
     sql = await service._build_readonly_sql(question)
 
-    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
-    assert "family_name = '合计'" in sql
+    assert "giikin_aliyun.tb_dws_ord_order_si_crt_df" in sql
+    assert "SUM(effect_order_cnt) AS total_effective_order_cnt" in sql
     assert "pt AS data_date" in sql
-    assert "ht AS data_hour" in sql
+    assert "GROUP BY pt" in sql
     assert "total_effective_order_cnt" in sql
 
 
@@ -821,17 +850,25 @@ async def test_total_effective_order_query_prefers_cookie_before_maxcompute():
         wait_and_fetch=AsyncMock(),
     )
     app_state._bff_client = SimpleNamespace(
-        execute_sql=AsyncMock(return_value="job-total"),
+        execute_sql=AsyncMock(side_effect=["job-total", "job-reconcile"]),
         wait_job=AsyncMock(return_value=True),
         get_query_result=AsyncMock(
-            return_value={
-                "headerList": [
-                    {"name": "data_date"},
-                    {"name": "data_hour"},
-                    {"name": "total_effective_order_cnt"},
-                ],
-                "bodyList": [["20260712", "12", "48182"]],
-            }
+            side_effect=[
+                {
+                    "headerList": [
+                        {"name": "data_date"},
+                        {"name": "total_effective_order_cnt"},
+                    ],
+                    "bodyList": [["20260712", "62782"]],
+                },
+                {
+                    "headerList": [
+                        {"name": "data_date"},
+                        {"name": "total_effective_order_cnt"},
+                    ],
+                    "bodyList": [["20260712", "62782"]],
+                },
+            ]
         ),
         last_error=None,
     )
@@ -845,7 +882,8 @@ async def test_total_effective_order_query_prefers_cookie_before_maxcompute():
 
     assert result.success is True
     assert result.data["query"]["execution_channel"] == "cookie_bff"
-    assert "48,182" in result.message
+    assert "62,782" in result.message
+    assert result.data["reconciliation"]["passed"] is True
     assert "20260712" in result.message
     app_state._maxcompute_client.submit_query.assert_not_awaited()
 
@@ -1023,3 +1061,39 @@ async def test_full_chain_without_target_names_generates_all_layers():
     assert generated["dim"].startswith("dim_")
     assert generated["dws"].startswith("dws_")
     assert any(step["step"] == "create_dws_tables_nodes_schedule" for step in result.steps)
+
+
+@pytest.mark.asyncio
+async def test_effective_order_query_is_blocked_when_album_does_not_contain_metric_asset():
+    service = AgentWorkflowService()
+    service._album_context_resolver.resolve = AsyncMock(
+        return_value=[
+            DataAlbumContext(
+                album_id=888,
+                name="订单",
+                tables=[AlbumTable(project="giikin_aliyun", name="tb_dwd_other")],
+            )
+        ]
+    )
+    service._validate_semantic_plan_metadata = AsyncMock(
+        side_effect=lambda plan: plan.metadata_validation.update(
+            {"status": "passed", "channel": "test", "required_fields": []}
+        )
+    )
+    app_state._bff_client = SimpleNamespace(execute_sql=AsyncMock())
+    app_state._maxcompute_client = SimpleNamespace(submit_query=AsyncMock())
+
+    result = await service.execute(
+        message="今天的总有效订单是多少",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.data["needs_clarification"] is True
+    assert result.data["query"]["executed"] is False
+    assert "未在声明的数据专辑资产中直接命中" in result.message
+    service._validate_semantic_plan_metadata.assert_not_awaited()
+    app_state._bff_client.execute_sql.assert_not_awaited()
+    app_state._maxcompute_client.submit_query.assert_not_awaited()

@@ -24,6 +24,9 @@ class AlbumTable:
     remark: str = ""
     entity_type: str = "odps-table"
     category: str = ""
+    entity_guid: str = ""
+    qualified_name: str = ""
+    relation_id: int | None = None
     score: float = 0.0
 
     @property
@@ -58,6 +61,7 @@ class DataAlbumContextResolver:
         max_albums: int = 3,
         max_tables: int = 12,
         required_tables: set[str] | None = None,
+        required_album_ids: set[int] | None = None,
     ) -> list[DataAlbumContext]:
         client = self.client
         if client is None:
@@ -70,6 +74,14 @@ class DataAlbumContextResolver:
         try:
             albums = await client.list_meta_albums(page_size=100)
             ranked = self._rank_albums(albums, question, query_tokens)[:max_albums]
+            known_ids = {_as_int(album.get("id") or album.get("albumId")) for _, album in ranked}
+            for album_id in sorted(required_album_ids or set()):
+                if album_id in known_ids:
+                    continue
+                detail = await client.get_meta_album(album_id)
+                if isinstance(detail, dict):
+                    ranked.append((100.0, detail))
+                    known_ids.add(album_id)
             contexts: list[DataAlbumContext] = []
             for album_score, album in ranked:
                 album_id = _as_int(album.get("id") or album.get("albumId"))
@@ -157,6 +169,11 @@ class DataAlbumContextResolver:
                     remark=remark,
                     entity_type=str(entity.get("entity_type") or entity.get("entityType") or ""),
                     category=category,
+                    entity_guid=str(entity.get("entity_guid") or entity.get("entityGuid") or ""),
+                    qualified_name=str(
+                        entity.get("qualified_name") or entity.get("qualifiedName") or ""
+                    ),
+                    relation_id=_as_int(entity.get("relation_id") or entity.get("relationId")),
                     score=score,
                 )
             )
