@@ -1170,3 +1170,63 @@ async def test_loop_prevents_raw_success_without_outcome_evidence():
     assert result.data["evaluation"]["false_success_prevented"] is True
     assert result.data["loop"]["stop_reason"] == "non_retryable"
     assert "Loop" in result.errors[-1]
+
+
+@pytest.mark.asyncio
+async def test_draft_business_metric_returns_precise_knowledge_clarification(monkeypatch):
+    service = AgentWorkflowService()
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.settings.llm_api_key", "")
+    service._album_context_resolver.resolve = AsyncMock(
+        return_value=[
+            DataAlbumContext(
+                album_id=330,
+                name="物流成本",
+                tables=[
+                    AlbumTable(
+                        project="giikin_aliyun",
+                        name="tb_dwd_fin_order_logistics_cost_df",
+                        comment="订单物流成本表",
+                    )
+                ],
+            )
+        ]
+    )
+
+    result = await service.execute(
+        message="今天物流成本多少？",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.data["needs_clarification"] is True
+    assert result.data["query"]["executed"] is False
+    assert result.data["knowledge_matches"][0]["id"] == "logistics_cost_amt"
+    assert result.data["knowledge_matches"][0]["album_evidence"][0]["album_id"] == 330
+    assert "模型计算" in result.data["clarifying_questions"][0]
+    assert "LLM_API_KEY" not in result.message
+    assert "目标表" not in result.message
+    assert result.data["loop"]["stop_reason"] != "verified_success"
+
+
+@pytest.mark.asyncio
+async def test_generic_cost_question_returns_three_business_metric_choices(monkeypatch):
+    service = AgentWorkflowService()
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.settings.llm_api_key", "")
+    service._album_context_resolver.resolve = AsyncMock(return_value=[])
+
+    result = await service.execute(
+        message="今天花费多少？",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert [item["id"] for item in result.data["knowledge_matches"]] == [
+        "ad_spend_amt",
+        "logistics_cost_amt",
+        "purchase_cost_amt",
+    ]
+    assert result.data["query"]["executed"] is False
+    assert "多个待确认的经营指标" in result.message

@@ -23,6 +23,22 @@ class SemanticDefinitionRequest(BaseModel):
     actor: str = Field(default="", description="操作者")
 
 
+class KnowledgeExtractRequest(BaseModel):
+    """从 SQL 抽取待审核的知识候选。"""
+
+    sql: str = Field(..., min_length=1)
+    dialect: str = Field(default="hive")
+    source: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeApproveRequest(BaseModel):
+    """显式批准完整指标查询契约。"""
+
+    confirmed: bool = False
+    query_contract: dict[str, Any] = Field(default_factory=dict)
+    actor: str = ""
+
+
 class SemanticDefinitionResponse(BaseModel):
     """语义定义响应。"""
 
@@ -295,3 +311,82 @@ async def bootstrap_from_standards():
     count = layer.bootstrap_from_standards()
 
     return {"status": "ok", "imported_count": count}
+
+
+@router.get("/knowledge/items")
+async def list_knowledge_items():
+    """列出 draft 经营概念与可执行 approved 指标。"""
+    from dataworks_agent.semantic.knowledge_base import SemanticKnowledgeBase
+
+    knowledge = SemanticKnowledgeBase()
+    drafts = [item.to_dict() for item in knowledge.items()]
+    approved = [
+        {**definition, "kind": "metric", "executable": True}
+        for definition in knowledge.approved_metrics()
+    ]
+    return {"items": drafts, "approved_metrics": approved}
+
+
+@router.get("/knowledge/search")
+async def search_knowledge(q: str):
+    """搜索经营指标知识，并融合当前数据专辑证据。"""
+    from dataworks_agent.semantic.album_context import DataAlbumContextResolver
+    from dataworks_agent.semantic.knowledge_base import SemanticKnowledgeBase
+
+    resolver = DataAlbumContextResolver()
+    contexts = await resolver.resolve(q)
+    return SemanticKnowledgeBase().search(q, contexts).to_dict()
+
+
+@router.post("/knowledge/extract")
+async def extract_knowledge(body: KnowledgeExtractRequest):
+    """从 SQL 提取表、聚合、CASE、过滤和维度；结果始终为 draft。"""
+    from dataworks_agent.semantic.knowledge_extractor import SQLKnowledgeExtractor
+
+    result = SQLKnowledgeExtractor().extract(
+        body.sql,
+        source=body.source,
+        dialect=body.dialect,
+    )
+    if result.parse_errors and not result.candidates:
+        raise HTTPException(status_code=422, detail=result.to_dict())
+    return result.to_dict()
+
+
+@router.post("/knowledge/candidates/{candidate_id}/approve")
+async def approve_knowledge_candidate(candidate_id: str, body: KnowledgeApproveRequest):
+    """仅在人工确认且 query contract 完整时批准指标。"""
+    from dataworks_agent.semantic.knowledge_base import SemanticKnowledgeBase
+    from dataworks_agent.semantic.layer import SemanticLayer
+
+    if not body.confirmed:
+        raise HTTPException(status_code=400, detail="必须显式 confirmed=true 才能批准指标口径")
+    contract = dict(body.query_contract)
+    contract.setdefault("id", candidate_id)
+    if contract["id"] != candidate_id:
+        raise HTTPException(status_code=400, detail="candidate_id 与 query_contract.id 不一致")
+    if not SemanticKnowledgeBase.is_executable_definition(contract):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "query contract 不完整：必须包含 id、table、measure.column/aggregation、"
+                "freshness.date_partition、asset_provenance.type/album_id"
+            ),
+        )
+    layer = SemanticLayer()
+    definition = layer.upsert_definition(
+        kind="metric",
+        key=candidate_id,
+        body={"query_contract": contract},
+        actor=body.actor,
+        source="knowledge_review",
+    )
+    if not layer.approve_definition(definition.def_id):
+        raise HTTPException(status_code=500, detail="指标口径写入成功但批准失败")
+    return {
+        "status": "approved",
+        "def_id": definition.def_id,
+        "metric_id": candidate_id,
+        "version": definition.version,
+        "query_contract": contract,
+    }

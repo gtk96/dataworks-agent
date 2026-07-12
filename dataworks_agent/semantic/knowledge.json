@@ -1,0 +1,127 @@
+﻿{
+  "version": 1,
+  "items": [
+    {
+      "id": "ad_spend_amt",
+      "kind": "metric_concept",
+      "name": "广告花费",
+      "aliases": ["广告成本", "广告费", "投放花费", "投放成本", "花费"],
+      "status": "draft",
+      "description": "广告投放与财务账单中均存在花费字段，经营分析表可作为汇总候选，但金额币种、税费和费用来源尚未形成统一 approved 口径。",
+      "unit": "金额",
+      "ambiguity": ["财务账单或投放抓取", "人民币或原币", "是否包含税费返点和分摊费用", "公司或广告系列等统计粒度"],
+      "clarifying_questions": [
+        "您要查财务账单花费，还是投放系统抓取花费？",
+        "金额使用人民币 ad_spend/true_amount，还是原币 origin_spend？",
+        "是否包含税费、返点和分摊费用？",
+        "按公司、家族、线路、平台、产品还是广告系列统计？"
+      ],
+      "candidate_fields": ["spend_amt", "ad_spend", "ad_cost", "origin_spend", "true_amount", "payed_amt", "total_spend_amt"],
+      "candidate_dimensions": ["company", "family_name", "line_name", "platform", "product", "campaign"],
+      "asset_candidates": [
+        {"table": "giikin_aliyun.tb_rp_pro_sale_report_df", "fields": ["spend_amt"], "grain": "产品经营分析/月分区"},
+        {"table": "giikin_aliyun.tb_rp_pro_project_dept_analysis_df", "fields": ["ad_spend"], "grain": "项目部经营分析"},
+        {"table": "giikin_aliyun.tb_rp_pro_site_report_df", "fields": ["ad_cost"], "grain": "商城经营分析/日分区"},
+        {"table": "giikin_aliyun.tb_dwd_fin_ad_spend_di", "fields": ["ad_spend", "origin_spend", "true_amount", "tax_cny_amt"], "grain": "广告花费明细/日分区"},
+        {"table": "giikin.dwd_fin_product_spend_all", "fields": ["payed_amt", "total_spend_amt"], "grain": "产品广告花费"}
+      ],
+      "evidence": [
+        {"type": "datamap_search", "detail": "经营分析、财务广告花费候选表"},
+        {"type": "ddl", "table": "giikin_aliyun.tb_rp_pro_sale_report_df"},
+        {"type": "production_node", "task_id": 10000453176, "task_name": "015_h_tb_dwd_fin_ad_spend_df"}
+      ],
+      "query_contract": null
+    },
+    {
+      "id": "logistics_cost_amt",
+      "kind": "metric_concept",
+      "name": "物流成本",
+      "aliases": ["物流费用", "运费", "货运成本", "物流花费", "花费"],
+      "status": "draft",
+      "description": "物流成本模型同时包含模型计算、三方返回、账单导入及头程尾程等费用，经营分析表仅是汇总候选。",
+      "unit": "金额",
+      "ambiguity": ["模型计算或账单最终成本", "费用组成范围", "订单创建或发货或账单日期"],
+      "clarifying_questions": [
+        "使用模型计算、三方返回、账单导入还是最终选定物流成本？",
+        "是否包含头程、尾程、清关费和其他费用？",
+        "按订单创建日期、发货日期还是账单日期？",
+        "按公司、家族、线路、商城、产品还是订单统计？"
+      ],
+      "candidate_fields": ["logistics_cost", "freight", "total_freight", "calculate_freight", "third_freight", "bill_freight"],
+      "candidate_dimensions": ["company", "family_name", "line_name", "site", "product", "order"],
+      "asset_candidates": [
+        {"table": "giikin_aliyun.tb_dwd_fin_order_logistics_cost_df", "fields": ["freight", "total_freight", "calculate_freight", "third_freight", "bill_freight"], "grain": "订单物流成本"},
+        {"table": "giikin.dwd_fin_logistics_cost_order_summary_hourly", "fields": [], "grain": "订单物流成本/小时更新"},
+        {"table": "giikin_aliyun.tb_rp_pro_sale_report_df", "fields": ["logistics_cost"], "grain": "产品经营分析/月分区"},
+        {"table": "giikin_aliyun.tb_rp_pro_site_report_df", "fields": ["freight"], "grain": "商城经营分析/日分区"}
+      ],
+      "evidence": [
+        {"type": "data_album", "album_id": 330, "album": "物流成本"},
+        {"type": "ddl", "table": "giikin_aliyun.tb_dwd_fin_order_logistics_cost_df"},
+        {"type": "production_node", "task_id": 10000857770, "task_name": "026_d_tb_dwd_fin_order_logistics_cost_di"}
+      ],
+      "query_contract": null
+    },
+    {
+      "id": "purchase_cost_amt",
+      "kind": "metric_concept",
+      "name": "采购成本",
+      "aliases": ["采购费用", "采购金额", "进货成本", "货品成本", "花费"],
+      "status": "draft",
+      "description": "采购成本存在订单总成本、SKU 单价及动态调整等多种业务定义，经营分析字段需与明细口径对账后才能批准。",
+      "unit": "金额",
+      "ambiguity": ["订单总成本或SKU单价", "赠品包材补发范围", "成本生效日期"],
+      "clarifying_questions": [
+        "要查订单采购总成本，还是 SKU/产品采购单价？",
+        "是否包含赠品、包材、补发和动态成本调整？",
+        "按订单创建、发货还是采购入库日期？",
+        "按公司、家族、线路、商城、产品还是订单统计？"
+      ],
+      "candidate_fields": ["order_price", "purchase_cost", "purchase_amt", "buy_price"],
+      "candidate_dimensions": ["company", "family_name", "line_name", "site", "product", "order"],
+      "asset_candidates": [
+        {"table": "giikin_aliyun.tb_dwd_fin_purchase_ship_df", "fields": [], "grain": "订单采购成本/订单创建时间分区"},
+        {"table": "giikin.dwd_ord_order_purchase_cost_info_all", "fields": [], "grain": "订单采购成本"},
+        {"table": "giikin_aliyun.tb_rp_pro_sale_report_df", "fields": ["order_price"], "grain": "产品经营分析/月分区"},
+        {"table": "giikin_aliyun.tb_rp_pro_project_dept_analysis_df", "fields": ["purchase_cost"], "grain": "项目部经营分析"},
+        {"table": "giikin_aliyun.tb_rp_pro_site_report_df", "fields": ["purchase_amt"], "grain": "商城经营分析/日分区"}
+      ],
+      "evidence": [
+        {"type": "datamap_search", "detail": "采购成本与经营分析候选表"},
+        {"type": "ddl", "table": "giikin_aliyun.tb_dwd_fin_purchase_ship_df"},
+        {"type": "production_node", "task_id": 10000419929, "task_name": "000_h_tb_dwd_fin_purchase_ship_di"}
+      ],
+      "query_contract": null
+    },
+    {
+      "id": "sign_rate",
+      "kind": "metric_concept",
+      "name": "签收率",
+      "aliases": ["签收比例", "妥投率", "签收成功率"],
+      "status": "draft",
+      "description": "签收率在经营分析、订单、产品和广告系列层均有候选字段，分母与实际/预测口径尚需业务确认。",
+      "unit": "比例",
+      "ambiguity": ["实际或预测签收率", "有效订单或发货订单分母", "到付或在线支付", "统计粒度"],
+      "clarifying_questions": [
+        "要查实际签收率、预测签收率还是历史签收率？",
+        "分母是有效订单、已发货订单还是可签收订单？",
+        "是否区分到付和在线支付？",
+        "按产品、家族、线路、商城还是广告系列统计？"
+      ],
+      "candidate_fields": ["sign_rate", "cod_sign_rate", "online_sign_rate", "pre_sign_rate", "signed_order_cnt", "effect_order_cnt"],
+      "candidate_dimensions": ["product", "family_name", "line_name", "site", "campaign"],
+      "asset_candidates": [
+        {"table": "giikin_aliyun.tb_rp_pro_sale_report_df", "fields": ["sign_rate", "signed_amount"], "grain": "产品经营分析/月分区"},
+        {"table": "giikin_aliyun.tb_rp_pro_sale_report_di", "fields": ["sign_rate", "cod_sign_rate", "online_sign_rate", "pre_sign_rate"], "grain": "商品经营分析"},
+        {"table": "giikin_aliyun.tb_dwd_ord_sign_rate_df", "fields": [], "grain": "订单签收率"},
+        {"table": "giikin.dmr_ord_product_sign_rate_analysis_day", "fields": [], "grain": "产品签收率分析/日"},
+        {"table": "giikin_aliyun.tb_dws_mar_ad_campaign_sign_rate_di", "fields": ["effect_ord_cnt", "sign_ord_amt"], "grain": "广告系列/日分区"}
+      ],
+      "evidence": [
+        {"type": "datamap_search", "detail": "经营分析、订单、产品和广告签收率候选表"},
+        {"type": "ddl", "table": "giikin_aliyun.tb_rp_pro_sale_report_df"}
+      ],
+      "query_contract": null
+    }
+  ]
+}

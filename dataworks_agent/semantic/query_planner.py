@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from dataworks_agent.semantic.album_context import DataAlbumContext
+from dataworks_agent.semantic.knowledge_base import SemanticKnowledgeBase
 from dataworks_agent.semantic.layer import SemanticLayer
 
 _METRICS_PATH = Path(__file__).with_name("metrics.json")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _TABLE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)?$")
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,9 +61,13 @@ class MetricQueryPlanner:
         self,
         definitions_path: Path | None = None,
         semantic_layer: SemanticLayer | None = None,
+        knowledge_base: SemanticKnowledgeBase | None = None,
     ) -> None:
-        self._definitions_path = definitions_path or _METRICS_PATH
-        self._semantic_layer = semantic_layer or SemanticLayer()
+        layer = semantic_layer or SemanticLayer()
+        self._knowledge_base = knowledge_base or SemanticKnowledgeBase(
+            metrics_path=definitions_path or _METRICS_PATH,
+            semantic_layer=layer,
+        )
 
     def candidate_tables(self, question: str) -> set[str]:
         definition = self._match_metric(question)
@@ -193,79 +195,14 @@ class MetricQueryPlanner:
         )
 
     def _definitions(self) -> list[dict[str, Any]]:
-        payload = json.loads(self._definitions_path.read_text(encoding="utf-8-sig"))
-        baseline = {
-            str(item["id"]): dict(item)
-            for item in payload.get("metrics", [])
-            if self._is_executable_definition(item) and item.get("status") == "approved"
-        }
-        try:
-            approved = self._semantic_layer.list_definitions(kind="metric", status="approved")
-        except Exception as exc:
-            logger.warning(
-                "读取 approved 语义指标失败，回退版本化 baseline: %s",
-                exc,
-            )
-            approved = []
-
-        versions = {key: int(value.get("version") or 1) for key, value in baseline.items()}
-        for definition in approved:
-            body = definition.body.get("query_contract", definition.body)
-            if not isinstance(body, dict):
-                continue
-            candidate = dict(body)
-            candidate.setdefault("id", definition.key)
-            candidate["version"] = definition.version
-            candidate["status"] = "approved"
-            candidate.setdefault("source", definition.source)
-            metric_id = str(candidate.get("id") or "")
-            if not self._is_executable_definition(candidate):
-                logger.debug(
-                    "忽略不完整的 approved 指标定义: %s",
-                    definition.key,
-                )
-                continue
-            if definition.version >= versions.get(metric_id, 0):
-                baseline[metric_id] = candidate
-                versions[metric_id] = definition.version
-        return list(baseline.values())
+        return self._knowledge_base.approved_metrics()
 
     @staticmethod
     def _is_executable_definition(value: object) -> bool:
-        if not isinstance(value, dict):
-            return False
-        measure = value.get("measure")
-        freshness = value.get("freshness")
-        provenance = value.get("asset_provenance")
-        return bool(
-            value.get("id")
-            and value.get("table")
-            and isinstance(measure, dict)
-            and measure.get("column")
-            and measure.get("aggregation")
-            and isinstance(freshness, dict)
-            and freshness.get("date_partition")
-            and isinstance(provenance, dict)
-            and provenance.get("type") == "data_album"
-            and provenance.get("album_id")
-        )
+        return SemanticKnowledgeBase.is_executable_definition(value)
 
     def _match_metric(self, question: str) -> dict[str, Any] | None:
-        normalized = question.strip().lower()
-        matches: list[tuple[int, dict[str, Any]]] = []
-        for definition in self._definitions():
-            time_terms = [str(item) for item in definition.get("time_terms", [])]
-            if time_terms and not any(term in question for term in time_terms):
-                continue
-            aliases = [str(definition.get("name") or ""), *definition.get("aliases", [])]
-            score = max(
-                (len(alias) for alias in aliases if alias and alias.lower() in normalized),
-                default=0,
-            )
-            if score:
-                matches.append((score, definition))
-        matches.sort(key=lambda item: (-item[0], str(item[1].get("id") or "")))
-        return matches[0][1] if matches else None
+        return self._knowledge_base.approved_metric(question)
 
     @staticmethod
     def _albums_containing_tables(
