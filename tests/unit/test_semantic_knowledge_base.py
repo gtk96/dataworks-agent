@@ -128,3 +128,12 @@ def test_only_complete_approved_query_contract_is_executable():
             "asset_provenance": {"type": "verified_lineage", "album_id": 330},
         }
     )
+
+
+def test_platform_spend_colloquial_question_prefers_ad_spend():
+    result = SemanticKnowledgeBase().search(
+        "\u91d1\u72ee\u5bb6\u65cf\u4eca\u5929\u5404\u5e73\u53f0\u82b1\u4e86\u591a\u5c11\u94b1"
+    )
+
+    assert [match.item.item_id for match in result.matches] == ["ad_spend_amt"]
+    assert "\u5e73\u53f0\u82b1\u4e86\u591a\u5c11\u94b1" in result.matches[0].matched_aliases

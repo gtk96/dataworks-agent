@@ -98,6 +98,7 @@ def test_parse_declarative_business_questions_as_ask_data(parser, message):
         "\u4eca\u5929\u91c7\u8d2d\u6210\u672c\u591a\u5c11\uff1f",
         "\u4eca\u5929\u7b7e\u6536\u7387\u662f\u591a\u5c11\uff1f",
         "\u4eca\u5929\u82b1\u8d39\u591a\u5c11\uff1f",
+        "\u91d1\u72ee\u5bb6\u65cf\u4eca\u5929\u5404\u5e73\u53f0\u82b1\u4e86\u591a\u5c11\u94b1",
     ],
 )
 def test_parse_business_knowledge_metrics_as_ask_data(parser, message):
