@@ -8,6 +8,12 @@ from dataworks_agent.mcp.official_dataworks import OfficialDataWorksMCPClient
 
 def test_server_parameters_keep_credentials_in_child_environment(monkeypatch):
     monkeypatch.setattr("dataworks_agent.mcp.official_dataworks.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "dataworks_agent.mcp.official_dataworks.settings.aliyun_access_key_id", "test-ak"
+    )
+    monkeypatch.setattr(
+        "dataworks_agent.mcp.official_dataworks.settings.aliyun_access_key_secret", "test-sk"
+    )
     client = OfficialDataWorksMCPClient()
     params = client._server_parameters()
 

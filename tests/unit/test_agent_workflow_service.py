@@ -261,7 +261,8 @@ async def test_reverse_model_returns_structured_blocked_result(error, message_pa
 
 
 @pytest.mark.asyncio
-async def test_reverse_node_prefers_official_mcp():
+async def test_reverse_node_prefers_official_mcp(monkeypatch):
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.settings.dataworks_project_id", 123)
     service = AgentWorkflowService()
     calls = []
 
