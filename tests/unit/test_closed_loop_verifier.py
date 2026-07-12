@@ -96,15 +96,16 @@ async def test_verify_dwd_failed_layer_dependency(verifier):
 
 @pytest.mark.asyncio
 async def test_verify_empty_task_type(verifier):
-    """空任务类型验收通过。"""
+    """Unconfigured task types must fail closed instead of silently passing."""
     result = await verifier.verify(
         task_id="task_test_005",
         task_type="UNKNOWN",
         context={},
     )
 
-    # 未知任务类型应直接通过
-    assert result.status == VerificationStatus.PASSED
+    assert result.status == VerificationStatus.FAILED
+    assert result.failed_count == 1
+    assert result.checks[0].check_name == "supported_task_type"
 
 
 @pytest.mark.asyncio
@@ -169,3 +170,38 @@ def test_register_custom_check():
 
     verifier.register_check("custom_check", custom_check)
     assert "custom_check" in verifier._checks
+
+
+@pytest.mark.asyncio
+async def test_verify_ask_data_success(verifier):
+    result = await verifier.verify(
+        task_id="ask_data_test",
+        task_type="ASK_DATA",
+        context={
+            "sql": "SELECT family_name, effective_order_cnt FROM sample",
+            "executed": True,
+            "columns": ["family_name", "effective_order_cnt"],
+            "rows": [["family-a", 1]],
+            "row_count": 1,
+        },
+    )
+    assert result.status == VerificationStatus.PASSED
+    assert result.passed_count == 3
+
+
+@pytest.mark.asyncio
+async def test_verify_ask_data_rejects_plan_only_result(verifier):
+    result = await verifier.verify(
+        task_id="ask_data_plan_only",
+        task_type="ASK_DATA",
+        context={
+            "sql": "SELECT * FROM sample",
+            "executed": False,
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+        },
+    )
+    assert result.status == VerificationStatus.FAILED
+    failed = {check.check_name for check in result.checks if not check.passed}
+    assert {"query_executed", "query_result_shape"} <= failed

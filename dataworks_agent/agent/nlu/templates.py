@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+BUSINESS_QUERY_PATTERNS = (
+    r"(\u81ea\u4e3b\u95ee\u6570|\u95ee\u6570|\u67e5\u6570|\u67e5\u8be2\u6570\u636e|\u770b\u6570\u636e|\u591a\u5c11\u6761|\u524d\u51e0\u6761)",
+    r"(\u67e5\u4e00\u4e0b|\u67e5\u8be2|\u770b\u770b|\u7edf\u8ba1).*?(\u6709\u6548\u8ba2\u5355(?:\u6570|\u91cf)?|\u8ba2\u5355(?:\u6570|\u91cf)|\u9500\u552e\u989d|gmv|\u8f6c\u5316\u7387|\u4eba\u6570|\u6570\u91cf)",
+    r"(\u6709\u591a\u5c11|\u591a\u5c11(?:\u6761|\u7b14|\u4e2a)?).*?(\u6709\u6548\u8ba2\u5355(?:\u6570|\u91cf)?|\u8ba2\u5355(?:\u6570|\u91cf)|\u9500\u552e\u989d|gmv|\u8f6c\u5316\u7387|\u4eba\u6570|\u6570\u91cf)",
+    r"(\u6709\u6548\u8ba2\u5355(?:\u6570|\u91cf)?|\u8ba2\u5355(?:\u6570|\u91cf)|\u9500\u552e\u989d|gmv|\u8f6c\u5316\u7387|\u4eba\u6570|\u6570\u91cf).*?(\u662f\u591a\u5c11|\u6709\u591a\u5c11|\u591a\u5c11(?:\u6761|\u7b14|\u4e2a)?|\u60c5\u51b5\u5982\u4f55|\u600e\u4e48\u6837)",
+    r"```sql[\s\S]*?select",
+)
+
 INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
     "cookie_manage": {
         "patterns": [
@@ -14,11 +22,7 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
         "optional_params": ["goal"],
     },
     "ask_data": {
-        "patterns": [
-            r"(\u81ea\u4e3b\u95ee\u6570|\u95ee\u6570|\u67e5\u6570|\u67e5\u8be2\u6570\u636e|\u770b\u6570\u636e|\u591a\u5c11\u6761|\u524d\u51e0\u6761)",
-            r"(\u67e5\u4e00\u4e0b|\u67e5\u8be2|\u770b\u770b|\u7edf\u8ba1).*?(\u6709\u6548\u8ba2\u5355(?:\u6570|\u91cf)?|\u8ba2\u5355(?:\u6570|\u91cf)|\u9500\u552e\u989d|gmv|\u8f6c\u5316\u7387|\u4eba\u6570|\u6570\u91cf)",
-            r"```sql[\s\S]*?select",
-        ],
+        "patterns": list(BUSINESS_QUERY_PATTERNS),
         "required_params": [],
         "optional_params": ["goal", "table_name", "source_table"],
     },

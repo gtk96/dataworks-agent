@@ -202,6 +202,26 @@ async def test_ask_data_permission_denied_preserves_sql_artifact():
     app_state._maxcompute_client.wait_and_fetch.assert_not_awaited()
 
 
+def test_declarative_business_question_routes_to_ask_data():
+    service = AgentWorkflowService()
+    assert (
+        service._route_action(
+            "\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11",
+            "unknown",
+        )
+        == "ask_data"
+    )
+
+
+@pytest.mark.asyncio
+async def test_declarative_business_question_uses_effective_order_recipe():
+    service = AgentWorkflowService()
+    sql = await service._build_readonly_sql(
+        "\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11"
+    )
+    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+
+
 @pytest.mark.asyncio
 async def test_business_query_recipe_uses_effective_order_table():
     service = AgentWorkflowService()
@@ -243,6 +263,8 @@ async def test_ask_data_falls_back_to_cookie_bff_when_ak_sk_cannot_query():
     assert result.mode == "dev_execute"
     assert result.data["query"]["executed"] is True
     assert result.data["query"]["execution_channel"] == "cookie_bff"
+    assert result.data["verification"]["status"] == "passed"
+    assert result.steps[-1]["step"] == "closed_loop_verification"
     assert result.data["query"]["rows"] == [["吉喵云", "6560"]]
     app_state._bff_client.execute_sql.assert_awaited_once()
     app_state._bff_client.wait_job.assert_awaited_once_with("job-1")

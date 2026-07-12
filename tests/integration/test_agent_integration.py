@@ -61,8 +61,10 @@ def test_unknown_intent(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["success"] is True
+    assert data["success"] is False
+    assert data["error"] == "unsupported intent"
     assert data["data"]["agent_mode"] == "needs_context"
+    assert data["data"]["verification"]["status"] == "failed"
     assert data["data"]["plan"]["steps"] == []
     assert data["data"]["clarifying_questions"]
 

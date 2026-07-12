@@ -22,7 +22,7 @@
 
 import http from 'node:http'
 
-const PORT = 8086
+const PORT = 18086
 
 const OK = (res, body) => {
   res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
@@ -193,7 +193,7 @@ const server = http.createServer((req, res) => {
       if (url === '/agent/chat') {
         return OK(res, {
           success: true,
-          message: '真实问数完成，返回 2 行。',
+          message: '真实问数完成，返回 2 行，闭环验收通过。',
           data: {
             workflow_type: 'ask_data',
             execution_mode: 'dev_execute',
@@ -201,6 +201,7 @@ const server = http.createServer((req, res) => {
             plan: { summary: '今日各家族有效订单数', steps: [
               { step: 'generate_readonly_sql', status: 'completed' },
               { step: 'execute_query', status: 'completed' },
+              { step: 'closed_loop_verification', status: 'completed' },
             ] },
             artifacts: [{ type: 'query_sql', content: 'SELECT family_name, effective_order_cnt FROM sample' }],
             query: {
@@ -209,6 +210,16 @@ const server = http.createServer((req, res) => {
               columns: ['family_name', 'effective_order_cnt'],
               rows: [['吉喵云', '6560'], ['神龙家族', '4015']],
               row_count: 2,
+            },
+            verification: {
+              task_type: 'ASK_DATA',
+              status: 'passed',
+              summary: '验收通过 (3/3 项)',
+              checks: [
+                { name: 'readonly_sql', passed: true },
+                { name: 'query_executed', passed: true },
+                { name: 'query_result_shape', passed: true },
+              ],
             },
           },
           error: null,

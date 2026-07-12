@@ -14,7 +14,12 @@ import sqlglot
 from sqlglot import exp
 
 from dataworks_agent.agent.nlu.entity_extractor import EntityExtractor
+from dataworks_agent.agent.nlu.templates import BUSINESS_QUERY_PATTERNS
 from dataworks_agent.config import settings
+from dataworks_agent.governance.closed_loop_verifier import (
+    ClosedLoopVerifier,
+    VerificationStatus,
+)
 from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,
@@ -58,6 +63,7 @@ class AgentWorkflowService:
 
     def __init__(self) -> None:
         self._extractor = EntityExtractor()
+        self._closed_loop_verifier = ClosedLoopVerifier()
 
     def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
@@ -105,10 +111,8 @@ class AgentWorkflowService:
         lower = message.lower()
         if action == "cookie_manage" or "cookie" in lower or "9222" in lower or "登录态" in message:
             return "cookie_manage"
-        business_query = re.search(
-            r"(?:查一下|查询|看看|统计).*?(?:有效订单(?:数|量)?|订单(?:数|量)|销售额|gmv|转化率|人数|数量)",
-            message,
-            re.I,
+        business_query = any(
+            re.search(pattern, message, re.I) for pattern in BUSINESS_QUERY_PATTERNS
         )
         if (
             action == "ask_data"
@@ -653,7 +657,7 @@ class AgentWorkflowService:
                     mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
                 )
                 rows = result.rows[: settings.ask_data_default_limit]
-                return self._query_success(
+                return await self._query_success(
                     sql, artifact, list(result.columns), rows, "maxcompute_ak_sk"
                 )
             except Exception as exc:
@@ -686,7 +690,7 @@ class AgentWorkflowService:
                     for item in headers
                 ]
                 rows = (result.get("bodyList") or [])[: settings.ask_data_default_limit]
-                return self._query_success(sql, artifact, columns, rows, "cookie_bff")
+                return await self._query_success(sql, artifact, columns, rows, "cookie_bff")
             except Exception as exc:
                 errors.append(self._brief_error(exc))
                 logger.warning("Cookie BFF 问数兜底失败: %s", exc)
@@ -708,21 +712,66 @@ class AgentWorkflowService:
             errors=list(dict.fromkeys(errors)),
         )
 
-    @staticmethod
-    def _query_success(
-        sql: str, artifact: dict[str, Any], columns: list[Any], rows: list[Any], channel: str
+    async def _query_success(
+        self,
+        sql: str,
+        artifact: dict[str, Any],
+        columns: list[Any],
+        rows: list[Any],
+        channel: str,
     ) -> WorkflowResult:
+        task_id = f"ask_data_{uuid.uuid4().hex[:12]}"
+        verification = await self._closed_loop_verifier.verify(
+            task_id,
+            "ASK_DATA",
+            {
+                "sql": sql,
+                "executed": True,
+                "columns": columns,
+                "rows": rows,
+                "row_count": len(rows),
+            },
+        )
+        verification_data = {
+            "task_id": verification.task_id,
+            "task_type": verification.task_type,
+            "status": verification.status.value,
+            "summary": verification.summary,
+            "passed_count": verification.passed_count,
+            "failed_count": verification.failed_count,
+            "warning_count": verification.warning_count,
+            "checks": [
+                {
+                    "name": check.check_name,
+                    "passed": check.passed,
+                    "severity": check.severity.value,
+                    "message": check.message,
+                    "details": check.details,
+                }
+                for check in verification.checks
+            ],
+        }
+        verified = verification.status == VerificationStatus.PASSED
         return WorkflowResult(
-            True,
-            f"真实问数完成，返回 {len(rows)} 行。",
+            verified,
+            (
+                f"\u771f\u5b9e\u95ee\u6570\u5b8c\u6210\uff0c\u8fd4\u56de {len(rows)} \u884c\uff0c\u95ed\u73af\u9a8c\u6536\u901a\u8fc7\u3002"
+                if verified
+                else "\u67e5\u8be2\u5df2\u6267\u884c\uff0c\u4f46\u95ed\u73af\u9a8c\u6536\u672a\u901a\u8fc7\uff0c\u7ed3\u679c\u4e0d\u4f1a\u6807\u8bb0\u4e3a\u5b8c\u6210\u3002"
+            ),
             "ask_data",
             "dev_execute",
             steps=[
                 {"step": "generate_readonly_sql", "status": "completed"},
                 {"step": "execute_query", "status": "completed", "channel": channel},
+                {
+                    "step": "closed_loop_verification",
+                    "status": "completed" if verified else "failed",
+                },
             ],
             artifacts=[artifact],
             data={
+                "task_id": task_id,
                 "query": {
                     "sql": sql,
                     "columns": columns,
@@ -730,8 +779,10 @@ class AgentWorkflowService:
                     "row_count": len(rows),
                     "executed": True,
                     "execution_channel": channel,
-                }
+                },
+                "verification": verification_data,
             },
+            errors=[] if verified else [verification.summary],
         )
 
     @staticmethod

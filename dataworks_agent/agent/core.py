@@ -136,15 +136,27 @@ class ChatAgent:
                 f"我还不能把“{intent.raw_text}”映射成可靠的 DataWorks Agent 工作流。"
                 "请补充目标表、源表或任务类型，我会继续拆解计划。"
             ),
-            success=True,
+            success=False,
             data={
                 "intent": self._intent_to_dict(intent),
                 "plan": plan.to_dict(),
                 "clarifying_questions": questions,
                 "next_actions": questions,
                 "agent_mode": "needs_context",
+                "verification": {
+                    "status": "failed",
+                    "summary": "No executable intent recognized",
+                    "checks": [
+                        {
+                            "name": "intent_recognized",
+                            "passed": False,
+                            "severity": "error",
+                            "message": "The request was not mapped to an executable workflow",
+                        }
+                    ],
+                },
             },
-            error=None,
+            error="unsupported intent",
         )
 
     def _build_response(

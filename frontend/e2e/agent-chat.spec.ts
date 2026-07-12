@@ -8,14 +8,15 @@ test.describe('Agent conversational query', () => {
 
     const composer = page.locator('textarea')
     await expect(composer).toBeVisible()
-    await composer.fill('查一下今天各家族的有效订单数')
+    await composer.fill('今天各家族的有效订单是多少')
     await composer.press('Enter')
 
     const result = page.getByTestId('query-result')
     await expect(result).toBeVisible()
     await expect(result).toContainText('吉喵云')
     await expect(result).toContainText('6560')
-    await expect(page.getByText('真实问数完成，返回 2 行。')).toBeVisible()
+    await expect(page.getByText('真实问数完成，返回 2 行，闭环验收通过。')).toBeVisible()
+    await expect(page.getByText('Closed Loop Verification')).toBeVisible()
 
     const firstBox = await composer.boundingBox()
     expect(firstBox).not.toBeNull()

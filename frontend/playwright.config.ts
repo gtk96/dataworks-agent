@@ -3,7 +3,7 @@
 // 策略:
 // - 不依赖真后端(8085),用 webServer 起一个 Node fake BFF server
 // - Chromium headless + viewport 1280x800
-// - baseURL = http://localhost:3000(vite dev server)
+// - baseURL = http://127.0.0.1:3100 (isolated E2E vite dev server)
 // - 截图 + 视频保留失败用例
 import { defineConfig, devices } from '@playwright/test'
 
@@ -15,7 +15,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://127.0.0.1:3100',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -31,17 +31,17 @@ export default defineConfig({
   webServer: [
     {
       command: 'node e2e/fake-server.mjs',
-      port: 8086,  // fake-server 占用；vite proxy /api → 8086 由 VITE_PROXY_TARGET 注入
+      port: 18086,  // isolated E2E fake server; never reuse a real service
       timeout: 30000,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
     },
     {
       command: 'node e2e/start-vite.mjs',
-      port: 3000,
+      port: 3100,
       timeout: 60000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
     },
