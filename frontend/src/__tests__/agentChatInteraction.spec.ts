@@ -41,4 +41,14 @@ describe('Agent chat interaction', () => {
 
     await expect(requestAgentChat(payload, fetcher as typeof fetch, 1000)).rejects.toThrow('backend unavailable')
   })
+  it('preserves the conversation id for semantic follow-ups', () => {
+    expect(buildAgentChatRequest('follow up', 'auto', true, false, 'conversation-1')).toEqual({
+      message: 'follow up',
+      execution_mode: 'auto',
+      initialize_data: true,
+      publish: false,
+      conversation_id: 'conversation-1',
+    })
+  })
+
 })

@@ -43,7 +43,7 @@ async def test_chat_router_logic():
         data = response.json()
         assert data["success"] is True
         assert "ods_user" in data["message"]
-        mock_agent.chat.assert_called_once_with("创建ods_user表")
+        mock_agent.chat.assert_called_once_with("创建ods_user表", conversation_id=None)
     finally:
         agent_module._agent = original_agent
 
@@ -79,6 +79,7 @@ async def test_chat_router_explicit_plan_uses_workflow_options():
             initialize_data=True,
             publish=False,
             client_ip="testclient",
+            conversation_id=None,
         )
     finally:
         agent_module._agent = original_agent
@@ -180,7 +181,7 @@ async def test_websocket_message_processing():
         assert ws not in manager._connections
 
         # 验证 Agent 被调用
-        mock_agent.chat.assert_called_once_with("创建ods_user表")
+        mock_agent.chat.assert_called_once_with("创建ods_user表", conversation_id=None)
 
         # 验证响应格式
         ws.send_json.assert_awaited_once()

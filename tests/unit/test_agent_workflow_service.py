@@ -1230,3 +1230,91 @@ async def test_generic_cost_question_returns_three_business_metric_choices(monke
     ]
     assert result.data["query"]["executed"] is False
     assert "多个待确认的经营指标" in result.message
+
+
+def _ask_data_mismatch_result() -> WorkflowResult:
+    return WorkflowResult(
+        False,
+        "query executed but reconciliation mismatched",
+        "ask_data",
+        "dev_execute",
+        data={
+            "query": {"executed": True, "rows": [[232]]},
+            "reconciliation": {"status": "mismatch", "passed": False},
+            "verification": {
+                "status": "failed",
+                "checks": [
+                    {"name": "metadata_contract", "passed": True},
+                    {"name": "result_reconciliation", "passed": False},
+                ],
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_loop_waits_for_freshness_lag_then_requeries_until_verified(monkeypatch):
+    service = AgentWorkflowService()
+    service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")
+    service._execute_once = AsyncMock(
+        side_effect=[
+            _ask_data_mismatch_result(),
+            WorkflowResult(
+                True,
+                "query verified",
+                "ask_data",
+                "dev_execute",
+                data={
+                    "query": {"executed": True, "rows": [[485]]},
+                    "reconciliation": {"status": "passed", "passed": True},
+                    "verification": {
+                        "status": "passed",
+                        "checks": [
+                            {"name": "metadata_contract", "passed": True},
+                            {"name": "result_reconciliation", "passed": True},
+                        ],
+                    },
+                },
+            ),
+        ]
+    )
+    sleep = AsyncMock()
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.asyncio.sleep", sleep)
+
+    result = await service.execute(
+        message="today effective orders for Golden Lion family",
+        action="ask_data",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["loop"]["iteration_count"] == 2
+    assert result.data["loop"]["stop_reason"] == "verified_success"
+    assert result.data["loop"]["iterations"][0]["repair"]["action"] == "wait_for_metric_refresh"
+    assert service._execute_once.await_count == 2
+    sleep.assert_awaited_once_with(2.0)
+
+
+@pytest.mark.asyncio
+async def test_loop_bounds_persistent_freshness_mismatch_without_false_success(monkeypatch):
+    service = AgentWorkflowService()
+    service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")
+    service._execute_once = AsyncMock(side_effect=lambda **kwargs: _ask_data_mismatch_result())
+    sleep = AsyncMock()
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.asyncio.sleep", sleep)
+
+    result = await service.execute(
+        message="today effective orders for Golden Lion family",
+        action="ask_data",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is False
+    assert result.data["loop"]["iteration_count"] == 3
+    assert result.data["loop"]["stop_reason"] == "repeated_action"
+    assert result.data["evaluation"]["verified_success"] is False
+    assert result.data["evaluation"]["false_success_prevented"] is False
+    assert service._execute_once.await_count == 3
+    assert [call.args[0] for call in sleep.await_args_list] == [2.0, 4.0]

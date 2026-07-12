@@ -14,7 +14,7 @@ def _write_json(path: Path, payload: dict) -> Path:
     return path
 
 
-def test_business_cost_question_returns_all_ambiguous_draft_concepts():
+def test_generic_cost_question_returns_approved_and_draft_concepts():
     layer = SimpleNamespace(list_definitions=lambda **kwargs: [])
     knowledge = SemanticKnowledgeBase(semantic_layer=layer)
 
@@ -25,7 +25,7 @@ def test_business_cost_question_returns_all_ambiguous_draft_concepts():
         "logistics_cost_amt",
         "purchase_cost_amt",
     ]
-    assert all(match.item.status == "draft" for match in result.matches)
+    assert [match.item.status for match in result.matches] == ["approved", "draft", "draft"]
     assert "query_contract" in result.missing_contract_fields
 
 

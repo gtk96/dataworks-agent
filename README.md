@@ -56,10 +56,11 @@ npm run dev
 - 语义问数必须同时通过 8 项硬验收：专辑资产、指标字段、查询粒度、最新分区、只读 SQL、真实执行、结果结构、DWS/DWD 对账。任一失败都不能显示“验收通过”。
 - 当前“有效订单数”由订单专辑（album 888）的 DWS 表 `giikin_aliyun.tb_dws_ord_order_si_crt_df` 汇总，并用同专辑 DWD 表 `giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df` 的有效订单明细对账；不再使用 RP 预警表。
 - `dataworks_agent/semantic/knowledge.json` 保存经营指标的结构化知识证据。经营分析表、数据专辑、真实 DDL、生产节点 SQL 和血缘都可作为候选证据，但证据不会自动变成生产口径。
-- 广告花费、物流成本、采购成本、签收率目前已接入 draft 知识：会话能识别对应经营分析/领域表并提出指标级精准澄清；在口径审批前不会生成猜测 SQL，也不会显示“验收通过”。
+- 物流成本、采购成本、签收率目前已接入 draft 知识：会话能识别对应经营分析/领域表并提出指标级精准澄清；在口径审批前不会生成猜测 SQL，也不会显示“验收通过”。
 - `SQLKnowledgeExtractor` 可从生产 SQL 提取表、聚合表达式、Alias、CASE、过滤和 GROUP BY，抽取结果始终是 draft。
 - 只有人工确认并写入完整 `query_contract`（表、度量、最新分区、数据专辑或已验证血缘）且状态为 approved 的指标，才能进入真实执行及 8 项闭环验收。
 - 完全未知且未认证的指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
+- `tests/evaluation/autonomous_query_cases.json` 是自主问数 golden corpus，CI 使用 `verify_autonomous_query` 验证指标识别、维度/日期/Top N、追问、SQL 约束与 draft 拒绝；新增口径必须先补评测用例。
 
 ## Unified Loop Engineering Runtime
 

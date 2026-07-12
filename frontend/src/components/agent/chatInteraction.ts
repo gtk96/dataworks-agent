@@ -5,6 +5,7 @@ export interface AgentChatRequest {
   execution_mode: AgentExecutionMode
   initialize_data: boolean
   publish: boolean
+  conversation_id?: string
 }
 
 export function buildAgentChatRequest(
@@ -12,12 +13,14 @@ export function buildAgentChatRequest(
   executionMode: AgentExecutionMode,
   initializeData: boolean,
   publish: boolean,
+  conversationId?: string,
 ): AgentChatRequest {
   return {
     message: message.trim(),
     execution_mode: executionMode,
     initialize_data: initializeData,
     publish,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
   }
 }
 

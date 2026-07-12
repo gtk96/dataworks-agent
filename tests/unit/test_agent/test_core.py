@@ -162,3 +162,63 @@ async def test_chat_agent_routes_workflow_without_request_type(message, expected
     assert response.data["workflow_type"] == expected_action
     assert response.data["intent"]["action"] == expected_action
     assert agent._workflow_service.execute.await_args.kwargs["action"] == expected_action
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_chat_agent_keeps_structured_business_query_for_followups():
+    agent = ChatAgent()
+    first_frame = {
+        "metric_id": "ad_spend_amt",
+        "metric_name": "\u5e7f\u544a\u82b1\u8d39",
+        "dimensions": ["platform"],
+        "filters": {"family": "\u91d1\u72ee\u5bb6\u65cf"},
+        "time_range": {
+            "kind": "today",
+            "start": "2026-07-13",
+            "end": "2026-07-13",
+        },
+    }
+    second_frame = {
+        **first_frame,
+        "dimensions": [],
+        "filters": {"family": "\u91d1\u72ee\u5bb6\u65cf", "platform": "facebook"},
+    }
+    agent._workflow_service.understand_business_query = lambda message: (
+        first_frame if "\u5e7f\u544a\u82b1\u8d39" in message else None
+    )
+    agent._workflow_service.refine_business_query = lambda message, previous: (
+        second_frame if message == "\u53ea\u770b Facebook" and previous == first_frame else None
+    )
+    agent._workflow_service.execute = AsyncMock(
+        side_effect=[
+            WorkflowResult(
+                success=True,
+                message="first query completed",
+                workflow_type="ask_data",
+                mode="dev_execute",
+                data={"semantic_plan": {"business_query": first_frame}},
+            ),
+            WorkflowResult(
+                success=True,
+                message="follow-up completed",
+                workflow_type="ask_data",
+                mode="dev_execute",
+                data={"semantic_plan": {"business_query": second_frame}},
+            ),
+        ]
+    )
+
+    first = await agent.chat(
+        "\u91d1\u72ee\u5bb6\u65cf\u4eca\u5929\u5404\u5e73\u53f0\u5e7f\u544a\u82b1\u8d39\u662f\u591a\u5c11\uff1f",
+        conversation_id="conversation-1",
+    )
+    second = await agent.chat("\u53ea\u770b Facebook", conversation_id="conversation-1")
+
+    assert first.success is True
+    assert second.success is True
+    assert agent._workflow_service.execute.await_args_list[1].kwargs["action"] == "ask_data"
+    assert (
+        agent._workflow_service.execute.await_args_list[1].kwargs["params"]["business_query"]
+        == second_frame
+    )

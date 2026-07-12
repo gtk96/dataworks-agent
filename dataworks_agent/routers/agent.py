@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     execution_mode: Literal["auto", "plan", "dev_execute"] = "plan"
     initialize_data: bool = True
     publish: bool = False
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class ChatResponse(BaseModel):
@@ -68,9 +69,13 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     )
     if not workflow_options_explicit:
         if payload.request_type is None:
-            response = await _agent.chat(payload.message)
+            response = await _agent.chat(payload.message, conversation_id=payload.conversation_id)
         else:
-            response = await _agent.chat(payload.message, payload.request_type)
+            response = await _agent.chat(
+                payload.message,
+                payload.request_type,
+                conversation_id=payload.conversation_id,
+            )
     else:
         response = await _agent.chat(
             payload.message,
@@ -79,6 +84,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             initialize_data=payload.initialize_data,
             publish=payload.publish,
             client_ip=client_ip,
+            conversation_id=payload.conversation_id,
         )
     logger.info("Chat response: success=%s", response.success)
     return ChatResponse(
@@ -121,11 +127,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             initialize_data = bool(data.get("initialize_data", True))
             publish = bool(data.get("publish", False))
             request_type = data.get("request_type")
+            conversation_id = data.get("conversation_id")
             workflow_options_explicit = any(
                 key in data for key in ("execution_mode", "initialize_data", "publish")
             )
             if not workflow_options_explicit and request_type is None:
-                response = await _agent.chat(message)
+                response = await _agent.chat(message, conversation_id=conversation_id)
             else:
                 response = await _agent.chat(
                     message,
@@ -134,6 +141,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     initialize_data=initialize_data,
                     publish=publish,
                     client_ip=websocket.client.host if websocket.client else "127.0.0.1",
+                    conversation_id=conversation_id,
                 )
             payload = {
                 "message": response.message,

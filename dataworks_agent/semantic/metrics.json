@@ -31,7 +31,7 @@
             "家族",
             "各家族"
           ],
-          "total_value": "合计"
+          "value_pattern": "(?P<value>[\\u4e00-\\u9fffA-Za-z0-9_-]{2,12}\\u5bb6\\u65cf)"
         }
       ],
       "fixed_filters": {},
@@ -74,7 +74,151 @@
           "album_id": 888,
           "entity_guid": "odps.giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df",
           "relation_id": 8837
+        },
+        "dimensions": [
+          {
+            "id": "family",
+            "name": "家族",
+            "column": "family_name",
+            "aliases": [
+              "家族",
+              "各家族"
+            ],
+            "value_pattern": "(?P<value>[\\u4e00-\\u9fffA-Za-z0-9_-]{2,12}\\u5bb6\\u65cf)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ad_spend_amt",
+      "version": 1,
+      "status": "approved",
+      "name": "广告花费",
+      "aliases": [
+        "广告花费",
+        "广告成本",
+        "广告费",
+        "投放花费",
+        "投放成本",
+        "平台花费",
+        "平台花了多少钱",
+        "花了多少钱"
+      ],
+      "description": "财务广告花费明细中的人民币广告投放花费，默认不把原币、税费或 true_amount 混入口径。",
+      "table": "giikin_aliyun.tb_dwd_fin_ad_spend_di",
+      "measure": {
+        "column": "ad_spend",
+        "alias": "ad_spend_amt",
+        "aggregation": "sum",
+        "unit": "CNY"
+      },
+      "dimensions": [
+        {
+          "id": "family",
+          "name": "家族",
+          "column": "family_name",
+          "aliases": [
+            "家族",
+            "各家族"
+          ],
+          "value_pattern": "(?P<value>[\\u4e00-\\u9fffA-Za-z0-9_-]{2,12}\\u5bb6\\u65cf)"
+        },
+        {
+          "id": "platform",
+          "name": "平台",
+          "column": "platform",
+          "aliases": [
+            "平台",
+            "各平台"
+          ],
+          "values": {
+            "facebook": "facebook",
+            "脸书": "facebook",
+            "google": "google",
+            "谷歌": "google",
+            "tiktok": "tiktok",
+            "snapchat": "snapchat"
+          }
+        },
+        {
+          "id": "line",
+          "name": "线路",
+          "column": "line_name",
+          "aliases": [
+            "线路",
+            "各线路"
+          ]
+        },
+        {
+          "id": "team",
+          "name": "团队",
+          "column": "team_name",
+          "aliases": [
+            "团队",
+            "各团队"
+          ]
+        },
+        {
+          "id": "product",
+          "name": "产品",
+          "column": "product_name",
+          "aliases": [
+            "产品",
+            "各产品"
+          ]
         }
+      ],
+      "fixed_filters": {},
+      "freshness": {
+        "strategy": "latest_partition_business_date",
+        "date_partition": "pt",
+        "business_date": "spend_date",
+        "supports_historical": true
+      },
+      "time_terms": [
+        "今天",
+        "今日",
+        "昨天",
+        "昨日",
+        "近",
+        "本月",
+        "最新"
+      ],
+      "owner": "dataworks-agent",
+      "source": "verified_production_metric_contract",
+      "asset_provenance": {
+        "type": "verified_lineage",
+        "album_id": 505,
+        "album_name": "金狮家族",
+        "verified_lineage": {
+          "status": "verified",
+          "method": "production_ddl_and_query_probe",
+          "source_table": "giikin_aliyun.tb_dwd_fin_ad_spend_di",
+          "album_assets": [
+            "giikin_aliyun.vw_dwd_fin_nr_product_spend_1014_df",
+            "giikin_aliyun.vw_dwd_fin_sale_spend_by_country_1014_df"
+          ],
+          "verified_on": "2026-07-13"
+        }
+      },
+      "reconciliation": {
+        "required": false,
+        "strategy": "source_table_metric_contract"
+      },
+      "context_aliases": {
+        "aliases": [
+          "花费",
+          "成本"
+        ],
+        "terms": [
+          "平台",
+          "facebook",
+          "fb",
+          "google",
+          "谷歌",
+          "tiktok",
+          "snapchat"
+        ]
       }
     }
   ]

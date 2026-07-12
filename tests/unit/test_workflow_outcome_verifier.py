@@ -108,3 +108,64 @@ def test_cookie_refresh_with_expired_raw_health_is_rejected():
 
     assert decision.passed is False
     assert decision.failure_class == "authentication"
+
+
+def test_ask_data_reconciliation_only_mismatch_is_retryable_freshness_lag():
+    result = WorkflowResult(
+        False,
+        "query executed but reconciliation mismatched",
+        "ask_data",
+        "dev_execute",
+        data={
+            "query": {"executed": True, "rows": [[232]]},
+            "reconciliation": {"status": "mismatch", "passed": False},
+            "verification": {
+                "status": "failed",
+                "checks": [
+                    {"name": "metadata_contract", "passed": True},
+                    {"name": "result_reconciliation", "passed": False},
+                ],
+            },
+        },
+    )
+
+    decision = WorkflowOutcomeVerifier().verify(
+        result, workflow_type="ask_data", mode="dev_execute"
+    )
+
+    assert decision.passed is False
+    assert decision.failure_class == "freshness_lag"
+    assert decision.retryable is True
+    assert decision.evidence["failed_checks"] == ["result_reconciliation"]
+    assert decision.evidence["reconciliation_status"] == "mismatch"
+
+
+def test_ask_data_metadata_failure_is_not_freshness_lag():
+    result = WorkflowResult(
+        False,
+        "metadata validation failed",
+        "ask_data",
+        "dev_execute",
+        data={
+            "query": {"executed": True, "rows": [[232]]},
+            "reconciliation": {"status": "mismatch", "passed": False},
+            "verification": {
+                "status": "failed",
+                "checks": [
+                    {"name": "metadata_contract", "passed": False},
+                    {"name": "result_reconciliation", "passed": False},
+                ],
+            },
+        },
+    )
+
+    decision = WorkflowOutcomeVerifier().verify(
+        result, workflow_type="ask_data", mode="dev_execute"
+    )
+
+    assert decision.failure_class == "outcome_contract_failed"
+    assert decision.retryable is False
+    assert decision.evidence["failed_checks"] == [
+        "metadata_contract",
+        "result_reconciliation",
+    ]

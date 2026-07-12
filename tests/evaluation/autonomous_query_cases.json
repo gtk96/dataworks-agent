@@ -1,0 +1,503 @@
+[
+  {
+    "id": "ad_family_platform_today",
+    "kind": "understand",
+    "message": "金狮家族今天各平台广告花费是多少",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "platform"
+      ],
+      "filters": {
+        "family": "金狮家族"
+      },
+      "time_range": {
+        "kind": "today",
+        "start": "2026-07-13"
+      },
+      "query_type": "breakdown"
+    }
+  },
+  {
+    "id": "ad_facebook_total",
+    "kind": "understand",
+    "message": "今天金狮家族 Facebook 花费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [],
+      "filters": {
+        "family": "金狮家族",
+        "platform": "facebook"
+      },
+      "query_type": "total"
+    }
+  },
+  {
+    "id": "ad_google_alias",
+    "kind": "understand",
+    "message": "今日谷歌广告费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "filters": {
+        "platform": "google"
+      },
+      "time_range": {
+        "kind": "today"
+      }
+    }
+  },
+  {
+    "id": "ad_yesterday",
+    "kind": "understand",
+    "message": "昨天广告花费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "time_range": {
+        "kind": "yesterday",
+        "start": "2026-07-12"
+      }
+    }
+  },
+  {
+    "id": "ad_recent_7_trend",
+    "kind": "understand",
+    "message": "近7天各平台广告花费趋势",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "platform"
+      ],
+      "time_range": {
+        "kind": "range",
+        "start": "2026-07-07",
+        "end": "2026-07-13"
+      },
+      "query_type": "trend"
+    }
+  },
+  {
+    "id": "ad_this_month",
+    "kind": "understand",
+    "message": "本月广告花费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "time_range": {
+        "kind": "range",
+        "start": "2026-07-01",
+        "end": "2026-07-13"
+      }
+    }
+  },
+  {
+    "id": "ad_last_month",
+    "kind": "understand",
+    "message": "上月各家族广告费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "family"
+      ],
+      "time_range": {
+        "kind": "range",
+        "start": "2026-06-01",
+        "end": "2026-06-30"
+      }
+    }
+  },
+  {
+    "id": "ad_top3_family",
+    "kind": "understand",
+    "message": "今天各家族广告花费前3",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "family"
+      ],
+      "limit": 3,
+      "order": "desc"
+    }
+  },
+  {
+    "id": "ad_lowest_platform",
+    "kind": "understand",
+    "message": "今天各平台广告花费最低的前5",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "platform"
+      ],
+      "limit": 5,
+      "order": "asc"
+    }
+  },
+  {
+    "id": "ad_explicit_date",
+    "kind": "understand",
+    "message": "2026-07-10各平台广告费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "time_range": {
+        "kind": "date",
+        "start": "2026-07-10"
+      }
+    }
+  },
+  {
+    "id": "ad_explicit_range",
+    "kind": "understand",
+    "message": "2026-07-01到2026-07-07各平台广告花费趋势",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "time_range": {
+        "kind": "range",
+        "start": "2026-07-01",
+        "end": "2026-07-07"
+      },
+      "query_type": "trend"
+    }
+  },
+  {
+    "id": "order_total_today",
+    "kind": "understand",
+    "message": "今天的总有效订单是多少",
+    "expected": {
+      "metric_id": "effective_order_cnt",
+      "dimensions": [],
+      "time_range": {
+        "kind": "today"
+      }
+    }
+  },
+  {
+    "id": "order_family_breakdown",
+    "kind": "understand",
+    "message": "查一下今天各家族的有效订单数",
+    "expected": {
+      "metric_id": "effective_order_cnt",
+      "dimensions": [
+        "family"
+      ],
+      "filters": {},
+      "query_type": "breakdown"
+    }
+  },
+  {
+    "id": "order_family_filter",
+    "kind": "understand",
+    "message": "金狮家族今天有效订单多少",
+    "expected": {
+      "metric_id": "effective_order_cnt",
+      "dimensions": [],
+      "filters": {
+        "family": "金狮家族"
+      }
+    }
+  },
+  {
+    "id": "ad_line_breakdown",
+    "kind": "understand",
+    "message": "今天按线路看广告花费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "line"
+      ]
+    }
+  },
+  {
+    "id": "ad_team_breakdown",
+    "kind": "understand",
+    "message": "今天各团队广告花费",
+    "expected": {
+      "metric_id": "ad_spend_amt",
+      "dimensions": [
+        "team"
+      ]
+    }
+  },
+  {
+    "id": "plan_ad_platform",
+    "kind": "plan",
+    "message": "金狮家族今天各平台广告花费是多少",
+    "metric_id": "ad_spend_amt",
+    "album_status": "lineage_match",
+    "sql_contains": [
+      "FROM giikin_aliyun.tb_dwd_fin_ad_spend_di",
+      "spend_date = '2026-07-13'",
+      "family_name = '金狮家族'",
+      "GROUP BY spend_date, platform",
+      "ORDER BY ad_spend_amt DESC"
+    ]
+  },
+  {
+    "id": "plan_ad_facebook",
+    "kind": "plan",
+    "message": "今天金狮家族 Facebook 花费",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "platform = 'facebook'",
+      "SUM(ad_spend) AS total_ad_spend_amt",
+      "LIMIT 1"
+    ],
+    "sql_not_contains": [
+      "GROUP BY spend_date, platform"
+    ]
+  },
+  {
+    "id": "plan_ad_range",
+    "kind": "plan",
+    "message": "2026-07-01到2026-07-07各平台广告花费",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "spend_date BETWEEN '2026-07-01' AND '2026-07-07'",
+      "GROUP BY spend_date, platform"
+    ]
+  },
+  {
+    "id": "plan_ad_top3",
+    "kind": "plan",
+    "message": "今天各家族广告花费前3",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "ORDER BY ad_spend_amt DESC",
+      "LIMIT 3"
+    ]
+  },
+  {
+    "id": "plan_ad_ascending",
+    "kind": "plan",
+    "message": "今天各平台广告花费最低前5",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "ORDER BY ad_spend_amt ASC",
+      "LIMIT 5"
+    ]
+  },
+  {
+    "id": "plan_order_total_sum",
+    "kind": "plan",
+    "message": "今天总有效订单多少",
+    "metric_id": "effective_order_cnt",
+    "album_status": "direct_match",
+    "sql_contains": [
+      "SUM(effect_order_cnt) AS total_effective_order_cnt"
+    ],
+    "reconciliation_contains": [
+      "pt = '__PRIMARY_DATA_DATE__'",
+      "is_effective_order = 1"
+    ],
+    "reconciliation_not_contains": [
+      "family_name = '合计'"
+    ],
+    "sql_not_contains": [
+      "family_name = '合计'"
+    ]
+  },
+  {
+    "id": "plan_order_family_breakdown",
+    "kind": "plan",
+    "message": "今天各家族有效订单数",
+    "metric_id": "effective_order_cnt",
+    "sql_contains": [
+      "GROUP BY pt, family_name",
+      "ORDER BY effective_order_cnt DESC"
+    ],
+    "sql_not_contains": [
+      "family_name = '合计'"
+    ]
+  },
+  {
+    "id": "plan_order_family_filter",
+    "kind": "plan",
+    "message": "金狮家族今天有效订单多少",
+    "metric_id": "effective_order_cnt",
+    "sql_contains": [
+      "family_name = '金狮家族'"
+    ],
+    "reconciliation_contains": [
+      "family_name = '金狮家族'"
+    ]
+  },
+  {
+    "id": "plan_ad_google_alias",
+    "kind": "plan",
+    "message": "今天谷歌广告费",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "platform = 'google'"
+    ]
+  },
+  {
+    "id": "plan_ad_month",
+    "kind": "plan",
+    "message": "本月广告花费",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "spend_date BETWEEN '2026-07-01' AND '2026-07-13'"
+    ]
+  },
+  {
+    "id": "plan_ad_team",
+    "kind": "plan",
+    "message": "今天各团队广告费",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "team_name",
+      "GROUP BY spend_date, team_name"
+    ]
+  },
+  {
+    "id": "refine_facebook",
+    "kind": "refine",
+    "initial": "金狮家族今天各平台广告花费",
+    "followup": "只看 Facebook",
+    "expected": {
+      "dimensions": [],
+      "filters": {
+        "family": "金狮家族",
+        "platform": "facebook"
+      }
+    }
+  },
+  {
+    "id": "refine_yesterday",
+    "kind": "refine",
+    "initial": "金狮家族今天各平台广告花费",
+    "followup": "换成昨天",
+    "expected": {
+      "time_range": {
+        "kind": "yesterday",
+        "start": "2026-07-12"
+      }
+    }
+  },
+  {
+    "id": "refine_group_family",
+    "kind": "refine",
+    "initial": "金狮家族今天各平台广告花费",
+    "followup": "按家族拆开",
+    "expected": {
+      "dimensions": [
+        "family"
+      ],
+      "filters": {}
+    }
+  },
+  {
+    "id": "refine_all_platforms",
+    "kind": "refine",
+    "initial": "今天金狮家族 Facebook 花费",
+    "followup": "全部平台",
+    "expected": {
+      "dimensions": [],
+      "filters": {
+        "family": "金狮家族"
+      }
+    }
+  },
+  {
+    "id": "refine_top2",
+    "kind": "refine",
+    "initial": "今天各平台广告花费",
+    "followup": "只看前2",
+    "expected": {
+      "dimensions": [
+        "platform"
+      ],
+      "limit": 2
+    }
+  },
+  {
+    "id": "refine_ascending",
+    "kind": "refine",
+    "initial": "今天各平台广告花费",
+    "followup": "改成升序",
+    "expected": {
+      "order": "asc"
+    }
+  },
+  {
+    "id": "refine_order_history_refused",
+    "kind": "refine",
+    "initial": "今天各家族有效订单",
+    "followup": "换成昨天",
+    "expected_none": true
+  },
+  {
+    "id": "refine_unrelated_refused",
+    "kind": "refine",
+    "initial": "今天各平台广告花费",
+    "followup": "随便说一句",
+    "expected_none": true
+  },
+  {
+    "id": "reject_ambiguous_cost",
+    "kind": "reject",
+    "message": "今天花费多少"
+  },
+  {
+    "id": "reject_logistics_draft",
+    "kind": "reject",
+    "message": "今天物流成本多少"
+  },
+  {
+    "id": "reject_purchase_draft",
+    "kind": "reject",
+    "message": "今天采购成本多少"
+  },
+  {
+    "id": "reject_sign_rate_draft",
+    "kind": "reject",
+    "message": "今天签收率多少"
+  },
+  {
+    "id": "reject_order_yesterday",
+    "kind": "reject",
+    "message": "昨天有效订单多少"
+  },
+  {
+    "id": "reject_unknown_metric",
+    "kind": "reject",
+    "message": "今天各家族净利润多少"
+  },
+  {
+    "id": "knowledge_ad_approved",
+    "kind": "knowledge",
+    "message": "广告花费",
+    "expected": {
+      "id": "ad_spend_amt",
+      "status": "approved",
+      "executable": true
+    }
+  },
+  {
+    "id": "knowledge_logistics_draft",
+    "kind": "knowledge",
+    "message": "物流成本",
+    "expected": {
+      "id": "logistics_cost_amt",
+      "status": "draft",
+      "executable": false
+    }
+  },
+  {
+    "id": "knowledge_purchase_draft",
+    "kind": "knowledge",
+    "message": "采购成本",
+    "expected": {
+      "id": "purchase_cost_amt",
+      "status": "draft",
+      "executable": false
+    }
+  },
+  {
+    "id": "knowledge_sign_rate_draft",
+    "kind": "knowledge",
+    "message": "签收率",
+    "expected": {
+      "id": "sign_rate",
+      "status": "draft",
+      "executable": false
+    }
+  }
+]

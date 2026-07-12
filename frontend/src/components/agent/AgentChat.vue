@@ -283,6 +283,7 @@ const loading = ref(false)
 const executionMode = ref<AgentExecutionMode>('auto')
 const initializeData = ref(true)
 const requestPublish = ref(false)
+const conversationId = ref(idempotencyKey())
 const messages = ref<ChatMsg[]>([])
 const messagesRef = ref<HTMLElement>()
 const composerInput = ref<HTMLTextAreaElement>()
@@ -300,7 +301,7 @@ const capabilityPrompts = [
   { title: '正向建模', icon: MagicStick, text: '把 <数据源> 的 <源表> 做成 ODS→DWD→DIM→DWS 全链路，创建开发表、节点和调度；先给我规划，不发布生产。' },
   { title: '逆向建模', icon: Search, text: '逆向分析存量表 <请输入真实表名或节点 ID>，读取真实结构、血缘、分层和语义候选。' },
   { title: '异常排查', icon: Tools, text: '排查 DataWorks 任务 <请输入任务 ID、实例 ID 或节点 ID>，检查日志、依赖和运行底座，给出恢复建议。' },
-  { title: '自主问数', icon: DataAnalysis, text: '查询表 <请输入真实表名>：<请输入业务问题>。' },
+  { title: '自主问数', icon: DataAnalysis, text: '金狮家族今天各平台广告花费是多少？' },
   { title: 'Cookie 管理', icon: Connection, text: '检查 AK/SK、官方 MCP、Cookie BFF 和 9222 调试浏览器的当前状态。' },
 ]
 const starterPrompts = [
@@ -412,6 +413,7 @@ onMounted(() => {
 onUnmounted(() => ws.value?.close())
 
 function resetConversation() {
+  conversationId.value = idempotencyKey()
   messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
   lastPayload.value = null
   currentStatus.value = null
@@ -444,7 +446,13 @@ async function sendMessage() {
   loading.value = true
   await nextTick(scrollToBottom)
   try {
-    const payload = buildAgentChatRequest(text, executionMode.value, initializeData.value, requestPublish.value)
+    const payload = buildAgentChatRequest(
+      text,
+      executionMode.value,
+      initializeData.value,
+      requestPublish.value,
+      conversationId.value,
+    )
     handleAgentResponse(await requestAgentChat<AgentPayload>(payload))
   } catch (error) {
     handleAgentResponse({ message: `Agent 请求失败：${error instanceof Error ? error.message : String(error)}`, success: false })

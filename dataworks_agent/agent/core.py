@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +34,9 @@ class ChatAgent:
         self._task_executor = TaskExecutor()
         self._workflow_service = AgentWorkflowService()
         self._last_task_id: str | None = None
+        self._query_frames: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._query_frame_ttl_seconds = 2 * 60 * 60
+        self._query_frame_capacity = 128
 
     async def chat(
         self,
@@ -43,6 +47,7 @@ class ChatAgent:
         initialize_data: bool = True,
         publish: bool = False,
         client_ip: str = "127.0.0.1",
+        conversation_id: str | None = None,
     ) -> ChatResponse:
         """Process user message."""
         if not message or not message.strip():
@@ -54,6 +59,11 @@ class ChatAgent:
 
         try:
             intent = self._intent_parser.parse(message)
+            business_query = self._resolve_business_query(message, conversation_id)
+            if business_query is not None and (not request_type or request_type == "auto"):
+                intent.action = "ask_data"
+                intent.params["business_query"] = business_query
+                intent.confidence = 1.0
             if request_type and request_type != "auto":
                 intent.action = request_type
             logger.info("NLU parsed: action=%s, confidence=%.2f", intent.action, intent.confidence)
@@ -97,12 +107,14 @@ class ChatAgent:
                         ),
                     }
                 )
-                return ChatResponse(
+                response = ChatResponse(
                     message=workflow.message,
                     success=workflow.success,
                     data=data,
                     error=workflow.errors[0] if workflow.errors else None,
                 )
+                self._remember_business_query(conversation_id, data)
+                return response
 
             plan = self._task_planner.plan(intent)
             logger.info("Task planned: task_id=%s, steps=%d", plan.task_id, len(plan.steps))
@@ -116,6 +128,45 @@ class ChatAgent:
         except Exception as e:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
+
+    def _resolve_business_query(
+        self, message: str, conversation_id: str | None
+    ) -> dict[str, Any] | None:
+        direct = self._workflow_service.understand_business_query(message)
+        if direct is not None:
+            return direct
+        if not conversation_id:
+            return None
+        self._prune_query_frames()
+        previous = self._query_frames.get(conversation_id)
+        if previous is None:
+            return None
+        return self._workflow_service.refine_business_query(message, previous[1])
+
+    def _remember_business_query(self, conversation_id: str | None, data: dict[str, Any]) -> None:
+        if not conversation_id:
+            return
+        semantic_plan = data.get("semantic_plan") or {}
+        query_frame = semantic_plan.get("business_query")
+        if not isinstance(query_frame, dict) or not query_frame.get("metric_id"):
+            return
+        self._query_frames[conversation_id] = (time.monotonic(), dict(query_frame))
+        self._prune_query_frames()
+
+    def _prune_query_frames(self) -> None:
+        now = time.monotonic()
+        expired = [
+            key
+            for key, (created_at, _) in self._query_frames.items()
+            if now - created_at > self._query_frame_ttl_seconds
+        ]
+        for key in expired:
+            self._query_frames.pop(key, None)
+        overflow = len(self._query_frames) - self._query_frame_capacity
+        if overflow > 0:
+            oldest = sorted(self._query_frames, key=lambda key: self._query_frames[key][0])
+            for key in oldest[:overflow]:
+                self._query_frames.pop(key, None)
 
     def capability_status(self) -> dict[str, Any]:
         """Return the live AK/SK, Cookie/CDP and official MCP capability matrix."""

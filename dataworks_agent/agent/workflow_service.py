@@ -198,7 +198,7 @@ class AgentWorkflowService:
         if routed == "cookie_manage":
             return await self._manage_cookie(message, mode)
         if routed == "ask_data":
-            return await self._ask_data(message, mode)
+            return await self._ask_data(message, mode, params.get("business_query"))
         if routed == "reverse_modeling":
             return await self._reverse_model(message, params, mode)
         if routed == "diagnose_issue":
@@ -222,6 +222,13 @@ class AgentWorkflowService:
                 max_same_action=2,
                 max_no_progress_rounds=1,
                 deadline_seconds=900,
+            )
+        if workflow_type == "ask_data":
+            return LoopPolicy(
+                max_iterations=3,
+                max_same_action=3,
+                max_no_progress_rounds=2,
+                deadline_seconds=max(180, settings.ask_data_timeout_seconds * 2),
             )
         return LoopPolicy(
             max_iterations=3,
@@ -251,6 +258,15 @@ class AgentWorkflowService:
                 True,
                 "bounded_retry",
                 f"瞬时错误退避 {delay:.2f}s 后重试。",
+                {"retry_delay_seconds": delay},
+            )
+        if decision.failure_class == "freshness_lag":
+            delay = min(2.0 * (2 ** max(iteration - 1, 0)), 4.0)
+            await asyncio.sleep(delay)
+            return RepairResult(
+                True,
+                "wait_for_metric_refresh",
+                "DWS/DWD reconciliation has a short refresh lag; retry after waiting.",
                 {"retry_delay_seconds": delay},
             )
         return RepairResult(False, "", "没有安全、确定性的自动修复动作。")
@@ -967,9 +983,14 @@ class AgentWorkflowService:
             errors=list(dict.fromkeys(errors)),
         )
 
-    async def _ask_data(self, message: str, mode: ExecutionMode) -> WorkflowResult:
+    async def _ask_data(
+        self,
+        message: str,
+        mode: ExecutionMode,
+        business_query: dict[str, Any] | None = None,
+    ) -> WorkflowResult:
         try:
-            query_plan = await self._build_query_plan(message)
+            query_plan = await self._build_query_plan(message, business_query)
         except QueryNeedsClarificationError as clarification:
             return self._query_clarification_result(clarification, mode)
 
@@ -1338,16 +1359,26 @@ class AgentWorkflowService:
     ) -> dict[str, Any]:
         if query_plan.metric_id == "ad_hoc_query":
             return {"required": False, "passed": True, "status": "not_applicable"}
+        reconciliation_contract = query_plan.caliber.get("reconciliation") or {}
         if not query_plan.reconciliation_sql:
+            if reconciliation_contract.get("required") is False:
+                return {
+                    "required": False,
+                    "passed": True,
+                    "status": "contract_not_required",
+                    "strategy": reconciliation_contract.get("strategy", "source_contract"),
+                }
             return {
                 "required": True,
                 "passed": False,
                 "status": "missing_contract",
-                "message": "语义指标缺少对账契约",
+                "message": "指标缺少对账契约",
             }
         try:
-            self._validate_readonly_sql(query_plan.reconciliation_sql)
-            reconciliation_sql = self._enforce_query_limit(query_plan.reconciliation_sql)
+            bound_sql = self._bind_reconciliation_date(query_plan.reconciliation_sql, columns, rows)
+            query_plan.reconciliation_sql = bound_sql
+            self._validate_readonly_sql(bound_sql)
+            reconciliation_sql = self._enforce_query_limit(bound_sql)
             if channel == "cookie_bff":
                 other_columns, other_rows = await self._run_cookie_bff_query(reconciliation_sql)
             else:
@@ -1369,6 +1400,25 @@ class AgentWorkflowService:
                 "status": "execution_failed",
                 "message": self._brief_error(exc),
             }
+
+    @staticmethod
+    def _bind_reconciliation_date(sql: str, columns: list[Any], rows: list[Any]) -> str:
+        token = "__PRIMARY_DATA_DATE__"
+        if token not in sql:
+            return sql
+        if not rows:
+            raise ValueError("主查询没有结果，无法绑定对账日期")
+        names = [str(getattr(column, "name", column)) for column in columns]
+        row = rows[0]
+        mapped = (
+            row
+            if isinstance(row, dict)
+            else dict(zip(names, row if isinstance(row, (list, tuple)) else [row], strict=False))
+        )
+        value = str(mapped.get("data_date") or "").strip()
+        if not re.fullmatch(r"\d{4}(?:-?\d{2}){2}", value):
+            raise ValueError(f"主查询返回了无效的数据日期: {value}")
+        return sql.replace(token, value.replace("-", ""))
 
     @staticmethod
     def _compare_metric_results(
@@ -1430,43 +1480,84 @@ class AgentWorkflowService:
     def _format_query_answer(
         query_plan: MetricQueryPlan, columns: list[Any], rows: list[Any]
     ) -> str:
+        from decimal import Decimal, InvalidOperation
+
         names = [str(getattr(column, "name", column)) for column in columns]
         if not rows:
-            return f"{query_plan.metric_name}查询完成，但当前快照没有返回数据。"
+            return f"{query_plan.metric_name}查询完成，但当前时间范围没有返回数据。"
+
+        def map_row(row: Any) -> dict[str, Any]:
+            if isinstance(row, dict):
+                return row
+            values = row if isinstance(row, (list, tuple)) else [row]
+            return dict(zip(names, values, strict=False))
+
         measure = query_plan.caliber.get("measure", {})
         measure_alias = str(measure.get("alias") or measure.get("column") or "value")
         result_column = (
             measure_alias if query_plan.selected_dimensions else f"total_{measure_alias}"
         )
-        row = rows[0]
-        values = row if isinstance(row, (list, tuple)) else [row.get(name) for name in names]
-        mapped = dict(zip(names, values, strict=False))
-        raw_value = mapped.get(result_column)
-        try:
-            display_value = f"{int(str(raw_value)):,}"
-        except (TypeError, ValueError):
-            display_value = str(raw_value)
-        date = str(mapped.get("data_date") or "")
-        hour = str(mapped.get("data_hour") or "")
+        unit = str(measure.get("unit") or "").upper()
+
+        def display(value: Any) -> str:
+            try:
+                number = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                return str(value)
+            if unit == "CNY":
+                return f"¥{number:,.2f}"
+            if unit in {"RATIO", "PERCENT", "%"}:
+                return f"{number * 100:,.2f}%"
+            if number == number.to_integral_value():
+                return f"{int(number):,}"
+            return f"{number:,.2f}"
+
+        mapped_rows = [map_row(row) for row in rows]
+        first = mapped_rows[0]
+        data_date = str(first.get("data_date") or "")
+        data_hour = str(first.get("data_hour") or "")
         snapshot = (
-            f"（数据日期 {date}，截至 {hour}:00）"
-            if date and hour
-            else f"（数据日期 {date}）"
-            if date
+            f"（数据日期 {data_date}，截至 {data_hour}:00）"
+            if data_date and data_hour
+            else f"（数据日期 {data_date}）"
+            if data_date
             else ""
         )
         album_names = "、".join(item["name"] for item in query_plan.albums)
         evidence = (
-            f"；选表依据：数据专辑“{album_names}”资产直接命中 + 已批准指标 v{query_plan.metric_version}"
+            f"\n\n口径证据：数据专辑“{album_names}” + approved v{query_plan.metric_version}。"
             if album_names
-            else f"；规划依据：{query_plan.selection_evidence[0]}"
+            else ""
         )
-        if query_plan.selected_dimensions:
+        if not query_plan.selected_dimensions:
             return (
-                f"{query_plan.metric_name}已按{'、'.join(query_plan.selected_dimensions)}查询完成，"
-                f"共返回 {len(rows)} 行{snapshot}{evidence}。"
+                f"**{query_plan.metric_name}：{display(first.get(result_column))}**{snapshot}"
+                f"{evidence}"
             )
-        return f"{query_plan.metric_name}为 {display_value}{snapshot}{evidence}。"
+
+        selected_columns = [
+            str(item.get("column") or "")
+            for item in query_plan.caliber.get("dimensions", [])
+            if str(item.get("name") or "") in query_plan.selected_dimensions
+        ]
+        lines = [f"**{query_plan.metric_name}{snapshot}**"]
+        total = Decimal("0")
+        total_available = str(measure.get("aggregation") or "").lower() in {"sum", "count"}
+        for item in mapped_rows[:20]:
+            label = " / ".join(str(item.get(column) or "—") for column in selected_columns)
+            value = item.get(result_column)
+            lines.append(f"- {label}：{display(value)}")
+            if total_available:
+                try:
+                    total += Decimal(str(value))
+                except (InvalidOperation, TypeError, ValueError):
+                    total_available = False
+        if len(mapped_rows) > 20:
+            lines.append(f"- ……其余 {len(mapped_rows) - 20} 行请查看结果表")
+        if total_available:
+            lines.append(f"- **合计：{display(total)}**")
+        lines.append(evidence)
+        return "\n".join(line for line in lines if line)
 
     @staticmethod
     def _brief_error(exc: Exception) -> str:
@@ -1480,11 +1571,23 @@ class AgentWorkflowService:
             return "MaxCompute permission denied"
         return text[:180] or exc.__class__.__name__
 
+    def understand_business_query(self, message: str) -> dict[str, Any] | None:
+        understood = self._metric_query_planner.understand(message)
+        return understood[0].to_dict() if understood is not None else None
+
+    def refine_business_query(
+        self, message: str, previous: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        refined = self._metric_query_planner.refine(message, previous)
+        return refined.to_dict() if refined is not None else None
+
     async def _build_readonly_sql(self, message: str) -> str:
         """Compatibility wrapper used by tests and callers that only need SQL."""
         return (await self._build_query_plan(message)).sql
 
-    async def _build_query_plan(self, message: str) -> MetricQueryPlan:
+    async def _build_query_plan(
+        self, message: str, business_query: dict[str, Any] | None = None
+    ) -> MetricQueryPlan:
         fenced = re.search(r"```sql\s*(.*?)```", message, re.I | re.S)
         if fenced:
             return self._ad_hoc_query_plan(fenced.group(1).strip(), "用户提供 SQL")
@@ -1501,14 +1604,26 @@ class AgentWorkflowService:
             )
             return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table)
 
-        candidate_tables = self._metric_query_planner.candidate_tables(message)
-        required_album_ids = self._metric_query_planner.required_album_ids(message)
+        candidate_tables = (
+            self._metric_query_planner.candidate_tables_for_query(business_query)
+            if business_query
+            else self._metric_query_planner.candidate_tables(message)
+        )
+        required_album_ids = (
+            self._metric_query_planner.required_album_ids_for_query(business_query)
+            if business_query
+            else self._metric_query_planner.required_album_ids(message)
+        )
         album_contexts = await self._album_context_resolver.resolve(
             message,
             required_tables=candidate_tables,
             required_album_ids=required_album_ids,
         )
-        semantic_plan = self._metric_query_planner.plan(message, album_contexts)
+        semantic_plan = (
+            self._metric_query_planner.plan_frame(business_query, album_contexts)
+            if business_query
+            else self._metric_query_planner.plan(message, album_contexts)
+        )
         if semantic_plan is not None:
             if semantic_plan.album_validation.get("status") not in {
                 "direct_match",
@@ -1598,12 +1713,18 @@ class AgentWorkflowService:
         caliber = plan.caliber
         required = {str(caliber["measure"]["column"]).lower()}
         required.update(str(name).lower() for name in caliber.get("fixed_filters", {}))
+        selected_names = set(plan.selected_dimensions)
+        filter_ids = set((caliber.get("query_filters") or {}).keys())
         required.update(
-            str(item.get("column") or "").lower() for item in caliber.get("dimensions", [])
+            str(item.get("column") or "").lower()
+            for item in caliber.get("dimensions", [])
+            if str(item.get("name") or "") in selected_names
+            or str(item.get("id") or item.get("column") or "") in filter_ids
         )
         freshness = caliber.get("freshness", {})
         required.update(
-            str(freshness.get(key) or "").lower() for key in ("date_partition", "hour_partition")
+            str(freshness.get(key) or "").lower()
+            for key in ("date_partition", "business_date", "hour_partition")
         )
         required.discard("")
         missing = sorted(required - available)

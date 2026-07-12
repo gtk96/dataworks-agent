@@ -105,10 +105,14 @@ async def run_cookie_background_refresh_once(*, force: bool = False) -> dict:
         try:
             ok, err, username = await verify_cookie_access(cookie, bff=bff, mcp_pool=mcp)
             if ok:
-                from dataworks_agent.cookie.health import cookie_health_monitor
+                if err:
+                    app_state.cookie_health = "degraded"
+                elif mcp:
+                    from dataworks_agent.cookie.health import cookie_health_monitor
 
-                if mcp:
                     await cookie_health_monitor.check(mcp)
+                else:
+                    app_state.cookie_health = "healthy"
                 touch_cookie_poll(
                     action="valid",
                     detail=f"Cookie 仍有效（{username or '—'}）",

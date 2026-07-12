@@ -140,11 +140,28 @@ class WorkflowOutcomeVerifier:
                 action_fingerprint="ask_data_verified",
                 evidence={"passed_checks": passed_checks, "total_checks": len(checks)},
             )
-        failure_class, retryable = _failure_details(result)
+        failed_checks = [
+            str(check.get("name") or "") for check in checks if not check.get("passed")
+        ]
+        reconciliation = data.get("reconciliation") or {}
+        freshness_lag = bool(
+            query.get("executed") is True
+            and verification.get("status") == "failed"
+            and failed_checks == ["result_reconciliation"]
+            and reconciliation.get("status") == "mismatch"
+        )
+        if freshness_lag:
+            failure_class, retryable = "freshness_lag", True
+        else:
+            failure_class, retryable = _failure_details(result)
         return LoopDecision(
             passed=False,
             score=score,
-            summary="Query did not pass semantic, execution, and reconciliation checks.",
+            summary=(
+                "DWS/DWD reconciliation is temporarily inconsistent; wait for metric refresh."
+                if freshness_lag
+                else "Query did not pass semantic, execution, and reconciliation checks."
+            ),
             failure_class=failure_class,
             retryable=retryable,
             action_fingerprint=f"ask_data:{failure_class}",
@@ -153,6 +170,8 @@ class WorkflowOutcomeVerifier:
                 "verification_status": verification.get("status", "missing"),
                 "passed_checks": passed_checks,
                 "total_checks": len(checks),
+                "failed_checks": failed_checks,
+                "reconciliation_status": reconciliation.get("status", "missing"),
             },
         )
 
