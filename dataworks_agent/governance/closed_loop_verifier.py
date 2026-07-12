@@ -158,7 +158,10 @@ class ClosedLoopVerifier:
         # 获取该任务类型的检查清单
         checklist = VERIFICATION_CHECKLISTS.get(task_type, [])
         if not checklist:
-            logger.warning("\u4efb\u52a1\u7c7b\u578b %s \u65e0\u9a8c\u6536\u68c0\u67e5\u6e05\u5355\uff0c\u9a8c\u6536\u5931\u8d25", task_type)
+            logger.warning(
+                "\u4efb\u52a1\u7c7b\u578b %s \u65e0\u9a8c\u6536\u68c0\u67e5\u6e05\u5355\uff0c\u9a8c\u6536\u5931\u8d25",
+                task_type,
+            )
             result.checks.append(
                 CheckResult(
                     check_name="supported_task_type",
@@ -412,20 +415,22 @@ class ClosedLoopVerifier:
                 message="层间依赖校验通过",
             )
 
-    async def _check_readonly_sql(
-        self, task_id: str, sql: str = "", **kwargs: Any
-    ) -> CheckResult:
+    async def _check_readonly_sql(self, task_id: str, sql: str = "", **kwargs: Any) -> CheckResult:
         """\u95ee\u6570 SQL \u5fc5\u987b\u662f\u5355\u6761\u53ea\u8bfb\u67e5\u8be2\u3002"""
         normalized = sql.strip().lower()
         forbidden = ("insert", "update", "delete", "drop", "alter", "truncate", "create")
-        passed = bool(normalized) and normalized.startswith(("select", "with")) and not any(
-            token in normalized for token in forbidden
+        passed = (
+            bool(normalized)
+            and normalized.startswith(("select", "with"))
+            and not any(token in normalized for token in forbidden)
         )
         return CheckResult(
             check_name="readonly_sql",
             passed=passed,
             severity=CheckSeverity.ERROR,
-            message="\u53ea\u8bfb SQL \u6821\u9a8c\u901a\u8fc7" if passed else "SQL \u4e0d\u662f\u5b89\u5168\u7684\u53ea\u8bfb\u67e5\u8be2",
+            message="\u53ea\u8bfb SQL \u6821\u9a8c\u901a\u8fc7"
+            if passed
+            else "SQL \u4e0d\u662f\u5b89\u5168\u7684\u53ea\u8bfb\u67e5\u8be2",
         )
 
     async def _check_query_executed(
@@ -436,7 +441,9 @@ class ClosedLoopVerifier:
             check_name="query_executed",
             passed=executed,
             severity=CheckSeverity.ERROR,
-            message="\u67e5\u8be2\u5df2\u771f\u5b9e\u6267\u884c" if executed else "\u67e5\u8be2\u672a\u771f\u5b9e\u6267\u884c",
+            message="\u67e5\u8be2\u5df2\u771f\u5b9e\u6267\u884c"
+            if executed
+            else "\u67e5\u8be2\u672a\u771f\u5b9e\u6267\u884c",
         )
 
     async def _check_query_result_shape(
@@ -455,7 +462,9 @@ class ClosedLoopVerifier:
             check_name="query_result_shape",
             passed=passed,
             severity=CheckSeverity.ERROR,
-            message="\u67e5\u8be2\u7ed3\u679c\u7ed3\u6784\u6821\u9a8c\u901a\u8fc7" if passed else "\u67e5\u8be2\u7ed3\u679c\u7f3a\u5c11\u5217\u6216\u884c\u6570\u4e0d\u4e00\u81f4",
+            message="\u67e5\u8be2\u7ed3\u679c\u7ed3\u6784\u6821\u9a8c\u901a\u8fc7"
+            if passed
+            else "\u67e5\u8be2\u7ed3\u679c\u7f3a\u5c11\u5217\u6216\u884c\u6570\u4e0d\u4e00\u81f4",
             details={"column_count": len(columns), "row_count": len(rows)},
         )
 
