@@ -31,6 +31,32 @@ def restore_app_state():
     app_state.cookie_health = cookie_health
 
 
+def _effective_order_album_contexts() -> list[DataAlbumContext]:
+    return [
+        DataAlbumContext(
+            album_id=888,
+            name="订单",
+            description="订单主题",
+            categories=["订单指标"],
+            tables=[
+                AlbumTable(
+                    project="giikin_aliyun",
+                    name="tb_rp_ord_order_cnt_hi",
+                    comment="当日小时订单量预警表",
+                    remark="有效订单认证指标表",
+                )
+            ],
+        )
+    ]
+
+
+def _wire_effective_order_semantics(service: AgentWorkflowService) -> None:
+    service._album_context_resolver.resolve = AsyncMock(
+        return_value=_effective_order_album_contexts()
+    )
+    service._validate_semantic_plan_metadata = AsyncMock()
+
+
 @pytest.mark.asyncio
 async def test_forward_plan_does_not_require_execution_clients():
     service = AgentWorkflowService()
@@ -215,8 +241,9 @@ def test_declarative_business_question_routes_to_ask_data():
 
 
 @pytest.mark.asyncio
-async def test_declarative_business_question_uses_effective_order_recipe():
+async def test_declarative_business_question_uses_album_semantic_plan():
     service = AgentWorkflowService()
+    _wire_effective_order_semantics(service)
     sql = await service._build_readonly_sql(
         "\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u662f\u591a\u5c11"
     )
@@ -224,8 +251,9 @@ async def test_declarative_business_question_uses_effective_order_recipe():
 
 
 @pytest.mark.asyncio
-async def test_business_query_recipe_uses_effective_order_table():
+async def test_business_query_album_semantics_uses_certified_effective_order_table():
     service = AgentWorkflowService()
+    _wire_effective_order_semantics(service)
     sql = await service._build_readonly_sql("查一下今天各家族的有效订单数")
 
     assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
@@ -237,6 +265,7 @@ async def test_business_query_recipe_uses_effective_order_table():
 @pytest.mark.asyncio
 async def test_ask_data_falls_back_to_cookie_bff_when_ak_sk_cannot_query():
     service = AgentWorkflowService()
+    _wire_effective_order_semantics(service)
     app_state._maxcompute_client = SimpleNamespace(
         submit_query=AsyncMock(side_effect=RuntimeError("NoPermission: odps:CreateInstance")),
         wait_and_fetch=AsyncMock(),
@@ -689,16 +718,19 @@ async def test_cookie_plan_returns_channel_steps():
 
 
 @pytest.mark.asyncio
-async def test_effective_order_recipe_does_not_consult_data_albums():
+async def test_effective_order_plan_requires_data_album_membership():
     service = AgentWorkflowService()
-    service._album_context_resolver.resolve = AsyncMock()
+    _wire_effective_order_semantics(service)
 
-    sql = await service._build_readonly_sql(
+    plan = await service._build_query_plan(
         "\u67e5\u4e00\u4e0b\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u6570"
     )
 
-    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
-    service._album_context_resolver.resolve.assert_not_awaited()
+    assert plan.table == "giikin_aliyun.tb_rp_ord_order_cnt_hi"
+    assert plan.albums[0]["name"] == "订单"
+    assert plan.selected_dimensions == ["家族"]
+    service._album_context_resolver.resolve.assert_awaited_once()
+    service._validate_semantic_plan_metadata.assert_awaited_once_with(plan)
 
 
 @pytest.mark.asyncio
@@ -767,11 +799,9 @@ async def test_complex_question_keeps_original_llm_path_when_album_context_is_em
         "今日的有效订单是多少",
     ],
 )
-async def test_total_effective_order_phrasings_use_verified_recipe_without_llm(question):
+async def test_total_effective_order_phrasings_use_album_semantics_without_llm(question):
     service = AgentWorkflowService()
-    service._album_context_resolver.resolve = AsyncMock(
-        side_effect=AssertionError("verified recipe must not consult albums")
-    )
+    _wire_effective_order_semantics(service)
 
     sql = await service._build_readonly_sql(question)
 
@@ -785,6 +815,7 @@ async def test_total_effective_order_phrasings_use_verified_recipe_without_llm(q
 @pytest.mark.asyncio
 async def test_total_effective_order_query_prefers_cookie_before_maxcompute():
     service = AgentWorkflowService()
+    _wire_effective_order_semantics(service)
     app_state._maxcompute_client = SimpleNamespace(
         submit_query=AsyncMock(side_effect=AssertionError("production query must prefer Cookie")),
         wait_and_fetch=AsyncMock(),

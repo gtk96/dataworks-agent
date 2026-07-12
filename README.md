@@ -42,6 +42,19 @@ npm run dev
 
 前端默认 `http://localhost:5173`,通过 Vite proxy 把 `/api/*` 转发到后端 8085。
 
+## 自主问数语义闭环
+
+业务问数不再在 `workflow_service.py` 里按问句硬编码 SQL，而是按下列链路生成和验证查询：
+
+```text
+自然语言 -> DataWorks 数据专辑选表 -> approved 语义指标 -> 真实 DDL 校验 -> 只读 SQL -> AK/SK / Cookie 查询
+```
+
+- `dataworks_agent/semantic/metrics.json` 是可版本化的 baseline，`SemanticLayer` 中更高版本的 approved 定义优先。
+- 数据专辑负责证明认证表属于当前业务主题；指标定义负责 measure、dimension、filter 和 freshness 口径。
+- 认证表不在专辑中、DDL 不可读、字段不一致或总计结果不唯一时，Agent 会阻止执行，不猜口径。
+- 未认证指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
+
 ## 目录结构
 
 ```

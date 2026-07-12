@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "metrics": [
+    {
+      "id": "effective_order_cnt",
+      "version": 1,
+      "status": "approved",
+      "name": "有效订单数",
+      "aliases": [
+        "有效订单",
+        "有效订单数",
+        "总有效订单",
+        "总有效订单数"
+      ],
+      "description": "按最新小时快照统计的今日有效订单量",
+      "album_terms": [
+        "订单"
+      ],
+      "table": "giikin_aliyun.tb_rp_ord_order_cnt_hi",
+      "measure": {
+        "column": "effective_order_cnt",
+        "alias": "effective_order_cnt",
+        "aggregation": "snapshot"
+      },
+      "dimensions": [
+        {
+          "id": "family",
+          "name": "家族",
+          "column": "family_name",
+          "aliases": [
+            "家族",
+            "各家族"
+          ],
+          "total_value": "合计"
+        }
+      ],
+      "fixed_filters": {
+        "line_name": "合计",
+        "befrom": "合计",
+        "statis_type": "hf",
+        "time_interval": "合计"
+      },
+      "freshness": {
+        "strategy": "latest_hour_snapshot",
+        "date_partition": "pt",
+        "hour_partition": "ht"
+      },
+      "owner": "dataworks-agent",
+      "source": "certified_semantic_contract",
+      "time_terms": [
+        "今天",
+        "今日",
+        "当前",
+        "最新"
+      ]
+    }
+  ]
+}

@@ -132,3 +132,37 @@ async def test_unmatched_question_does_not_invent_album():
     resolver = DataAlbumContextResolver(FakeAlbumClient())
 
     assert await resolver.resolve("\u5458\u5de5\u98df\u5802\u83dc\u8c31") == []
+
+
+@pytest.mark.asyncio
+async def test_required_certified_table_is_kept_beyond_normal_candidate_limit():
+    client = FakeAlbumClient()
+    client.list_meta_albums = AsyncMock(
+        return_value=[{"id": 888, "albumName": "订单", "albumDesc": "订单主题"}]
+    )
+    client.list_meta_album_entities = AsyncMock(
+        return_value=[
+            {
+                "project": "giikin_aliyun",
+                "table_name": "tb_rp_other_order_metric",
+                "comment": "订单指标汇总",
+                "entity_type": "odps-table",
+            },
+            {
+                "project": "giikin_aliyun",
+                "table_name": "tb_rp_ord_order_cnt_hi",
+                "comment": "小时预警",
+                "entity_type": "odps-table",
+            },
+        ]
+    )
+    resolver = DataAlbumContextResolver(client)
+
+    contexts = await resolver.resolve(
+        "今天有效订单是多少",
+        max_tables=1,
+        required_tables={"giikin_aliyun.tb_rp_ord_order_cnt_hi"},
+    )
+
+    names = {table.full_name for table in contexts[0].tables}
+    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in names

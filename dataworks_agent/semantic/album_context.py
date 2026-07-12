@@ -57,6 +57,7 @@ class DataAlbumContextResolver:
         *,
         max_albums: int = 3,
         max_tables: int = 12,
+        required_tables: set[str] | None = None,
     ) -> list[DataAlbumContext]:
         client = self.client
         if client is None:
@@ -86,6 +87,7 @@ class DataAlbumContextResolver:
                     query_tokens,
                     category_map,
                     max_tables=max_tables,
+                    required_tables=required_tables or set(),
                 )
                 category_score = _field_score(" ".join(category_names), query_tokens, 1.5)
                 contexts.append(
@@ -130,6 +132,7 @@ class DataAlbumContextResolver:
         category_map: dict[int, str],
         *,
         max_tables: int,
+        required_tables: set[str] | None = None,
     ) -> list[AlbumTable]:
         ranked: list[AlbumTable] = []
         for entity in entities:
@@ -158,7 +161,17 @@ class DataAlbumContextResolver:
                 )
             )
         ranked.sort(key=lambda item: (-item.score, item.full_name))
-        return ranked[:max_tables]
+        selected = ranked[:max_tables]
+        required = {item.lower() for item in (required_tables or set())}
+        selected_names = {item.full_name.lower() for item in selected}
+        for candidate in ranked:
+            if (
+                candidate.full_name.lower() in required
+                and candidate.full_name.lower() not in selected_names
+            ):
+                selected.append(candidate)
+                selected_names.add(candidate.full_name.lower())
+        return selected
 
     @staticmethod
     def format_for_llm(contexts: list[DataAlbumContext]) -> str:

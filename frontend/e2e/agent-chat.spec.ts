@@ -15,6 +15,12 @@ test.describe('Agent conversational query', () => {
     await expect(result).toBeVisible()
     await expect(result).toContainText('吉喵云')
     await expect(result).toContainText('6560')
+    const semanticProof = page.getByTestId('semantic-proof')
+    await expect(semanticProof).toBeVisible()
+    await expect(semanticProof).toContainText('approved v2')
+    await expect(semanticProof).toContainText('giikin_aliyun.tb_rp_ord_order_cnt_hi')
+    await expect(semanticProof).toContainText('\u6570\u636e\u4e13\u8f91')
+    await expect(semanticProof).toContainText('AK/SK')
     await expect(page.getByText('真实问数完成，返回 2 行，闭环验收通过。')).toBeVisible()
     await expect(page.getByText('Closed Loop Verification')).toBeVisible()
 

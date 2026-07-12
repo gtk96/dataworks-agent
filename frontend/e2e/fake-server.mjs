@@ -204,6 +204,15 @@ const server = http.createServer((req, res) => {
               { step: 'closed_loop_verification', status: 'completed' },
             ] },
             artifacts: [{ type: 'query_sql', content: 'SELECT family_name, effective_order_cnt FROM sample' }],
+            semantic_plan: {
+              metric_id: 'effective_order_cnt', metric_name: '\u6709\u6548\u8ba2\u5355\u6570', metric_version: 2,
+              table: 'giikin_aliyun.tb_rp_ord_order_cnt_hi',
+              albums: [{ album_id: 888, name: '\u8ba2\u5355' }],
+              selected_dimensions: ['\u5bb6\u65cf'],
+              caliber: { fixed_filters: { line_name: '\u5408\u8ba1', statis_type: 'hf' } },
+              metadata_validation: { status: 'passed', channel: 'maxcompute_ak_sk' },
+              selection_evidence: ['\u5b98\u65b9\u8868\u5df2\u5728\u6570\u636e\u4e13\u8f91\u4e2d\u6838\u9a8c'],
+            },
             query: {
               executed: true,
               execution_channel: 'cookie_bff',

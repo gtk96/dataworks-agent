@@ -97,6 +97,22 @@
               <span v-for="resource in executionTables" :key="resource">{{ resource }}</span>
             </div>
 
+            <section v-if="semanticPlan" class="semantic-proof" data-testid="semantic-proof">
+              <div class="semantic-proof-title">
+                <div><strong>语义选表依据</strong><span>不是对话硬编码 SQL</span></div>
+                <span>{{ semanticMetricVersion }}</span>
+              </div>
+              <div class="semantic-proof-grid">
+                <div><small>认证指标</small><strong>{{ semanticPlan.metric_name || semanticPlan.metric_id }}</strong></div>
+                <div><small>官方表</small><strong>{{ semanticPlan.table || '—' }}</strong></div>
+                <div><small>数据专辑</small><strong>{{ semanticAlbumText }}</strong></div>
+                <div><small>DDL 核验</small><strong>{{ semanticValidationText }}</strong></div>
+              </div>
+              <div v-if="semanticDimensionText" class="semantic-proof-row"><small>分析维度</small><span>{{ semanticDimensionText }}</span></div>
+              <div v-if="semanticFilterText" class="semantic-proof-row"><small>固定口径</small><code>{{ semanticFilterText }}</code></div>
+              <ul v-if="semanticEvidence.length"><li v-for="item in semanticEvidence" :key="item">{{ item }}</li></ul>
+            </section>
+
             <section v-if="queryResult?.executed" class="query-result" data-testid="query-result">
               <div class="query-result-title">
                 <strong>真实查询结果</strong>
@@ -211,6 +227,17 @@ import { idempotencyKey } from '@/utils/request'
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
 interface ExecutionStatus { task_id: string; current_step: string | null; total_steps: number; completed_steps: number; failed_steps: number; steps: Record<string, { status: string }> }
+interface SemanticPlan {
+  metric_id?: string
+  metric_name?: string
+  metric_version?: number
+  table?: string
+  albums?: Array<{ name?: string }>
+  selected_dimensions?: string[]
+  caliber?: { fixed_filters?: Record<string, unknown> }
+  selection_evidence?: string[]
+  metadata_validation?: { status?: string; channel?: string }
+}
 interface AgentPayload {
   message: string
   success: boolean
@@ -229,6 +256,7 @@ interface AgentPayload {
     clarifying_questions?: string[]
     next_actions?: string[]
     agent_mode?: string
+    semantic_plan?: SemanticPlan
     query?: {
       sql?: string
       columns?: string[]
@@ -303,6 +331,23 @@ const queryResult = computed(() => lastPayload.value?.data?.query)
 const queryColumns = computed(() => queryResult.value?.columns ?? [])
 const queryRows = computed(() => queryResult.value?.rows ?? [])
 const queryChannelText = computed(() => queryResult.value?.execution_channel === 'cookie_bff' ? 'Cookie BFF 兜底' : 'MaxCompute AK/SK')
+const semanticPlan = computed(() => {
+  const plan = lastPayload.value?.data?.semantic_plan
+  return plan && plan.metric_id !== 'ad_hoc_query' ? plan : null
+})
+const semanticMetricVersion = computed(() => semanticPlan.value ? `approved v${semanticPlan.value.metric_version ?? 1}` : '')
+const semanticAlbumText = computed(() => (semanticPlan.value?.albums ?? []).map((item: any) => item.name).filter(Boolean).join('、') || '未匹配')
+const semanticValidationText = computed(() => {
+  const validation = semanticPlan.value?.metadata_validation
+  if (validation?.status !== 'passed') return '未通过'
+  return validation.channel === 'maxcompute_ak_sk' ? '已通过 · AK/SK' : '已通过 · Cookie'
+})
+const semanticDimensionText = computed(() => (semanticPlan.value?.selected_dimensions ?? []).join('、'))
+const semanticFilterText = computed(() => {
+  const filters = semanticPlan.value?.caliber?.fixed_filters ?? {}
+  return Object.entries(filters).map(([key, value]) => `${key}=${String(value)}`).join(' · ')
+})
+const semanticEvidence = computed(() => semanticPlan.value?.selection_evidence ?? [])
 const artifactCards = computed(() => {
   const result: Array<{ label: string; value: string; isCode: boolean }> = []
   const artifacts = lastPayload.value?.data?.artifacts
@@ -392,7 +437,7 @@ function queryCell(row: unknown[] | Record<string, unknown>, column: string, col
   const value = Array.isArray(row) ? row[columnIndex] : row[column]
   return value === null || value === undefined ? '—' : String(value)
 }
-function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', query_sql: '只读查询 SQL', node_sql: '节点 SQL', table_schema: '表结构', semantic_candidates: '语义候选' }[key] ?? key.replaceAll('_', ' ')) }
+function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', query_sql: '只读查询 SQL', node_sql: '节点 SQL', table_schema: '表结构', semantic_candidates: '语义候选', semantic_query_plan: '语义查询计划' }[key] ?? key.replaceAll('_', ' ')) }
 </script>
 
 <style scoped>
@@ -422,6 +467,10 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .result-metrics { display: grid; grid-template-columns: repeat(4,1fr); border-bottom: 1px solid #ededf0; }.result-metrics div { padding: 14px 18px; border-right: 1px solid #ededf0; }.result-metrics div:last-child { border-right: 0; }.result-metrics strong,.result-metrics span { display: block; }.result-metrics strong { color: #27272d; font-size: 16px; }.result-metrics span { margin-top: 3px; color: #9a9aa1; font-size: 10px; }
 .compact-plan { margin: 0; padding: 16px 20px; list-style: none; }.compact-plan li { display: flex; align-items: center; gap: 10px; min-height: 38px; }.step-check { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: #eeebff; color: #6748ef; font-size: 10px; font-weight: 800; }.step-check.step-failed,.step-check.step-error,.step-check.step-blocked { background: #fff0f0; color: #d14343; } .step-check.step-warning { background: #fff6e8; color: #b66a00; } .step-check.step-skipped { background: #f0f0f2; color: #8b8b92; } .step-check.step-approval_required { background: #fff6e8; color: #b66a00; } .compact-plan strong,.compact-plan small { display: block; }.compact-plan strong { color: #4b4b52; font-size: 12px; }.compact-plan small { margin-top: 2px; color: #a2a2a8; font-size: 10px; }.created-resources { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 16px; }.created-resources span { padding: 5px 8px; border: 1px solid #dedee3; border-radius: 6px; color: #5d5d65; font-family: ui-monospace,monospace; font-size: 10px; }
 .query-result { margin: 0 20px 16px; overflow: hidden; border: 1px solid #e4e1f6; border-radius: 10px; background: #fff; }.query-result-title { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #f8f7ff; color: #55555d; font-size: 11px; }.query-result-title strong { color: #382a7d; font-size: 12px; }.query-table-wrap { max-height: 320px; overflow: auto; }.query-result table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }.query-result th,.query-result td { padding: 8px 10px; border-bottom: 1px solid #eeeef2; text-align: left; }.query-result th { position: sticky; top: 0; background: #fff; color: #666670; font-weight: 600; }.query-result td { color: #33333a; }
+.semantic-proof { margin: 14px 20px 0; padding: 14px; border: 1px solid #dfe8ff; border-radius: 10px; background: #f8faff; }
+.semantic-proof-title { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.semantic-proof-title div { display:flex; flex-direction:column; gap:3px; }.semantic-proof-title strong { color:#252536; font-size:13px; }.semantic-proof-title div span { color:#7b7b87; font-size:10px; }.semantic-proof-title>span { padding:3px 7px; border-radius:5px; background:#e9edff; color:#5946d8; font-size:10px; font-weight:700; }
+.semantic-proof-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }.semantic-proof-grid div { min-width:0; padding:9px; border-radius:7px; background:#fff; }.semantic-proof-grid small,.semantic-proof-row small { display:block; margin-bottom:3px; color:#92929c; font-size:9px; }.semantic-proof-grid strong { display:block; overflow:hidden; color:#454550; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.semantic-proof-row { margin-top:8px; color:#5e5e68; font-size:10px; }.semantic-proof-row code { white-space:normal; word-break:break-all; }.semantic-proof ul { margin:9px 0 0; padding-left:16px; color:#686873; font-size:10px; line-height:1.6; }
 .technical-collapse { border-top: 1px solid #ededf0; border-bottom: 0; padding: 0 20px; }.technical-collapse :deep(.el-collapse-item__header){font-size:11px;color:#777780}.artifact-list article { margin-bottom: 10px; }.artifact-list strong { color: #55555d; font-size: 11px; }.artifact-list pre,.json-detail { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #17171b; color: #dddde3; font-size: 10px; white-space: pre-wrap; }.artifact-list p { color: #66666e; font-size: 12px; white-space: pre-wrap; }
 .question-card { margin: 14px 0 20px 40px; padding: 16px; border: 1px solid #f0d5a8; border-radius: 10px; background: #fffaf2; }.question-card>strong { display: block; margin-bottom: 8px; color: #8d5b0e; font-size: 12px; }.question-card button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border: 0; border-top: 1px solid #f3e5cb; background: transparent; color: #765723; font-size: 12px; cursor: pointer; text-align: left; }
 .composer-shell { min-height: 0; flex-shrink: 0; padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }
