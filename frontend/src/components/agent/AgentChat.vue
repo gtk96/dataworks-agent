@@ -8,7 +8,7 @@
 
       <div class="rail-section">
         <span class="rail-label">快捷能力</span>
-        <button v-for="item in capabilityPrompts" :key="item.title" type="button" class="rail-item" @click="runPrompt(item.text)">
+        <button v-for="item in capabilityPrompts" :key="item.title" type="button" class="rail-item" @click="selectPrompt(item.text)">
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.title }}</span>
         </button>
@@ -54,7 +54,7 @@
           <h1>今天想让数据 Agent 完成什么？</h1>
           <p>直接描述业务目标。无需选择工具，Agent 会自动组合 AK/SK、9222 Cookie 和阿里云官方 MCP。</p>
           <div class="prompt-grid">
-            <button v-for="prompt in starterPrompts" :key="prompt.title" type="button" @click="runPrompt(prompt.text)">
+            <button v-for="prompt in starterPrompts" :key="prompt.title" type="button" @click="selectPrompt(prompt.text)">
               <span class="prompt-icon"><el-icon><component :is="prompt.icon" /></el-icon></span>
               <strong>{{ prompt.title }}</strong>
               <small>{{ prompt.description }}</small>
@@ -80,7 +80,7 @@
             </header>
 
             <div class="result-metrics">
-              <div><strong>{{ completedStepCount }}/{{ planSteps.length || completedStepCount }}</strong><span>{{ stepMetricLabel }}</span></div>
+              <div><strong>{{ stepMetricValue }}</strong><span>{{ stepMetricLabel }}</span></div>
               <div><strong>{{ artifactCards.length }}</strong><span>产物</span></div>
               <div><strong>{{ executionTables.length }}</strong><span>表 / 节点</span></div>
               <div><strong>{{ publishGateText }}</strong><span>发布状态</span></div>
@@ -95,6 +95,16 @@
 
             <div v-if="executionTables.length" class="created-resources">
               <span v-for="resource in executionTables" :key="resource">{{ resource }}</span>
+            </div>
+
+            <div v-if="responseErrors.length" class="response-errors">
+              <strong>执行受阻</strong>
+              <p v-for="error in responseErrors" :key="error">{{ error }}</p>
+            </div>
+
+            <div v-if="nextActions.length" class="next-actions">
+              <strong>建议下一步</strong>
+              <button v-for="action in nextActions" :key="action" type="button" @click="selectPrompt(action)">{{ action }}</button>
             </div>
 
             <el-collapse v-if="artifactCards.length || technicalDetails" class="technical-collapse">
@@ -123,6 +133,7 @@
       <footer class="composer-shell">
         <div class="composer-box" :class="{ focused: inputFocused }">
           <textarea
+            ref="composerInput"
             v-model="input"
             rows="1"
             :disabled="loading"
@@ -132,13 +143,17 @@
             @keydown.enter.exact.prevent="sendMessage"
           />
           <div class="composer-toolbar">
+            <div class="mode-control">
+              <span>执行模式</span>
+              <el-segmented v-model="executionMode" :options="modeOptions" size="small" />
+            </div>
+            <span v-if="executionMode === 'dev_execute'" class="execution-warning">将写入开发环境</span>
             <el-popover placement="top-start" :width="320" trigger="click">
               <template #reference>
-                <button class="settings-button" type="button"><el-icon><Setting /></el-icon>{{ executionMode === 'dev_execute' ? '开发执行' : '规划预览' }}</button>
+                <button class="settings-button" type="button" title="高级执行设置"><el-icon><Setting /></el-icon>高级设置</button>
               </template>
               <div class="run-settings">
-                <strong>执行设置</strong>
-                <label><span>模式<small>开发执行会真实写入开发环境</small></span><el-segmented v-model="executionMode" :options="modeOptions" size="small" /></label>
+                <strong>高级执行设置</strong>
                 <label><span>初始化 ODS 数据</span><el-switch v-model="initializeData" /></label>
                 <label><span>提交发布审批<small>只创建 Publish Gate，不自动上线</small></span><el-switch v-model="requestPublish" /></label>
               </div>
@@ -173,6 +188,7 @@ import {
 import ChatMessage from './ChatMessage.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
+import { buildAgentChatRequest, requestAgentChat, type AgentExecutionMode } from './chatInteraction'
 
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
@@ -203,11 +219,12 @@ interface AgentPayload {
 const input = ref('')
 const inputFocused = ref(false)
 const loading = ref(false)
-const executionMode = ref<'plan' | 'dev_execute'>('dev_execute')
+const executionMode = ref<AgentExecutionMode>('plan')
 const initializeData = ref(true)
 const requestPublish = ref(false)
 const messages = ref<ChatMsg[]>([])
 const messagesRef = ref<HTMLElement>()
+const composerInput = ref<HTMLTextAreaElement>()
 const ws = ref<WebSocket | null>(null)
 const currentStatus = ref<ExecutionStatus | null>(null)
 const lastPayload = ref<AgentPayload | null>(null)
@@ -218,11 +235,11 @@ const modeOptions = [
   { label: '开发执行', value: 'dev_execute' },
 ]
 const capabilityPrompts = [
-  { title: '正向建模', icon: MagicStick, text: '把 mysql 数据源 jky_singleshop 的 orders 做成小时 ods_trade_order，再建 dwd_trade_order_detail、dim_customer、dws_trade_day，创建开发表、节点、调度并初始化，不发布生产。' },
-  { title: '逆向建模', icon: Search, text: '逆向分析存量表 dwd_trade_order_detail，读取真实表结构、血缘、分层和语义候选。' },
-  { title: '异常排查', icon: Tools, text: '排查最近失败的 DataWorks 任务，检查任务日志、节点依赖和运行底座，给出恢复建议。' },
-  { title: '自主问数', icon: DataAnalysis, text: '查数 dws_trade_day 前几条数据。' },
-  { title: 'Cookie 管理', icon: Connection, text: '从 9222 登录浏览器提取并刷新 Cookie，同时检查 AK/SK 和官方 MCP 状态。' },
+  { title: '正向建模', icon: MagicStick, text: '把 <数据源> 的 <源表> 做成 ODS→DWD→DIM→DWS 全链路，创建开发表、节点和调度；先给我规划，不发布生产。' },
+  { title: '逆向建模', icon: Search, text: '逆向分析存量表 <请输入真实表名或节点 ID>，读取真实结构、血缘、分层和语义候选。' },
+  { title: '异常排查', icon: Tools, text: '排查 DataWorks 任务 <请输入任务 ID、实例 ID 或节点 ID>，检查日志、依赖和运行底座，给出恢复建议。' },
+  { title: '自主问数', icon: DataAnalysis, text: '查询表 <请输入真实表名>：<请输入业务问题>。' },
+  { title: 'Cookie 管理', icon: Connection, text: '检查 AK/SK、官方 MCP、Cookie BFF 和 9222 调试浏览器的当前状态。' },
 ]
 const starterPrompts = [
   { title: '一句话建完整数仓链路', description: 'ODS、DWD、DIM、DWS 建表与任务一次完成', icon: MagicStick, text: capabilityPrompts[0].text },
@@ -235,11 +252,18 @@ const isRealtime = computed(() => ws.value?.readyState === WebSocket.OPEN)
 const connectionText = computed(() => isRealtime.value ? '实时连接' : 'HTTP 可用')
 const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? lastPayload.value?.data?.steps ?? [])
 const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_questions ?? [])
+const nextActions = computed(() => lastPayload.value?.data?.next_actions ?? [])
+const responseErrors = computed(() => {
+  const errors = lastPayload.value?.data?.errors ?? []
+  const primary = lastPayload.value?.error
+  return [...new Set([...(Array.isArray(errors) ? errors.map(String) : []), ...(primary ? [primary] : [])])].slice(0, 3)
+})
 const agentMode = computed(() => lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle'))
 const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
 const resultTitle = computed(() => lastPayload.value?.data?.plan?.summary || lastPayload.value?.message || 'Agent 执行结果')
 const stepSummary = computed(() => summarizeAgentSteps(planSteps.value))
 const completedStepCount = computed(() => planSteps.value.length ? stepSummary.value.completed : (currentStatus.value?.completed_steps ?? 0))
+const stepMetricValue = computed(() => planSteps.value.length ? `${completedStepCount.value}/${planSteps.value.length}` : '—')
 const stepMetricLabel = computed(() => stepSummary.value.planned ? `已执行 · ${stepSummary.value.planned} 已规划` : '步骤完成')
 const publishGateText = computed(() => lastPayload.value?.data?.publish_request ? '待审批' : lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布')
 const executionTables = computed(() => {
@@ -310,16 +334,13 @@ async function sendMessage() {
   messages.value.push({ id: crypto.randomUUID(), text, isUser: true, timestamp: new Date() })
   loading.value = true
   await nextTick(scrollToBottom)
-  const payload = { message: text, execution_mode: executionMode.value, initialize_data: initializeData.value, publish: requestPublish.value }
-  if (isRealtime.value) {
-    ws.value?.send(JSON.stringify(payload))
-    return
-  }
   try {
-    const response = await fetch('/agent/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    handleAgentResponse(await response.json())
+    const payload = buildAgentChatRequest(text, executionMode.value, initializeData.value, requestPublish.value)
+    handleAgentResponse(await requestAgentChat<AgentPayload>(payload))
   } catch (error) {
-    handleAgentResponse({ message: `Agent 连接失败：${error instanceof Error ? error.message : String(error)}`, success: false })
+    handleAgentResponse({ message: `Agent 请求失败：${error instanceof Error ? error.message : String(error)}`, success: false })
+  } finally {
+    loading.value = false
   }
 }
 function handleAgentResponse(payload: AgentPayload) {
@@ -330,8 +351,8 @@ function handleAgentResponse(payload: AgentPayload) {
   loading.value = false
   nextTick(scrollToBottom)
 }
-function runPrompt(text: string) { input.value = text; sendMessage() }
-function appendQuestion(question: string) { input.value = `${question}：`; nextTick(() => document.querySelector<HTMLTextAreaElement>('.composer-box textarea')?.focus()) }
+function selectPrompt(text: string) { input.value = text; nextTick(() => composerInput.value?.focus()) }
+function appendQuestion(question: string) { input.value = `${question}：`; nextTick(() => composerInput.value?.focus()) }
 function scrollToBottom() { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight }
 function stepStatus(step: PlanStep, index: number) { return agentStepMarker(step, index) }
 function phaseLabel(phase?: string) { return ({ understand: '理解目标', inspect: '检查环境', plan: '生成计划', design: '设计模型', orchestrate: '编排任务', guardrail: '安全检查', execute: '开发执行' }[phase ?? ''] ?? '执行步骤') }
@@ -370,4 +391,13 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .composer-shell { padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }
 @keyframes pulse{to{opacity:.25;transform:translateY(-2px)}}@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:900px){.agent-workspace{grid-template-columns:1fr}.conversation-rail{display:none}.result-metrics{grid-template-columns:repeat(2,1fr)}.result-metrics div:nth-child(2){border-right:0}.prompt-grid{grid-template-columns:1fr}.chat-header{padding:0 16px}.composer-shell{padding-left:12px;padding-right:12px}.message-list{width:calc(100% - 24px)}.welcome-panel{width:calc(100% - 24px)}}
+.mode-control { display: flex; align-items: center; gap: 8px; color: #55555d; font-size: 11px; font-weight: 600; }
+.execution-warning { padding: 4px 7px; border: 1px solid #ffd7a8; border-radius: 6px; background: #fff7e8; color: #a85b00; font-size: 10px; }
+.response-errors { margin-top: 12px; padding: 11px 12px; border: 1px solid #ffd2d2; border-radius: 9px; background: #fff7f7; color: #8f2f2f; }
+.response-errors strong, .next-actions strong { display: block; margin-bottom: 6px; font-size: 12px; }
+.response-errors p { margin: 3px 0; font-size: 11px; line-height: 1.5; word-break: break-word; }
+.next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.next-actions strong { width: 100%; color: #55555d; }
+.next-actions button { padding: 6px 9px; border: 1px solid #dedee6; border-radius: 7px; background: #fff; color: #5c45c7; font-size: 11px; cursor: pointer; }
+.next-actions button:hover { border-color: #8a72f8; background: #f8f6ff; }
 </style>

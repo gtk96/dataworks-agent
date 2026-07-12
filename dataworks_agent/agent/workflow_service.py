@@ -107,21 +107,48 @@ class AgentWorkflowService:
 
     def capability_status(self) -> dict[str, Any]:
         official = getattr(app_state, "_official_mcp_client", None)
+        cookie_bff = getattr(app_state, "_bff_client", None) is not None
+        cdp_9222 = getattr(app_state, "_cdp_client", None) is not None
+        raw_cookie_health = app_state.cookie_health
+        cookie_health = raw_cookie_health
+        if raw_cookie_health in {"expired", "critical"} and (cookie_bff or cdp_9222):
+            cookie_health = "degraded"
         return {
             "ak_sk": bool(settings.aliyun_access_key_id and settings.aliyun_access_key_secret),
             "openapi": getattr(app_state, "_openapi_client", None) is not None,
             "maxcompute": getattr(app_state, "_maxcompute_client", None) is not None,
             "node_adapter": getattr(app_state, "_node_client", None) is not None,
-            "cookie_bff": getattr(app_state, "_bff_client", None) is not None,
-            "cdp_9222": getattr(app_state, "_cdp_client", None) is not None,
-            "cookie_health": app_state.cookie_health,
+            "cookie_bff": cookie_bff,
+            "cdp_9222": cdp_9222,
+            "cookie_health": cookie_health,
+            "cookie_mcp_health": raw_cookie_health,
             "official_mcp": official.status.to_dict() if official else {"enabled": False, "connected": False},
         }
 
     async def _manage_cookie(self, message: str, mode: ExecutionMode) -> WorkflowResult:
         status = self.capability_status()
+        official = status["official_mcp"]
+        steps = [
+            {"step": "check_ak_sk", "status": "completed" if status["ak_sk"] else "failed"},
+            {"step": "check_official_mcp", "status": "completed" if official.get("connected") else "warning"},
+            {"step": "check_cookie_bff", "status": "completed" if status["cookie_bff"] else "warning"},
+            {"step": "check_cdp_9222", "status": "completed" if status["cdp_9222"] else "warning"},
+        ]
         if mode == "plan" or not any(k in message for k in ("提取", "刷新", "同步", "更新", "获取")):
-            return WorkflowResult(True, "已检查 AK/SK、9222 调试浏览器和 Cookie 兜底通道。", "cookie_manage", mode, data={"capabilities": status})
+            degraded = status["cookie_health"] == "degraded"
+            message_text = (
+                "已检查执行底座：旧 Cookie MCP 登录态异常，但 BFF/CDP 兜底仍可用，当前为部分降级。"
+                if degraded
+                else "已检查 AK/SK、9222 调试浏览器、Cookie 兜底和官方 MCP 通道。"
+            )
+            return WorkflowResult(
+                True,
+                message_text,
+                "cookie_manage",
+                mode,
+                steps=steps,
+                data={"capabilities": status},
+            )
         from dataworks_agent.cookie.background_refresh import cdp_extract_and_apply
 
         result = await cdp_extract_and_apply()
@@ -313,7 +340,45 @@ class AgentWorkflowService:
                 errors=["maxcompute client unavailable"],
             )
 
-        schema = await mc.get_table_schema(table)
+        try:
+            schema = await mc.get_table_schema(table)
+        except Exception as exc:
+            error = self._brief_error(exc)
+            lower_error = error.lower()
+            not_found = any(token in lower_error for token in ("not found", "nosuchobject", "does not exist"))
+            permission_denied = any(
+                token in lower_error
+                for token in ("nopermission", "no privilege", "accessdenied", "permission")
+            )
+            if not_found:
+                message_text = (
+                    f"未找到表 {table}。请填写当前 MaxCompute 项目中的真实表名，"
+                    "或提供 DataWorks 节点 ID 逆向读取 FlowSpec。"
+                )
+            elif permission_denied:
+                message_text = (
+                    f"已识别逆向目标 {table}，但当前 AK/SK 无权读取该 MaxCompute 表结构。"
+                    "可提供 DataWorks 节点 ID，改走官方 MCP/OpenAPI 读取节点。"
+                )
+            else:
+                message_text = f"读取表 {table} 的真实结构失败，请核对表名、项目和 AK/SK 权限。"
+            return WorkflowResult(
+                False,
+                message_text,
+                "reverse_modeling",
+                mode,
+                steps=[{"step": "read_maxcompute_schema", "status": "blocked"}],
+                data={
+                    "source_type": "table",
+                    "table": table,
+                    "clarifying_questions": ["请输入真实表名或 DataWorks 节点 ID"],
+                    "next_actions": [
+                        "确认表位于当前 MaxCompute 项目",
+                        "提供 DataWorks 节点 ID 以使用官方 MCP/OpenAPI 逆向",
+                    ],
+                },
+                errors=[error],
+            )
         columns = [self._column_to_dict(column) for column in schema.columns]
         partitions = [self._column_to_dict(column) for column in schema.partition_keys]
         metadata = self._infer_reverse_metadata(table_name, columns)
@@ -512,12 +577,44 @@ class AgentWorkflowService:
         mc = getattr(app_state, "_maxcompute_client", None)
         if mc is None:
             return WorkflowResult(False, "MaxCompute AK/SK 客户端不可用，无法执行只读问数。", "ask_data", mode, artifacts=[artifact], errors=["maxcompute client unavailable"])
-        instance = await asyncio.wait_for(
-            mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
-        )
-        result = await asyncio.wait_for(
-            mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
-        )
+        try:
+            instance = await asyncio.wait_for(
+                mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
+            )
+            result = await asyncio.wait_for(
+                mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
+            )
+        except Exception as exc:
+            error = self._brief_error(exc)
+            lower_error = error.lower()
+            if isinstance(exc, TimeoutError):
+                message_text = "只读 SQL 已生成，但 MaxCompute 查询超时，未返回数据。"
+            elif any(
+                token in lower_error
+                for token in ("nopermission", "no privilege", "accessdenied", "permission")
+            ):
+                message_text = (
+                    "只读 SQL 已生成，但当前 AK/SK 缺少 MaxCompute 查询权限"
+                    "（常见为 odps:CreateInstance），本次未执行查询。"
+                )
+            else:
+                message_text = "只读 SQL 已生成，但 MaxCompute 查询执行失败；请检查项目、表名和权限。"
+            return WorkflowResult(
+                False,
+                message_text,
+                "ask_data",
+                mode,
+                steps=[
+                    {"step": "generate_readonly_sql", "status": "completed"},
+                    {"step": "execute_query", "status": "blocked"},
+                ],
+                artifacts=[artifact],
+                data={
+                    "query": {"sql": sql, "executed": False, "limit": settings.ask_data_default_limit},
+                    "next_actions": ["切换到规划模式查看 SQL", "核对 MaxCompute 项目和查询权限"],
+                },
+                errors=[error],
+            )
         rows = result.rows[: settings.ask_data_default_limit]
         return WorkflowResult(
             True,
@@ -528,6 +625,18 @@ class AgentWorkflowService:
             artifacts=[artifact],
             data={"query": {"sql": sql, "columns": result.columns, "rows": rows, "row_count": len(rows), "executed": True}},
         )
+
+    @staticmethod
+    def _brief_error(exc: Exception) -> str:
+        text = " ".join(str(exc).strip().splitlines())
+        lower = text.lower()
+        if "nosuchobject" in lower or "table not found" in lower:
+            return "MaxCompute table not found"
+        if "odps:createinstance" in lower:
+            return "MaxCompute permission denied: missing odps:CreateInstance"
+        if any(token in lower for token in ("nopermission", "no privilege", "accessdenied")):
+            return "MaxCompute permission denied"
+        return text[:180] or exc.__class__.__name__
 
     async def _build_readonly_sql(self, message: str) -> str:
         fenced = re.search(r"```sql\s*(.*?)```", message, re.I | re.S)

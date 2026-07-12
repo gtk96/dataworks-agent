@@ -166,6 +166,29 @@ async def test_ask_data_dev_execute_runs_bounded_query():
     mc.wait_and_fetch.assert_awaited_once_with(instance)
 
 
+@pytest.mark.asyncio
+async def test_ask_data_permission_denied_preserves_sql_artifact():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        submit_query=AsyncMock(side_effect=RuntimeError("NoPermission: no privilege odps:CreateInstance")),
+        wait_and_fetch=AsyncMock(),
+    )
+
+    result = await service.execute(
+        message="查数 ods_shop_order 前几条",
+        action="ask_data",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is False
+    assert result.steps[-1]["status"] == "blocked"
+    assert result.data["query"]["executed"] is False
+    assert result.artifacts[0]["type"] == "query_sql"
+    assert "odps:CreateInstance" in result.message
+    app_state._maxcompute_client.wait_and_fetch.assert_not_awaited()
+
+
 @dataclass
 class Column:
     name: str
@@ -195,6 +218,34 @@ async def test_reverse_model_reads_real_schema_mock():
 
     assert result.success is True
     assert result.data["columns"][0]["name"] == "id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "message_part"),
+    [
+        ("NoSuchObject: table not found", "未找到表"),
+        ("NoPermission: no privilege odps:Describe", "无权读取"),
+    ],
+)
+async def test_reverse_model_returns_structured_blocked_result(error, message_part):
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        get_table_schema=AsyncMock(side_effect=RuntimeError(error))
+    )
+
+    result = await service.execute(
+        message="逆向分析 ods_missing",
+        action="reverse_modeling",
+        params={"table_name": "ods_missing"},
+        execution_mode="plan",
+    )
+
+    assert result.success is False
+    assert result.steps == [{"step": "read_maxcompute_schema", "status": "blocked"}]
+    assert message_part in result.message
+    assert result.data["clarifying_questions"]
+    assert result.data["next_actions"]
 
 
 @pytest.mark.asyncio
@@ -472,3 +523,38 @@ def test_execution_artifacts_include_nested_ods_ddl():
 def test_capability_status_includes_cookie_health():
     app_state.cookie_health = "healthy"
     assert AgentWorkflowService().capability_status()["cookie_health"] == "healthy"
+
+
+def test_capability_status_reports_partial_cookie_degradation():
+    app_state.cookie_health = "expired"
+    app_state._bff_client = object()
+    app_state._cdp_client = object()
+
+    status = AgentWorkflowService().capability_status()
+
+    assert status["cookie_health"] == "degraded"
+    assert status["cookie_mcp_health"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_cookie_plan_returns_channel_steps():
+    service = AgentWorkflowService()
+    app_state.cookie_health = "expired"
+    app_state._bff_client = object()
+    app_state._cdp_client = object()
+
+    result = await service.execute(
+        message="检查 Cookie 状态",
+        action="cookie_manage",
+        params={},
+        execution_mode="plan",
+    )
+
+    assert result.success is True
+    assert {step["step"] for step in result.steps} == {
+        "check_ak_sk",
+        "check_official_mcp",
+        "check_cookie_bff",
+        "check_cdp_9222",
+    }
+    assert "部分降级" in result.message

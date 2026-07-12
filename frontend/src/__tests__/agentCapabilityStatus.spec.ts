@@ -22,4 +22,10 @@ describe('Agent capability status', () => {
     expect(badges.find((item) => item.label === 'Cookie')).toEqual({ label: 'Cookie', online: true })
     expect(badges.filter((item) => item.online)).toHaveLength(6)
   })
+
+  it('shows partial degradation while keeping the Cookie fallback usable', () => {
+    const badges = buildCapabilityBadges({ ...base, cookie_health: 'degraded' })
+    expect(badges.find((item) => item.label.startsWith('Cookie'))).toEqual({ label: 'Cookie(部分降级)', online: true })
+    expect(badges.filter((item) => item.online)).toHaveLength(6)
+  })
 })

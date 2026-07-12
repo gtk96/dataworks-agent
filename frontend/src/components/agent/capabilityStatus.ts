@@ -3,11 +3,11 @@ export interface CapabilityBadge {
   online: boolean
 }
 
-const COOKIE_USABLE = new Set(['healthy', 'warning'])
+const COOKIE_USABLE = new Set(['healthy', 'warning', 'degraded'])
 const COOKIE_HEALTH_LABELS: Record<string, string> = {
   expired: '过期',
   critical: '异常',
-  degraded: '降级',
+  degraded: '部分降级',
   missing: '缺失',
   unavailable: '不可用',
 }
@@ -16,7 +16,7 @@ export function buildCapabilityBadges(capabilities: Record<string, unknown>): Ca
   const official = capabilities.official_mcp as Record<string, unknown> | undefined
   const cookieHealth = String(capabilities.cookie_health ?? '').toLowerCase()
   const cookieOnline = Boolean(capabilities.cookie_bff) && COOKIE_USABLE.has(cookieHealth)
-  const cookieSuffix = cookieOnline ? '' : COOKIE_HEALTH_LABELS[cookieHealth]
+  const cookieSuffix = cookieHealth === 'degraded' ? COOKIE_HEALTH_LABELS.degraded : cookieOnline ? '' : COOKIE_HEALTH_LABELS[cookieHealth]
 
   return [
     { label: 'AK/SK', online: Boolean(capabilities.ak_sk) },
