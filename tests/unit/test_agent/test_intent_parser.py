@@ -90,6 +90,21 @@ def test_parse_declarative_business_questions_as_ask_data(parser, message):
     assert result.action == "ask_data"
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "\u4eca\u5929\u5e7f\u544a\u82b1\u8d39\u591a\u5c11\uff1f",
+        "\u4eca\u5929\u7269\u6d41\u6210\u672c\u591a\u5c11\uff1f",
+        "\u4eca\u5929\u91c7\u8d2d\u6210\u672c\u591a\u5c11\uff1f",
+        "\u4eca\u5929\u7b7e\u6536\u7387\u662f\u591a\u5c11\uff1f",
+        "\u4eca\u5929\u82b1\u8d39\u591a\u5c11\uff1f",
+    ],
+)
+def test_parse_business_knowledge_metrics_as_ask_data(parser, message):
+    result = parser.parse(message)
+    assert result.action == "ask_data"
+
+
 def test_parse_reverse_analysis_as_reverse_modeling(parser):
     result = parser.parse("\u9006\u5411\u5206\u6790 giikin_aliyun.tb_rp_ord_order_cnt_hi")
     assert result.action == "reverse_modeling"
