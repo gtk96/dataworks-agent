@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # ── MaxCompute（pyodps）执行底座 ──
     maxcompute_endpoint: str = "http://service.cn-shenzhen.maxcompute.aliyun.com/api"
-    maxcompute_project: str = "dataworks"
+    maxcompute_project: str = ""
 
     # ── LLM 服务（OpenAI 兼容网关，provider 无关） ──
     llm_base_url: str = "https://opencode.ai/zen/v1"

@@ -174,3 +174,117 @@ async def test_update_node_returns_false_on_non_200(client: DataWorksClient):
     with patch("dataworks_agent.api_clients.bff_client.decrypt_cookie", return_value="mock_cookie"):
         ok = await client.update_node("uuid", "SELECT 1")
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_list_meta_albums_maps_paged_data(client: DataWorksClient):
+    fake = FakeAsyncClient()
+    fake.set_response(
+        {
+            "code": 200,
+            "data": {
+                "data": [
+                    {"id": 436, "albumName": "orders", "tableCount": 39},
+                    {"id": 505, "albumName": "family", "tableCount": 12},
+                ]
+            },
+        }
+    )
+    client._http = fake
+
+    with patch("dataworks_agent.api_clients.bff_client.decrypt_cookie", return_value="mock_cookie"):
+        albums = await client.list_meta_albums()
+
+    assert [item["id"] for item in albums] == [436, 505]
+    assert fake.last_url.endswith("/dma/list")
+    assert fake.last_params["scene"] == "all"
+
+
+@pytest.mark.asyncio
+async def test_list_meta_album_entities_flattens_nested_entity(client: DataWorksClient):
+    fake = FakeAsyncClient()
+    fake.set_response(
+        {
+            "code": 200,
+            "data": {
+                "data": [
+                    {
+                        "albumId": 436,
+                        "relationId": 9,
+                        "categoryId": 7,
+                        "remark": "manual business note",
+                        "entity": {
+                            "entityGuid": "odps.giikin.tb_dws_order",
+                            "name": "tb_dws_order",
+                            "databaseName": "giikin",
+                            "ownerName": "owner",
+                            "comment": "order summary",
+                            "entityType": "odps-table",
+                            "qualifiedName": "maxcompute-table.giikin.tb_dws_order",
+                        },
+                    }
+                ]
+            },
+        }
+    )
+    client._http = fake
+
+    with patch("dataworks_agent.api_clients.bff_client.decrypt_cookie", return_value="mock_cookie"):
+        entities = await client.list_meta_album_entities(436)
+
+    assert entities == [
+        {
+            "album_id": 436,
+            "relation_id": 9,
+            "category_id": 7,
+            "remark": "manual business note",
+            "project": "giikin",
+            "table_name": "tb_dws_order",
+            "comment": "order summary",
+            "entity_guid": "odps.giikin.tb_dws_order",
+            "qualified_name": "maxcompute-table.giikin.tb_dws_order",
+            "entity_type": "odps-table",
+            "owner": "owner",
+        }
+    ]
+    assert fake.last_url.endswith("/dma/listAlbumEntity")
+    assert fake.last_params["entityType"] == "odps-table"
+
+
+@pytest.mark.asyncio
+async def test_meta_album_read_methods_return_empty_on_non_200(client: DataWorksClient):
+    fake = FakeAsyncClient()
+    fake.set_response({"code": 500, "message": "failed"})
+    client._http = fake
+
+    with patch("dataworks_agent.api_clients.bff_client.decrypt_cookie", return_value="mock_cookie"):
+        assert await client.list_meta_albums() == []
+        assert await client.list_meta_album_categories(436) == []
+        assert await client.list_meta_album_entities(436) == []
+        assert await client.get_meta_album_wiki(436) is None
+
+
+@pytest.mark.asyncio
+async def test_get_meta_album_wiki_returns_none_for_null_data(client: DataWorksClient):
+    fake = FakeAsyncClient()
+    fake.set_response({"code": 200, "data": None})
+    client._http = fake
+
+    with patch("dataworks_agent.api_clients.bff_client.decrypt_cookie", return_value="mock_cookie"):
+        wiki = await client.get_meta_album_wiki(505)
+
+    assert wiki is None
+
+
+def test_reset_auth_cache_discards_cached_credentials(client: DataWorksClient):
+    client._cookie = "stale-cookie"
+    client._csrf_token = "stale-token"
+    client._csrf_time = 123.0
+    client.last_error = "expired"
+
+    client.reset_auth_cache()
+
+    assert client._cookie == ""
+    assert client._csrf_token == ""
+    assert client._csrf_time == 0
+    assert client.last_error is None

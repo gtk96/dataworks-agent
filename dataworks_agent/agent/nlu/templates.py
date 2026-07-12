@@ -48,6 +48,8 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
         "patterns": [
             r"(排查|诊断|修复|自愈).*?(失败|异常|报错|任务|调度|数据)",
             r"(任务|调度|节点).*?(失败|异常|报错|恢复)",
+            r"(\u68c0\u67e5|\u8bca\u65ad|\u6392\u67e5).*?(\u6267\u884c\u5e95\u5ea7|\u8fd0\u884c\u5e95\u5ea7|\u5e95\u5ea7\u5065\u5eb7)",
+            r"(\u6267\u884c\u5e95\u5ea7|\u8fd0\u884c\u5e95\u5ea7).*?(\u68c0\u67e5|\u8bca\u65ad|\u5065\u5eb7)",
             r"(self[-_ ]?heal|diagnose|troubleshoot)",
         ],
         "required_params": [],
@@ -55,7 +57,8 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
     },
     "reverse_modeling": {
         "patterns": [
-            r"(逆向|存量).*?(建模|表结构|血缘|语义)",
+            r"(\u9006\u5411).*?(\u5206\u6790|\u89e3\u6790|\u5efa\u6a21|\u8868\u7ed3\u6784|\u8840\u7f18|\u8bed\u4e49)",
+            r"(\u5b58\u91cf).*?(\u5efa\u6a21|\u8868\u7ed3\u6784|\u8840\u7f18|\u8bed\u4e49)",
             r"(分析|梳理).*?(存量表|已有表)",
             r"reverse.*model",
         ],

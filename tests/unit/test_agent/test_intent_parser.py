@@ -87,3 +87,20 @@ def test_query_lineage_is_not_shadowed_by_business_query(parser):
 def test_parse_declarative_business_questions_as_ask_data(parser, message):
     result = parser.parse(message)
     assert result.action == "ask_data"
+
+
+def test_parse_reverse_analysis_as_reverse_modeling(parser):
+    result = parser.parse("\u9006\u5411\u5206\u6790 giikin_aliyun.tb_rp_ord_order_cnt_hi")
+    assert result.action == "reverse_modeling"
+    assert result.params["table_name"] == "giikin_aliyun.tb_rp_ord_order_cnt_hi"
+
+
+def test_parse_execution_foundation_check_as_diagnose_issue(parser):
+    result = parser.parse("\u68c0\u67e5\u6267\u884c\u5e95\u5ea7")
+    assert result.action == "diagnose_issue"
+
+
+def test_parse_explicit_task_id_as_diagnose_issue(parser):
+    result = parser.parse("\u6392\u67e5\u4efb\u52a1 nonexistent-task-id")
+    assert result.action == "diagnose_issue"
+    assert result.params["task_id"] == "nonexistent-task-id"

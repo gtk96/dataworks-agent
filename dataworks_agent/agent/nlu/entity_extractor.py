@@ -15,6 +15,7 @@ class EntityExtractor:
     def extract_table_name(self, text: str) -> str | None:
         """Extract target warehouse table name."""
         target_patterns = [
+            rf"(?:\u9006\u5411(?:\u5206\u6790|\u89e3\u6790|\u5efa\u6a21)?)\s*(?:\u8868|\uff1a|:)?\s*{self._RAW_TABLE_PATTERN}",
             rf"(?:\u76ee\u6807\u8868|\u76ee\u6807\u6a21\u578b|\u4ea7\u51fa\u8868|\u751f\u6210|\u8bbe\u8ba1|\u5efa\u6210|\u5efa\u8bbe|\u53d1\u5e03)\s*(?:\u4e3a|\u6210|\u5230|\uff1a|:)?\s*{self._TABLE_PATTERN}",
             rf"(?:to|target)\s+{self._TABLE_PATTERN}",
         ]
@@ -111,6 +112,12 @@ class EntityExtractor:
 
     def extract_task_id(self, text: str) -> str | None:
         """Extract task ID."""
+        explicit = re.search(
+            r"(?:\u4efb\u52a1|task)\s*(?:id|ID|\u7f16\u53f7|\uff1a|:)?\s*([a-zA-Z0-9][a-zA-Z0-9_-]+)",
+            text,
+        )
+        if explicit:
+            return explicit.group(1)
         match = re.search(r"(task[_-][a-zA-Z0-9_-]+|run[_-][a-zA-Z0-9_-]+)", text)
         return match.group(1) if match else None
 

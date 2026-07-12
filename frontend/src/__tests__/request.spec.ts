@@ -111,4 +111,15 @@ describe('idempotencyKey', () => {
     const key = idempotencyKey()
     expect(typeof key).toBe('string')
   })
+
+  it('浏览器不支持 randomUUID 时使用兼容 ID', () => {
+    const originalCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', {})
+
+    try {
+      expect(idempotencyKey()).toMatch(/^\d+-[a-z0-9]+$/)
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto)
+    }
+  })
 })

@@ -1,7 +1,10 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
 from dataworks_agent.agent.core import ChatAgent, ChatResponse
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, StepResult
+from dataworks_agent.agent.workflow_service import WorkflowResult
 
 
 def test_chat_response_initialization():
@@ -110,3 +113,31 @@ async def test_chat_agent_response_has_status_and_no_garbled_text():
     assert response.data["status"]["completed_steps"] >= 1
     assert "????" not in response.message
     assert "????" not in str(response.data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_action"),
+    [
+        ("\u9006\u5411\u5206\u6790 giikin_aliyun.tb_rp_ord_order_cnt_hi", "reverse_modeling"),
+        ("\u68c0\u67e5\u6267\u884c\u5e95\u5ea7", "diagnose_issue"),
+        ("\u6392\u67e5\u4efb\u52a1 nonexistent-task-id", "diagnose_issue"),
+    ],
+)
+async def test_chat_agent_routes_workflow_without_request_type(message, expected_action):
+    agent = ChatAgent()
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="ok",
+            workflow_type=expected_action,
+            mode="dev_execute",
+        )
+    )
+
+    response = await agent.chat(message, execution_mode="auto")
+
+    assert response.success is True
+    assert response.data["workflow_type"] == expected_action
+    assert response.data["intent"]["action"] == expected_action
+    assert agent._workflow_service.execute.await_args.kwargs["action"] == expected_action

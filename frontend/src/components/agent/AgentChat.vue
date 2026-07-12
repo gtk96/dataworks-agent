@@ -206,6 +206,7 @@ import ChatMessage from './ChatMessage.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 import { buildAgentChatRequest, requestAgentChat, type AgentExecutionMode } from './chatInteraction'
+import { idempotencyKey } from '@/utils/request'
 
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
@@ -333,7 +334,7 @@ onMounted(() => {
 onUnmounted(() => ws.value?.close())
 
 function resetConversation() {
-  messages.value = [{ id: crypto.randomUUID(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
+  messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
   lastPayload.value = null
   currentStatus.value = null
   input.value = ''
@@ -361,7 +362,7 @@ async function sendMessage() {
   const text = input.value.trim()
   if (!text || loading.value) return
   input.value = ''
-  messages.value.push({ id: crypto.randomUUID(), text, isUser: true, timestamp: new Date() })
+  messages.value.push({ id: idempotencyKey(), text, isUser: true, timestamp: new Date() })
   loading.value = true
   await nextTick(scrollToBottom)
   try {
@@ -376,7 +377,7 @@ async function sendMessage() {
 function handleAgentResponse(payload: AgentPayload) {
   lastPayload.value = payload
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
-  messages.value.push({ id: crypto.randomUUID(), text: payload.message, isUser: false, timestamp: new Date() })
+  messages.value.push({ id: idempotencyKey(), text: payload.message, isUser: false, timestamp: new Date() })
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)

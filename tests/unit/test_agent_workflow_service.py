@@ -1,13 +1,14 @@
 import uuid
 from dataclasses import dataclass
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ModelingTaskModel, TaskStepLogModel
+from dataworks_agent.semantic.album_context import AlbumTable, DataAlbumContext
 from dataworks_agent.state import app_state
 
 
@@ -685,3 +686,309 @@ async def test_cookie_plan_returns_channel_steps():
         "check_cdp_9222",
     }
     assert "部分降级" in result.message
+
+
+@pytest.mark.asyncio
+async def test_effective_order_recipe_does_not_consult_data_albums():
+    service = AgentWorkflowService()
+    service._album_context_resolver.resolve = AsyncMock()
+
+    sql = await service._build_readonly_sql(
+        "\u67e5\u4e00\u4e0b\u4eca\u5929\u5404\u5bb6\u65cf\u7684\u6709\u6548\u8ba2\u5355\u6570"
+    )
+
+    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+    service._album_context_resolver.resolve.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_complex_question_injects_data_album_metadata_into_llm_prompt(monkeypatch):
+    from dataworks_agent.config import settings
+
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    service = AgentWorkflowService()
+    service._album_context_resolver.resolve = AsyncMock(
+        return_value=[
+            DataAlbumContext(
+                album_id=888,
+                name="\u8ba2\u5355",
+                description="\u8ba2\u5355\u4e3b\u9898",
+                categories=["\u8ba2\u5355\u4fe1\u606f"],
+                tables=[
+                    AlbumTable(
+                        project="giikin_aliyun",
+                        name="tb_dws_ord_order_si_crt_df",
+                        comment="\u8ba2\u5355\u6307\u6807\u6c47\u603b\u8868",
+                        remark="\u6309\u8ba2\u5355\u65e5\u671f\u5206\u533a",
+                    )
+                ],
+            )
+        ]
+    )
+    llm = SimpleNamespace(
+        complete=AsyncMock(return_value=SimpleNamespace(content="SELECT 1 AS order_cnt"))
+    )
+
+    with patch("dataworks_agent.llm.service.LLMService.from_settings", return_value=llm):
+        sql = await service._build_readonly_sql("\u8ba2\u5355\u8f6c\u5316\u8d8b\u52bf\u5982\u4f55")
+
+    assert sql == "SELECT 1 AS order_cnt"
+    context = llm.complete.await_args.args[0]
+    metadata = "\n".join(part.content for part in context.parts if part.kind == "metadata")
+    assert "Album: \u8ba2\u5355" in metadata
+    assert "giikin_aliyun.tb_dws_ord_order_si_crt_df" in metadata
+    assert "never infer metric formulas" in metadata
+
+
+@pytest.mark.asyncio
+async def test_complex_question_keeps_original_llm_path_when_album_context_is_empty(monkeypatch):
+    from dataworks_agent.config import settings
+
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    service = AgentWorkflowService()
+    service._album_context_resolver.resolve = AsyncMock(return_value=[])
+    llm = SimpleNamespace(complete=AsyncMock(return_value=SimpleNamespace(content="SELECT 1")))
+
+    with patch("dataworks_agent.llm.service.LLMService.from_settings", return_value=llm):
+        sql = await service._build_readonly_sql("\u672a\u77e5\u4e1a\u52a1\u95ee\u9898")
+
+    assert sql == "SELECT 1"
+    context = llm.complete.await_args.args[0]
+    assert all(part.kind != "metadata" for part in context.parts)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "今天的总有效订单是多少",
+        "查一下今日总有效订单数",
+        "今天有效订单有多少",
+        "今日的有效订单是多少",
+    ],
+)
+async def test_total_effective_order_phrasings_use_verified_recipe_without_llm(question):
+    service = AgentWorkflowService()
+    service._album_context_resolver.resolve = AsyncMock(
+        side_effect=AssertionError("verified recipe must not consult albums")
+    )
+
+    sql = await service._build_readonly_sql(question)
+
+    assert "giikin_aliyun.tb_rp_ord_order_cnt_hi" in sql
+    assert "family_name = '合计'" in sql
+    assert "pt AS data_date" in sql
+    assert "ht AS data_hour" in sql
+    assert "total_effective_order_cnt" in sql
+
+
+@pytest.mark.asyncio
+async def test_total_effective_order_query_prefers_cookie_before_maxcompute():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        submit_query=AsyncMock(side_effect=AssertionError("production query must prefer Cookie")),
+        wait_and_fetch=AsyncMock(),
+    )
+    app_state._bff_client = SimpleNamespace(
+        execute_sql=AsyncMock(return_value="job-total"),
+        wait_job=AsyncMock(return_value=True),
+        get_query_result=AsyncMock(
+            return_value={
+                "headerList": [
+                    {"name": "data_date"},
+                    {"name": "data_hour"},
+                    {"name": "total_effective_order_cnt"},
+                ],
+                "bodyList": [["20260712", "12", "48182"]],
+            }
+        ),
+        last_error=None,
+    )
+
+    result = await service.execute(
+        message="今天的总有效订单是多少",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.data["query"]["execution_channel"] == "cookie_bff"
+    assert "48,182" in result.message
+    assert "20260712" in result.message
+    app_state._maxcompute_client.submit_query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cookie_auth_failure_refreshes_once_then_succeeds():
+    service = AgentWorkflowService()
+    bff = SimpleNamespace()
+    query_once = AsyncMock(side_effect=[RuntimeError("CSRF token expired"), (["value"], [[1]])])
+    service._run_cookie_bff_query_once = query_once
+    refresh = AsyncMock(return_value={"status": "refreshed"})
+    service._refresh_cookie_auth = refresh
+    app_state._bff_client = bff
+
+    columns, rows = await service._run_cookie_bff_query("SELECT 1")
+
+    assert columns == ["value"]
+    assert rows == [[1]]
+    assert query_once.await_count == 2
+    refresh.assert_awaited_once_with(bff)
+
+
+@pytest.mark.asyncio
+async def test_cookie_refresh_failure_does_not_retry_forever():
+    service = AgentWorkflowService()
+    bff = SimpleNamespace()
+    query_once = AsyncMock(side_effect=RuntimeError("cookie expired"))
+    service._run_cookie_bff_query_once = query_once
+    service._refresh_cookie_auth = AsyncMock(
+        return_value={"status": "failed", "detail": "Chrome 9222 unavailable"}
+    )
+    app_state._bff_client = bff
+
+    with pytest.raises(RuntimeError, match="Chrome 9222 unavailable"):
+        await service._run_cookie_bff_query("SELECT 1")
+
+    assert query_once.await_count == 1
+    service._refresh_cookie_auth.assert_awaited_once_with(bff)
+
+
+@pytest.mark.asyncio
+async def test_unknown_metric_without_llm_returns_clarification_not_failure(monkeypatch):
+    service = AgentWorkflowService()
+    monkeypatch.setattr("dataworks_agent.agent.workflow_service.settings.llm_api_key", "")
+    service._album_context_resolver.resolve = AsyncMock(
+        return_value=[
+            DataAlbumContext(
+                album_id=8,
+                name="订单",
+                tables=[AlbumTable(project="giikin_aliyun", name="tb_dws_order_metric")],
+            )
+        ]
+    )
+
+    result = await service.execute(
+        message="今天的净贡献订单是多少",
+        action="ask_data",
+        params={},
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.data["needs_clarification"] is True
+    assert result.data["query"]["executed"] is False
+    assert result.data["album_candidates"][0]["tables"][0]["table"] == (
+        "giikin_aliyun.tb_dws_order_metric"
+    )
+    assert all(step["status"] != "failed" for step in result.steps)
+
+
+@pytest.mark.asyncio
+async def test_reverse_model_permission_denied_falls_back_to_cookie_ddl():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = SimpleNamespace(
+        get_table_schema=AsyncMock(side_effect=RuntimeError("NoPermission: odps:Describe"))
+    )
+    app_state._bff_client = SimpleNamespace(
+        get_creation_ddl=AsyncMock(
+            return_value="""CREATE TABLE giikin_aliyun.tb_order (
+  id BIGINT COMMENT '订单ID',
+  amount DECIMAL(18,2)
+)
+PARTITIONED BY (pt STRING);"""
+        ),
+        list_lineage=AsyncMock(return_value={"nodes": []}),
+    )
+
+    result = await service.execute(
+        message="逆向分析 giikin_aliyun.tb_order",
+        action="reverse_modeling",
+        params={"table_name": "giikin_aliyun.tb_order"},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["metadata_channel"] == "cookie_bff"
+    assert result.data["maxcompute_fallback_reason"] == "MaxCompute permission denied"
+    assert result.errors == []
+    assert result.data["columns"][0]["name"] == "id"
+    app_state._bff_client.get_creation_ddl.assert_awaited_once_with("odps.giikin_aliyun.tb_order")
+
+
+@pytest.mark.asyncio
+async def test_reverse_model_without_maxcompute_uses_cookie_ddl():
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = None
+    app_state._bff_client = SimpleNamespace(
+        get_creation_ddl=AsyncMock(return_value="CREATE TABLE giikin_dev.tb_order (id BIGINT);"),
+        list_lineage=AsyncMock(return_value={"nodes": []}),
+    )
+
+    result = await service.execute(
+        message="逆向分析 giikin_dev.tb_order",
+        action="reverse_modeling",
+        params={"table_name": "giikin_dev.tb_order"},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["metadata_channel"] == "cookie_bff"
+
+
+@pytest.mark.asyncio
+async def test_diagnose_missing_task_is_warning_not_completed():
+    service = AgentWorkflowService()
+    task_id = f"missing_{uuid.uuid4().hex[:10]}"
+
+    result = await service.execute(
+        message=f"排查任务 {task_id}",
+        action="diagnose_issue",
+        params={"task_id": task_id},
+        execution_mode="dev_execute",
+    )
+
+    log_step = next(step for step in result.steps if step["step"] == "task_and_step_logs")
+    assert result.success is True
+    assert result.data["task_found"] is False
+    assert log_step["status"] == "warning"
+    assert "不会伪装成定位成功" in result.message
+
+
+@pytest.mark.asyncio
+async def test_diagnose_without_target_is_explicit_health_check():
+    service = AgentWorkflowService()
+
+    result = await service.execute(
+        message="检查执行底座",
+        action="diagnose_issue",
+        params={},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert "执行底座健康检查" in result.message
+    log_step = next(step for step in result.steps if step["step"] == "task_and_step_logs")
+    assert log_step["status"] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_full_chain_without_target_names_generates_all_layers():
+    service = AgentWorkflowService()
+
+    result = await service.execute(
+        message="把数据源 shop 的源表 orders 建成 ODS 到 DWD DIM DWS 全链路",
+        action="forward_modeling",
+        params={"source_table": "orders", "datasource_name": "shop"},
+        execution_mode="plan",
+    )
+
+    generated = result.data["generated_tables"]
+    assert result.success is True
+    assert set(generated) == {"ods", "dwd", "dim", "dws"}
+    assert generated["ods"].startswith("ods_")
+    assert generated["dwd"].startswith("dwd_")
+    assert generated["dim"].startswith("dim_")
+    assert generated["dws"].startswith("dws_")
+    assert any(step["step"] == "create_dws_tables_nodes_schedule" for step in result.steps)

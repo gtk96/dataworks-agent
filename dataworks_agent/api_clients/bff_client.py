@@ -553,6 +553,100 @@ class _ScheduleMixin:
 class _MetadataLineageMixin:
     """元数据 / 血缘 / 数据源浏览。"""
 
+    # -- Data albums (DataMap, Cookie fallback) ------------------------------
+
+    @staticmethod
+    def _album_page_items(data: object) -> list[dict]:
+        """Extract list items from the BFF's known paged response variants."""
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if not isinstance(data, dict):
+            return []
+        for key in ("data", "list", "items", "records", "albumList", "entityList"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return []
+
+    async def list_meta_albums(self, page_size: int = 100) -> list[dict]:
+        """List visible DataMap albums through the long-lived Cookie fallback."""
+        resp = await self._get(
+            "dma/list",
+            {"pageSize": page_size, "pageNum": 1, "scene": "all"},
+        )
+        if resp.get("code") not in (200, "200"):
+            return []
+        return self._album_page_items(resp.get("data"))
+
+    async def get_meta_album(self, album_id: int) -> dict | None:
+        """Return one album's detail block."""
+        resp = await self._get("dma/detail_2", {"albumId": album_id})
+        data = resp.get("data")
+        return data if resp.get("code") in (200, "200") and isinstance(data, dict) else None
+
+    async def list_meta_album_categories(self, album_id: int) -> list[dict]:
+        """List the album's business category tree."""
+        resp = await self._get("dma/listCategory", {"albumId": album_id})
+        if resp.get("code") not in (200, "200"):
+            return []
+        return self._album_page_items(resp.get("data"))
+
+    async def list_meta_album_entities(
+        self,
+        album_id: int,
+        *,
+        page_size: int = 500,
+        entity_type: str | None = "odps-table",
+    ) -> list[dict]:
+        """List album entities and flatten the nested entity metadata."""
+        params: dict[str, object] = {
+            "albumId": album_id,
+            "pageSize": page_size,
+            "pageNum": 1,
+        }
+        if entity_type:
+            params["entityType"] = entity_type
+        resp = await self._get("dma/listAlbumEntity", params)
+        if resp.get("code") not in (200, "200"):
+            return []
+
+        results: list[dict] = []
+        for relation in self._album_page_items(resp.get("data")):
+            entity = relation.get("entity")
+            if not isinstance(entity, dict):
+                continue
+            results.append(
+                {
+                    "album_id": relation.get("albumId", album_id),
+                    "relation_id": relation.get("relationId"),
+                    "category_id": relation.get("categoryId"),
+                    "remark": relation.get("remark") or "",
+                    "project": entity.get("databaseName") or "",
+                    "table_name": entity.get("name") or "",
+                    "comment": entity.get("comment") or "",
+                    "entity_guid": entity.get("entityGuid") or "",
+                    "qualified_name": entity.get("qualifiedName") or "",
+                    "entity_type": entity.get("entityType") or "",
+                    "owner": entity.get("ownerName") or "",
+                }
+            )
+        return results
+
+    async def get_meta_album_wiki(self, album_id: int) -> str | None:
+        """Return album wiki text when maintained; most albums currently have none."""
+        resp = await self._get("dma/getWiki", {"type": "album", "entityId": album_id})
+        if resp.get("code") not in (200, "200"):
+            return None
+        data = resp.get("data")
+        if isinstance(data, str):
+            return data.strip() or None
+        if isinstance(data, dict):
+            for key in ("content", "wiki", "text"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
     # ── 元数据 (DataMap) ─────────────────────────────────────
 
     async def get_creation_ddl(self, table_guid: str) -> str | None:
@@ -720,6 +814,13 @@ class DataWorksClient(
                 follow_redirects=False,
             )
         return self._http
+
+    def reset_auth_cache(self) -> None:
+        """Discard cached Cookie/CSRF so the next request reloads refreshed credentials."""
+        self._cookie = ""
+        self._csrf_token = ""
+        self._csrf_time = 0
+        self.last_error = None
 
     async def _refresh_cookie(self) -> str:
         if not self._cookie:

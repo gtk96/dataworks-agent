@@ -83,7 +83,9 @@ class ChatAgent:
                         "intent": self._intent_to_dict(intent),
                         "plan": {"summary": workflow.message, "steps": workflow.steps},
                         "agent_mode": (
-                            "approval_required"
+                            "needs_context"
+                            if data.get("needs_clarification")
+                            else "approval_required"
                             if data.get("publish_request")
                             else "executed"
                             if workflow.mode == "dev_execute" and workflow.success

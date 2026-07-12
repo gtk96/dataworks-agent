@@ -20,13 +20,14 @@ from dataworks_agent.governance.closed_loop_verifier import (
     ClosedLoopVerifier,
     VerificationStatus,
 )
-from dataworks_agent.naming import generate_node_path
+from dataworks_agent.naming import generate_node_path, generate_ods_di_table_name
 from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,
     HOURLY_SQL_PARAMETERS,
     generate_cron,
 )
 from dataworks_agent.schemas import assert_safe_table_name
+from dataworks_agent.semantic.album_context import DataAlbumContextResolver
 from dataworks_agent.state import app_state
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,15 @@ logger = logging.getLogger(__name__)
 ExecutionMode = Literal["plan", "dev_execute"]
 _FINAL_STATUSES = {"completed", "failed", "cancelled"}
 _WRITE_WORDS = ("创建", "新建", "建好", "执行", "初始化", "生成任务", "落地", "部署开发")
+
+
+class QueryNeedsClarificationError(ValueError):
+    """The question is valid, but no deterministic metric definition is available."""
+
+    def __init__(self, question: str, album_contexts: list[Any]) -> None:
+        super().__init__(question)
+        self.question = question
+        self.album_contexts = album_contexts
 
 
 @dataclass
@@ -64,6 +74,7 @@ class AgentWorkflowService:
     def __init__(self) -> None:
         self._extractor = EntityExtractor()
         self._closed_loop_verifier = ClosedLoopVerifier()
+        self._album_context_resolver = DataAlbumContextResolver()
 
     def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
@@ -302,6 +313,84 @@ class AgentWorkflowService:
             sources["openapi"] = "not_needed"
         return node, dependencies, sources, list(dict.fromkeys(warnings))
 
+    async def _reverse_table_via_cookie(
+        self, table: str, table_name: str, mode: ExecutionMode
+    ) -> WorkflowResult | None:
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            return None
+        project = (
+            table.rsplit(".", 1)[0]
+            if "." in table
+            else (settings.maxcompute_project or settings.dataworks_dev_schema)
+        )
+        table_guid = f"odps.{project}.{table_name}"
+        try:
+            ddl = await bff.get_creation_ddl(table_guid)
+        except Exception as exc:
+            if not self._is_cookie_auth_error(exc):
+                logger.warning("Cookie BFF 读取表 DDL 失败: %s", exc)
+                return None
+            refresh = await self._refresh_cookie_auth(bff)
+            if refresh.get("status") not in {"success", "refreshed", "extracted_unverified"}:
+                return None
+            try:
+                ddl = await bff.get_creation_ddl(table_guid)
+            except Exception as retry_exc:
+                logger.warning("Cookie BFF 刷新后读取表 DDL 仍失败: %s", retry_exc)
+                return None
+        if not ddl:
+            return None
+
+        from dataworks_agent.governance.sql_lineage import parse_ddl_structure
+
+        parsed = parse_ddl_structure(ddl)
+        columns = parsed.get("columns") or []
+        partitions = parsed.get("partitions") or []
+        metadata = self._infer_reverse_metadata(table_name, columns)
+        try:
+            lineage = await bff.list_lineage(table_guid)
+        except Exception as exc:
+            lineage = {"warning": self._brief_error(exc)}
+        return WorkflowResult(
+            True,
+            f"已通过 Cookie 元数据通道完成 {table} 的逆向建模；AK/SK 无表结构权限不会阻断该能力。",
+            "reverse_modeling",
+            mode,
+            steps=[
+                {"step": "read_cookie_table_ddl", "status": "completed"},
+                {
+                    "step": "parse_table_ddl",
+                    "status": "completed" if parsed.get("parse_state") == "ok" else "warning",
+                },
+                {"step": "infer_semantic_candidates", "status": "completed"},
+                {
+                    "step": "read_cookie_lineage",
+                    "status": "warning"
+                    if isinstance(lineage, dict) and "warning" in lineage
+                    else "completed",
+                },
+            ],
+            artifacts=[
+                {"type": "table_ddl", "name": table, "content": ddl},
+                {
+                    "type": "semantic_candidates",
+                    "name": table,
+                    "content": metadata["semantic_candidates"],
+                },
+            ],
+            data={
+                "source_type": "table",
+                "metadata_channel": "cookie_bff",
+                "table": table,
+                "columns": columns,
+                "partitions": partitions,
+                "ddl": ddl,
+                "lineage": lineage,
+                **metadata,
+            },
+        )
+
     async def _reverse_model(
         self, message: str, params: dict[str, Any], mode: ExecutionMode
     ) -> WorkflowResult:
@@ -369,18 +458,27 @@ class AgentWorkflowService:
         table_name = table.split(".")[-1]
         assert_safe_table_name(table_name)
         if mc is None:
+            cookie_result = await self._reverse_table_via_cookie(table, table_name, mode)
+            if cookie_result is not None:
+                return cookie_result
             return WorkflowResult(
                 False,
-                "MaxCompute AK/SK 客户端不可用，无法读取真实表结构。",
+                "MaxCompute AK/SK 与 Cookie 元数据通道均不可用，无法读取真实表结构。",
                 "reverse_modeling",
                 mode,
-                errors=["maxcompute client unavailable"],
+                steps=[{"step": "read_table_schema", "status": "blocked"}],
+                data={"metadata_channels": ["maxcompute_ak_sk", "cookie_bff"]},
+                errors=["table metadata channels unavailable"],
             )
 
         try:
             schema = await mc.get_table_schema(table)
         except Exception as exc:
             error = self._brief_error(exc)
+            cookie_result = await self._reverse_table_via_cookie(table, table_name, mode)
+            if cookie_result is not None:
+                cookie_result.data["maxcompute_fallback_reason"] = error
+                return cookie_result
             lower_error = error.lower()
             not_found = any(
                 token in lower_error for token in ("not found", "nosuchobject", "does not exist")
@@ -525,6 +623,9 @@ class AgentWorkflowService:
                     if task.error_message:
                         errors.append(task.error_message)
                 details["task"] = task_data
+                details["task_found"] = task_data is not None
+                if task_data is None:
+                    errors.append(f"本地任务 {task_id} 不存在")
 
         evidence_sources: dict[str, str] = {}
         if instance_id:
@@ -598,16 +699,25 @@ class AgentWorkflowService:
             "Error",
         }
         details["evidence_sources"] = evidence_sources
+        target_resolved = bool(task_data or details.get("task_instance") or details.get("node"))
+        if not any((task_id, instance_id, node_id)):
+            message_text = "执行底座健康检查已完成，并已生成恢复建议；提供任务、实例或节点 ID 可继续定位到具体故障。"
+        elif target_resolved:
+            message_text = "异常排查已完成：已汇总真实任务、实例或节点证据，并生成恢复建议。"
+        else:
+            message_text = "异常排查已完成，但未找到目标对象或远端证据不可用；结果已标记为降级，不会伪装成定位成功。"
         return WorkflowResult(
             True,
-            "异常排查已完成：已汇总任务日志、节点依赖、AK/SK、官方 MCP、Cookie/CDP，并生成恢复建议。",
+            message_text,
             "diagnose_issue",
             mode,
             steps=[
                 {"step": "health_matrix", "status": "completed" if execution_ready else "warning"},
                 {
                     "step": "task_and_step_logs",
-                    "status": "completed" if task_id or instance_id else "skipped",
+                    "status": "completed"
+                    if task_data or details.get("task_instance")
+                    else ("warning" if task_id or instance_id else "skipped"),
                 },
                 {
                     "step": "node_dependency_inspection",
@@ -622,7 +732,11 @@ class AgentWorkflowService:
         )
 
     async def _ask_data(self, message: str, mode: ExecutionMode) -> WorkflowResult:
-        sql = await self._build_readonly_sql(message)
+        try:
+            sql = await self._build_readonly_sql(message)
+        except QueryNeedsClarificationError as clarification:
+            return self._query_clarification_result(clarification, mode)
+
         self._validate_readonly_sql(sql)
         sql = self._enforce_query_limit(sql)
         artifact = {"type": "query_sql", "name": "readonly_query", "content": sql}
@@ -647,53 +761,26 @@ class AgentWorkflowService:
             )
 
         errors: list[str] = []
-        mc = getattr(app_state, "_maxcompute_client", None)
-        if mc is not None:
+        prefer_cookie = self._prefer_cookie_query(sql)
+        channels = (
+            ("cookie_bff", "maxcompute_ak_sk")
+            if prefer_cookie
+            else (
+                "maxcompute_ak_sk",
+                "cookie_bff",
+            )
+        )
+        for channel in channels:
             try:
-                instance = await asyncio.wait_for(
-                    mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
-                )
-                result = await asyncio.wait_for(
-                    mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
-                )
-                rows = result.rows[: settings.ask_data_default_limit]
-                return await self._query_success(
-                    sql, artifact, list(result.columns), rows, "maxcompute_ak_sk"
-                )
+                if channel == "cookie_bff":
+                    columns, rows = await self._run_cookie_bff_query(sql)
+                else:
+                    columns, rows = await self._run_maxcompute_query(sql)
+                return await self._query_success(sql, artifact, columns, rows, channel)
             except Exception as exc:
-                errors.append(self._brief_error(exc))
-                logger.warning("MaxCompute AK/SK 问数失败，准备切换 Cookie BFF: %s", exc)
-        else:
-            errors.append("maxcompute client unavailable")
-
-        bff = getattr(app_state, "_bff_client", None)
-        if bff is not None:
-            try:
-                job_code = await asyncio.wait_for(
-                    bff.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
-                )
-                if not job_code:
-                    raise RuntimeError(getattr(bff, "last_error", None) or "BFF 未返回查询任务")
-                completed = await asyncio.wait_for(
-                    bff.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
-                )
-                if not completed:
-                    raise RuntimeError(getattr(bff, "last_error", None) or "BFF 查询任务未成功")
-                result = await asyncio.wait_for(
-                    bff.get_query_result(job_code), timeout=settings.ask_data_timeout_seconds
-                )
-                if not isinstance(result, dict):
-                    raise RuntimeError("BFF 未返回查询结果")
-                headers = result.get("headerList") or []
-                columns = [
-                    str(item.get("name", "")) if isinstance(item, dict) else str(item)
-                    for item in headers
-                ]
-                rows = (result.get("bodyList") or [])[: settings.ask_data_default_limit]
-                return await self._query_success(sql, artifact, columns, rows, "cookie_bff")
-            except Exception as exc:
-                errors.append(self._brief_error(exc))
-                logger.warning("Cookie BFF 问数兜底失败: %s", exc)
+                brief = self._brief_error(exc)
+                errors.append(brief)
+                logger.warning("%s 问数失败，准备切换下一通道: %s", channel, exc)
 
         return WorkflowResult(
             False,
@@ -710,6 +797,152 @@ class AgentWorkflowService:
                 "next_actions": ["检查 9222 登录态与 Cookie BFF", "核对 MaxCompute 查询权限"],
             },
             errors=list(dict.fromkeys(errors)),
+        )
+
+    async def _run_maxcompute_query(self, sql: str) -> tuple[list[Any], list[Any]]:
+        mc = getattr(app_state, "_maxcompute_client", None)
+        if mc is None:
+            raise RuntimeError("maxcompute client unavailable")
+        instance = await asyncio.wait_for(
+            mc.submit_query(sql), timeout=settings.ask_data_timeout_seconds
+        )
+        result = await asyncio.wait_for(
+            mc.wait_and_fetch(instance), timeout=settings.ask_data_timeout_seconds
+        )
+        return list(result.columns), list(result.rows[: settings.ask_data_default_limit])
+
+    async def _run_cookie_bff_query(self, sql: str) -> tuple[list[Any], list[Any]]:
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            raise RuntimeError("cookie BFF client unavailable")
+
+        try:
+            return await self._run_cookie_bff_query_once(bff, sql)
+        except Exception as exc:
+            if not self._is_cookie_auth_error(exc):
+                raise
+            refresh = await self._refresh_cookie_auth(bff)
+            if refresh.get("status") not in {"success", "refreshed", "extracted_unverified"}:
+                detail = str(refresh.get("detail") or "Cookie refresh failed")
+                raise RuntimeError(f"Cookie refresh failed: {detail}") from exc
+            return await self._run_cookie_bff_query_once(bff, sql)
+
+    @staticmethod
+    async def _run_cookie_bff_query_once(bff: Any, sql: str) -> tuple[list[Any], list[Any]]:
+        job_code = await asyncio.wait_for(
+            bff.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
+        )
+        if not job_code:
+            raise RuntimeError(getattr(bff, "last_error", None) or "BFF 未返回查询任务")
+        completed = await asyncio.wait_for(
+            bff.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
+        )
+        if not completed:
+            raise RuntimeError(getattr(bff, "last_error", None) or "BFF 查询任务未成功")
+        result = await asyncio.wait_for(
+            bff.get_query_result(job_code), timeout=settings.ask_data_timeout_seconds
+        )
+        if not isinstance(result, dict):
+            raise RuntimeError("BFF 未返回查询结果")
+        headers = result.get("headerList") or []
+        columns = [
+            str(item.get("name", "")) if isinstance(item, dict) else str(item) for item in headers
+        ]
+        rows = list((result.get("bodyList") or [])[: settings.ask_data_default_limit])
+        return columns, rows
+
+    @staticmethod
+    def _prefer_cookie_query(sql: str) -> bool:
+        lowered = sql.lower()
+        production_projects = {"giikin_aliyun", settings.dataworks_prod_schema.lower()}
+        return any(f"{project}." in lowered for project in production_projects if project)
+
+    @staticmethod
+    def _is_cookie_auth_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(
+            token in text
+            for token in (
+                "csrf",
+                "cookie",
+                "login",
+                "expired",
+                "decrypt",
+                "unauthorized",
+                "forbidden",
+                "403",
+            )
+        )
+
+    @staticmethod
+    async def _refresh_cookie_auth(bff: Any) -> dict[str, Any]:
+        from dataworks_agent.cookie.background_refresh import run_cookie_background_refresh_once
+
+        outcome = await run_cookie_background_refresh_once(force=True)
+        reset = getattr(bff, "reset_auth_cache", None)
+        if callable(reset):
+            reset()
+        else:
+            bff._cookie = ""
+            bff._csrf_token = ""
+            bff._csrf_time = 0
+        return outcome
+
+    def _query_clarification_result(
+        self, clarification: QueryNeedsClarificationError, mode: ExecutionMode
+    ) -> WorkflowResult:
+        contexts = clarification.album_contexts
+        candidates = [
+            {
+                "album_id": context.album_id,
+                "album": context.name,
+                "description": context.description,
+                "categories": context.categories,
+                "tables": [
+                    {
+                        "table": table.full_name,
+                        "comment": table.comment,
+                        "remark": table.remark,
+                        "category": table.category,
+                    }
+                    for table in context.tables
+                ],
+            }
+            for context in contexts
+        ]
+        has_candidates = bool(candidates)
+        message = (
+            "该问题尚未命中已验证的指标口径。我已从数据专辑筛出候选表；"
+            "请确认指标定义或过滤条件，我不会猜测生产口径。"
+            if has_candidates
+            else "该问题尚未命中已验证的指标口径。请补充指标定义、目标表或过滤条件；"
+            "我不会因为缺少 LLM 配置而把正常问数标记为系统故障。"
+        )
+        return WorkflowResult(
+            True,
+            message,
+            "ask_data",
+            mode,
+            steps=[
+                {"step": "resolve_semantic_context", "status": "completed"},
+                {"step": "clarify_metric_caliber", "status": "waiting"},
+                {"step": "execute_query", "status": "waiting"},
+            ],
+            artifacts=[
+                {"type": "data_album_candidates", "name": "semantic_context", "content": candidates}
+            ]
+            if has_candidates
+            else [],
+            data={
+                "needs_clarification": True,
+                "album_candidates": candidates,
+                "clarifying_questions": [
+                    "这个指标的业务定义和排除条件是什么？",
+                    "应使用哪个数据专辑或目标表？",
+                    "时间范围、统计粒度和分组维度是什么？",
+                ],
+                "query": {"executed": False},
+            },
         )
 
     async def _query_success(
@@ -755,9 +988,9 @@ class AgentWorkflowService:
         return WorkflowResult(
             verified,
             (
-                f"\u771f\u5b9e\u95ee\u6570\u5b8c\u6210\uff0c\u8fd4\u56de {len(rows)} \u884c\uff0c\u95ed\u73af\u9a8c\u6536\u901a\u8fc7\u3002"
+                self._format_query_answer(columns, rows)
                 if verified
-                else "\u67e5\u8be2\u5df2\u6267\u884c\uff0c\u4f46\u95ed\u73af\u9a8c\u6536\u672a\u901a\u8fc7\uff0c\u7ed3\u679c\u4e0d\u4f1a\u6807\u8bb0\u4e3a\u5b8c\u6210\u3002"
+                else "查询已执行，但闭环验收未通过，结果不会标记为完成。"
             ),
             "ask_data",
             "dev_execute",
@@ -786,6 +1019,26 @@ class AgentWorkflowService:
         )
 
     @staticmethod
+    def _format_query_answer(columns: list[Any], rows: list[Any]) -> str:
+        names = [str(getattr(column, "name", column)) for column in columns]
+        if rows and "total_effective_order_cnt" in names:
+            row = rows[0]
+            values = row if isinstance(row, (list, tuple)) else [row.get(name) for name in names]
+            mapped = dict(zip(names, values, strict=False))
+            raw_total = mapped.get("total_effective_order_cnt")
+            try:
+                total = f"{int(str(raw_total)):,}"
+            except (TypeError, ValueError):
+                total = str(raw_total)
+            date = str(mapped.get("data_date") or "")
+            hour = str(mapped.get("data_hour") or "")
+            snapshot = f"（数据日期 {date}，截至 {hour}:00）" if date and hour else ""
+            return f"总有效订单为 {total}{snapshot}，查询与闭环验收均已通过。"
+        if rows and "family_name" in names and "effective_order_cnt" in names:
+            return f"各家族有效订单已查询完成，共返回 {len(rows)} 个家族，闭环验收通过。"
+        return f"真实问数完成，返回 {len(rows)} 行，闭环验收通过。"
+
+    @staticmethod
     def _brief_error(exc: Exception) -> str:
         text = " ".join(str(exc).strip().splitlines())
         lower = text.lower()
@@ -798,11 +1051,32 @@ class AgentWorkflowService:
         return text[:180] or exc.__class__.__name__
 
     async def _build_readonly_sql(self, message: str) -> str:
-        if all(token in message for token in ("家族", "有效订单")) and any(
-            token in message for token in ("今天", "今日")
-        ):
+        if "有效订单" in message and any(token in message for token in ("今天", "今日")):
+            total_only = "家族" not in message
+            if total_only:
+                return """
+SELECT
+  pt AS data_date,
+  ht AS data_hour,
+  effective_order_cnt AS total_effective_order_cnt
+FROM giikin_aliyun.tb_rp_ord_order_cnt_hi
+WHERE pt = MAX_PT('giikin_aliyun.tb_rp_ord_order_cnt_hi')
+  AND ht = (
+    SELECT MAX(ht)
+    FROM giikin_aliyun.tb_rp_ord_order_cnt_hi
+    WHERE pt = MAX_PT('giikin_aliyun.tb_rp_ord_order_cnt_hi')
+  )
+  AND line_name = '合计'
+  AND befrom = '合计'
+  AND statis_type = 'hf'
+  AND time_interval = '合计'
+  AND family_name = '合计'
+LIMIT 1
+""".strip()
             return """
 SELECT
+  pt AS data_date,
+  ht AS data_hour,
   family_name,
   effective_order_cnt
 FROM giikin_aliyun.tb_rp_ord_order_cnt_hi
@@ -831,19 +1105,22 @@ ORDER BY effective_order_cnt DESC
             if any(k in message for k in ("多少条", "行数", "count")):
                 return f"SELECT COUNT(*) AS row_count FROM {table}"
             return f"SELECT * FROM {table} LIMIT {settings.ask_data_default_limit}"
+
+        album_contexts = await self._album_context_resolver.resolve(message)
         if not settings.llm_api_key:
-            raise ValueError("复杂自然语言问数需要配置 LLM_API_KEY；也可以直接提供表名或 SQL。")
+            raise QueryNeedsClarificationError(message, album_contexts)
+
         from dataworks_agent.llm.context import ContextBuilder
         from dataworks_agent.llm.service import LLMService
 
-        context = (
-            ContextBuilder()
-            .add_instruction(
-                "只生成 MaxCompute 只读 SELECT/WITH SQL，不要解释，不得生成写操作，默认 LIMIT 100。"
-            )
-            .add_prompt(message)
-            .build()
+        builder = ContextBuilder().add_instruction(
+            "Only generate one read-only MaxCompute SELECT/WITH statement without explanation. "
+            "Never generate write operations. Use LIMIT 100 by default."
         )
+        album_metadata = self._album_context_resolver.format_for_llm(album_contexts)
+        if album_metadata:
+            builder.add_metadata(album_metadata)
+        context = builder.add_prompt(message).build()
         response = await LLMService.from_settings(settings).complete(context, "normal")
         return response.content.strip().removeprefix("```sql").removesuffix("```").strip()
 
@@ -904,6 +1181,17 @@ ORDER BY effective_order_cnt DESC
         granularity = (
             params.get("granularity") or self._extractor.extract_granularity(message) or "day"
         )
+        generated_tables: dict[str, str] = {}
+        if not any(by_layer.values()) and source_table and self._requests_full_chain(message):
+            generated_tables = self._derive_forward_table_names(
+                source_table=source_table,
+                datasource=datasource or "source",
+                source_type=source_type,
+                granularity=granularity,
+            )
+            for layer, table_name in generated_tables.items():
+                by_layer[layer].append(table_name)
+            tables.extend(generated_tables.values())
         schedule_minute = params.get("schedule_minute") or 1
         plan = self._build_forward_plan(
             by_layer, source_table, datasource, initialize_data, source_type
@@ -919,6 +1207,7 @@ ORDER BY effective_order_cnt DESC
                     "capabilities": self.capability_status(),
                     "publish_gate": "required_for_publish",
                     "source_type": source_type,
+                    "generated_tables": generated_tables,
                 },
             )
 
@@ -1060,6 +1349,7 @@ ORDER BY effective_order_cnt DESC
             "official_mcp_preflight": preflight,
             "publish_gate": "not_requested",
             "source_type": source_type,
+            "generated_tables": generated_tables,
         }
         message_text = (
             "开发环境全链路已完成：表已创建，节点与调度已保存；"
@@ -1095,6 +1385,34 @@ ORDER BY effective_order_cnt DESC
             artifacts=self._execution_artifacts(executed),
             data=result_data,
         )
+
+    @staticmethod
+    def _requests_full_chain(message: str) -> bool:
+        lowered = message.lower()
+        return "全链路" in message or all(
+            layer in lowered for layer in ("ods", "dwd", "dim", "dws")
+        )
+
+    @staticmethod
+    def _derive_forward_table_names(
+        *, source_table: str, datasource: str, source_type: str, granularity: str
+    ) -> dict[str, str]:
+        source_name = source_table.split(".")[-1].lower()
+        safe_source = re.sub(r"[^a-z0-9_]+", "_", source_name).strip("_") or "source_table"
+        safe_datasource = re.sub(r"[^a-z0-9_]+", "_", datasource.lower()).strip("_") or "source"
+        ods_table = generate_ods_di_table_name(
+            safe_datasource,
+            safe_source,
+            granularity,
+            source_type=source_type,
+        )
+        suffix = "hi" if granularity in {"hour", "hourly"} else "di"
+        return {
+            "ods": ods_table,
+            "dwd": f"dwd_auto_{safe_source}_detail_{suffix}",
+            "dim": f"dim_auto_{safe_source}_{suffix}",
+            "dws": f"dws_auto_{safe_source}_summary_{suffix}",
+        }
 
     @staticmethod
     def _build_forward_plan(
@@ -1467,8 +1785,8 @@ ORDER BY effective_order_cnt DESC
                     {
                         "type": "Normal",
                         "sourceType": "Manual",
-                        "output": f"{settings.maxcompute_project}.{source_table}",
-                        "refTableName": f"{settings.maxcompute_project}.{source_table}",
+                        "output": f"{settings.maxcompute_project or settings.dataworks_dev_schema}.{source_table}",
+                        "refTableName": f"{settings.maxcompute_project or settings.dataworks_dev_schema}.{source_table}",
                     },
                     {"type": "CrossCycleDependsOnSelf"},
                 ],

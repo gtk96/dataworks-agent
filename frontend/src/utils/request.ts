@@ -33,5 +33,5 @@ export async function request<T = unknown>(path: string, options: RequestOptions
 
 /** 生成幂等键 */
 export function idempotencyKey(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }

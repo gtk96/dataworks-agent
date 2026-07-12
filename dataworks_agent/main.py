@@ -145,7 +145,7 @@ async def lifespan(app: FastAPI):
             app_state._maxcompute_client = MaxComputeClient(
                 creds=creds,
                 endpoint=settings.maxcompute_endpoint,
-                project=settings.maxcompute_project,
+                project=settings.maxcompute_project or settings.dataworks_dev_schema,
             )
             logger.info("MaxCompute 客户端就绪 (AK/SK)")
 
@@ -155,7 +155,7 @@ async def lifespan(app: FastAPI):
 
             app_state._node_client = OpenAPINodeAdapter(
                 app_state._openapi_client,
-                project=settings.maxcompute_project,
+                project=settings.maxcompute_project or settings.dataworks_dev_schema,
                 holo_datasource=settings.holo_node_datasource,
             )
             logger.info("OpenAPI 节点适配器就绪 (AK/SK, 待接线)")
