@@ -1233,9 +1233,11 @@ class AgentWorkflowService:
         channel: str,
     ) -> WorkflowResult:
         sql = query_plan.sql
+        query_type = str((query_plan.business_query or {}).get("query_type") or "total")
         if (
             query_plan.metric_id != "ad_hoc_query"
             and not query_plan.selected_dimensions
+            and query_type != "trend"
             and len(rows) != 1
         ):
             return WorkflowResult(
@@ -1514,48 +1516,62 @@ class AgentWorkflowService:
 
         mapped_rows = [map_row(row) for row in rows]
         first = mapped_rows[0]
+        business_query = query_plan.business_query or {}
+        query_type = str(business_query.get("query_type") or "total")
+        is_trend = query_type == "trend"
+        time_range = business_query.get("time_range") or {}
         data_date = str(first.get("data_date") or "")
         data_hour = str(first.get("data_hour") or "")
-        snapshot = (
-            f"（数据日期 {data_date}，截至 {data_hour}:00）"
-            if data_date and data_hour
-            else f"（数据日期 {data_date}）"
-            if data_date
-            else ""
-        )
+        requested_start = str(time_range.get("start") or "")
+        requested_end = str(time_range.get("end") or "")
+        if str(time_range.get("kind") or "") == "range" and requested_start and requested_end:
+            snapshot = f"（时间范围 {requested_start} 至 {requested_end}）"
+        else:
+            snapshot = (
+                f"（数据日期 {data_date}，截至 {data_hour}:00）"
+                if data_date and data_hour
+                else f"（数据日期 {data_date}）"
+                if data_date
+                else ""
+            )
         album_names = "、".join(item["name"] for item in query_plan.albums)
         evidence = (
             f"\n\n口径证据：数据专辑“{album_names}” + approved v{query_plan.metric_version}。"
             if album_names
             else ""
         )
-        if not query_plan.selected_dimensions:
+        if not query_plan.selected_dimensions and not is_trend:
             return (
                 f"**{query_plan.metric_name}：{display(first.get(result_column))}**{snapshot}"
                 f"{evidence}"
             )
 
-        selected_columns = [
+        selected_columns = ["data_date"] if is_trend else []
+        selected_columns.extend(
             str(item.get("column") or "")
             for item in query_plan.caliber.get("dimensions", [])
             if str(item.get("name") or "") in query_plan.selected_dimensions
-        ]
+        )
         lines = [f"**{query_plan.metric_name}{snapshot}**"]
         total = Decimal("0")
         total_available = str(measure.get("aggregation") or "").lower() in {"sum", "count"}
+        if total_available:
+            try:
+                total = sum(
+                    (Decimal(str(item.get(result_column))) for item in mapped_rows),
+                    start=Decimal("0"),
+                )
+            except (InvalidOperation, TypeError, ValueError):
+                total_available = False
         for item in mapped_rows[:20]:
             label = " / ".join(str(item.get(column) or "—") for column in selected_columns)
             value = item.get(result_column)
             lines.append(f"- {label}：{display(value)}")
-            if total_available:
-                try:
-                    total += Decimal(str(value))
-                except (InvalidOperation, TypeError, ValueError):
-                    total_available = False
         if len(mapped_rows) > 20:
             lines.append(f"- ……其余 {len(mapped_rows) - 20} 行请查看结果表")
         if total_available:
-            lines.append(f"- **合计：{display(total)}**")
+            total_label = "区间合计" if is_trend else "合计"
+            lines.append(f"- **{total_label}：{display(total)}**")
         lines.append(evidence)
         return "\n".join(line for line in lines if line)
 

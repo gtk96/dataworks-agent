@@ -250,7 +250,26 @@
     "metric_id": "ad_spend_amt",
     "sql_contains": [
       "spend_date BETWEEN '2026-07-01' AND '2026-07-07'",
+      "GROUP BY platform"
+    ],
+    "sql_not_contains": [
+      "spend_date AS data_date",
       "GROUP BY spend_date, platform"
+    ]
+  },
+  {
+    "id": "plan_ad_trend",
+    "kind": "plan",
+    "message": "近7天各平台广告花费趋势",
+    "metric_id": "ad_spend_amt",
+    "sql_contains": [
+      "spend_date BETWEEN '2026-07-07' AND '2026-07-13'",
+      "spend_date AS data_date",
+      "GROUP BY spend_date, platform",
+      "ORDER BY spend_date, platform ASC"
+    ],
+    "sql_not_contains": [
+      "ORDER BY ad_spend_amt"
     ]
   },
   {
@@ -333,7 +352,13 @@
     "message": "本月广告花费",
     "metric_id": "ad_spend_amt",
     "sql_contains": [
-      "spend_date BETWEEN '2026-07-01' AND '2026-07-13'"
+      "spend_date BETWEEN '2026-07-01' AND '2026-07-13'",
+      "SUM(ad_spend) AS total_ad_spend_amt",
+      "LIMIT 1"
+    ],
+    "sql_not_contains": [
+      "spend_date AS data_date",
+      "GROUP BY"
     ]
   },
   {

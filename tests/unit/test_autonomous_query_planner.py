@@ -177,3 +177,157 @@ def test_effective_order_family_value_generates_schema_linked_filter():
     assert plan is not None
     assert "family_name = '\u91d1\u72ee\u5bb6\u65cf'" in plan.sql
     assert "family_name = '\u91d1\u72ee\u5bb6\u65cf'" in plan.reconciliation_sql
+
+
+def test_ad_spend_range_total_aggregates_the_whole_period():
+    plan = planner().plan("\u672c\u6708\u5e7f\u544a\u82b1\u8d39", spend_album())
+
+    assert plan is not None
+    assert "spend_date BETWEEN '2026-07-01' AND '2026-07-13'" in plan.sql
+    assert "spend_date AS data_date" not in plan.sql
+    assert "GROUP BY" not in plan.sql
+    assert "SUM(ad_spend) AS total_ad_spend_amt" in plan.sql
+    assert "LIMIT 1" in plan.sql
+
+
+def test_ad_spend_range_breakdown_aggregates_by_dimension_not_by_day():
+    plan = planner().plan(
+        "2026-07-01\u52302026-07-07\u5404\u5e73\u53f0\u5e7f\u544a\u82b1\u8d39",
+        spend_album(),
+    )
+
+    assert plan is not None
+    assert "spend_date BETWEEN '2026-07-01' AND '2026-07-07'" in plan.sql
+    assert "spend_date AS data_date" not in plan.sql
+    assert "GROUP BY platform" in plan.sql
+    assert "GROUP BY spend_date, platform" not in plan.sql
+    assert "ORDER BY ad_spend_amt DESC" in plan.sql
+
+
+def test_ad_spend_trend_keeps_daily_grain_and_orders_chronologically():
+    plan = planner().plan(
+        "\u8fd17\u5929\u5404\u5e73\u53f0\u5e7f\u544a\u82b1\u8d39\u8d8b\u52bf", spend_album()
+    )
+
+    assert plan is not None
+    assert plan.business_query["query_type"] == "trend"
+    assert "spend_date AS data_date" in plan.sql
+    assert "GROUP BY spend_date, platform" in plan.sql
+    assert "ORDER BY spend_date, platform ASC" in plan.sql
+    assert "ORDER BY ad_spend_amt" not in plan.sql
+
+
+def test_trend_answer_lists_dates_and_interval_total():
+    plan = MetricQueryPlan(
+        sql="SELECT 1",
+        metric_id="ad_spend_amt",
+        metric_name="\u5e7f\u544a\u82b1\u8d39",
+        metric_version=1,
+        table="giikin_aliyun.tb_dwd_fin_ad_spend_di",
+        albums=[{"id": 505, "name": "\u91d1\u72ee\u5bb6\u65cf"}],
+        selected_dimensions=[],
+        caliber={
+            "measure": {
+                "column": "ad_spend",
+                "alias": "ad_spend_amt",
+                "aggregation": "sum",
+                "unit": "CNY",
+            },
+            "dimensions": [],
+        },
+        business_query={
+            "query_type": "trend",
+            "time_range": {
+                "kind": "range",
+                "start": "2026-07-11",
+                "end": "2026-07-13",
+            },
+        },
+    )
+
+    answer = AgentWorkflowService._format_query_answer(
+        plan,
+        ["data_date", "total_ad_spend_amt"],
+        [
+            ["2026-07-11", 100],
+            ["2026-07-12", 200],
+            ["2026-07-13", 300],
+        ],
+    )
+
+    assert "\u65f6\u95f4\u8303\u56f4 2026-07-11 \u81f3 2026-07-13" in answer
+    assert "2026-07-11\uff1a\u00a5100.00" in answer
+    assert "2026-07-13\uff1a\u00a5300.00" in answer
+    assert "\u533a\u95f4\u5408\u8ba1\uff1a\u00a5600.00" in answer
+
+
+def test_range_total_answer_shows_requested_time_scope_without_daily_row():
+    plan = MetricQueryPlan(
+        sql="SELECT 1",
+        metric_id="ad_spend_amt",
+        metric_name="\u5e7f\u544a\u82b1\u8d39",
+        metric_version=1,
+        table="giikin_aliyun.tb_dwd_fin_ad_spend_di",
+        selected_dimensions=[],
+        caliber={
+            "measure": {
+                "column": "ad_spend",
+                "alias": "ad_spend_amt",
+                "aggregation": "sum",
+                "unit": "CNY",
+            }
+        },
+        business_query={
+            "query_type": "total",
+            "time_range": {
+                "kind": "range",
+                "start": "2026-07-01",
+                "end": "2026-07-13",
+            },
+        },
+    )
+
+    answer = AgentWorkflowService._format_query_answer(
+        plan,
+        ["total_ad_spend_amt"],
+        [[1234.5]],
+    )
+
+    assert "\u5e7f\u544a\u82b1\u8d39\uff1a\u00a51,234.50" in answer
+    assert "\u65f6\u95f4\u8303\u56f4 2026-07-01 \u81f3 2026-07-13" in answer
+
+
+def test_trend_answer_total_includes_rows_hidden_by_display_limit():
+    plan = MetricQueryPlan(
+        sql="SELECT 1",
+        metric_id="ad_spend_amt",
+        metric_name="\u5e7f\u544a\u82b1\u8d39",
+        metric_version=1,
+        table="giikin_aliyun.tb_dwd_fin_ad_spend_di",
+        selected_dimensions=["\u5e73\u53f0"],
+        caliber={
+            "measure": {
+                "column": "ad_spend",
+                "alias": "ad_spend_amt",
+                "aggregation": "sum",
+                "unit": "CNY",
+            },
+            "dimensions": [{"name": "\u5e73\u53f0", "column": "platform"}],
+        },
+        business_query={
+            "query_type": "trend",
+            "time_range": {
+                "kind": "range",
+                "start": "2026-07-07",
+                "end": "2026-07-13",
+            },
+        },
+    )
+    rows = [[f"2026-07-{7 + index // 4:02d}", f"p{index % 4}", 100] for index in range(28)]
+
+    answer = AgentWorkflowService._format_query_answer(
+        plan, ["data_date", "platform", "ad_spend_amt"], rows
+    )
+
+    assert "\u5176\u4f59 8 \u884c\u8bf7\u67e5\u770b\u7ed3\u679c\u8868" in answer
+    assert "\u533a\u95f4\u5408\u8ba1\uff1a\u00a52,800.00" in answer

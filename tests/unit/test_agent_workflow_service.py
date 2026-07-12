@@ -8,8 +8,13 @@ import pytest
 from dataworks_agent.agent.workflow_service import AgentWorkflowService, WorkflowResult
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ModelingTaskModel, TaskStepLogModel
+from dataworks_agent.governance.closed_loop_verifier import (
+    VerificationResult,
+    VerificationStatus,
+)
 from dataworks_agent.runtime.loop import RepairResult
 from dataworks_agent.semantic.album_context import AlbumTable, DataAlbumContext
+from dataworks_agent.semantic.query_planner import MetricQueryPlan
 from dataworks_agent.state import app_state
 
 
@@ -1318,3 +1323,57 @@ async def test_loop_bounds_persistent_freshness_mismatch_without_false_success(m
     assert result.data["evaluation"]["false_success_prevented"] is False
     assert service._execute_once.await_count == 3
     assert [call.args[0] for call in sleep.await_args_list] == [2.0, 4.0]
+
+
+@pytest.mark.asyncio
+async def test_query_success_allows_multirow_certified_trend():
+    service = AgentWorkflowService()
+    plan = MetricQueryPlan(
+        sql="SELECT spend_date AS data_date, SUM(ad_spend) AS total_ad_spend_amt",
+        metric_id="ad_spend_amt",
+        metric_name="ad spend",
+        metric_version=1,
+        table="giikin_aliyun.tb_dwd_fin_ad_spend_di",
+        selected_dimensions=[],
+        caliber={
+            "measure": {
+                "column": "ad_spend",
+                "alias": "ad_spend_amt",
+                "aggregation": "sum",
+                "unit": "CNY",
+            }
+        },
+        business_query={
+            "query_type": "trend",
+            "time_range": {
+                "kind": "range",
+                "start": "2026-07-11",
+                "end": "2026-07-13",
+            },
+        },
+    )
+    service._reconcile_metric_result = AsyncMock(
+        return_value={"required": True, "passed": True, "status": "passed"}
+    )
+    service._closed_loop_verifier.verify = AsyncMock(
+        return_value=VerificationResult(
+            task_id="trend-check",
+            task_type="ASK_DATA",
+            status=VerificationStatus.PASSED,
+            passed_count=8,
+        )
+    )
+
+    result = await service._query_success(
+        plan,
+        [],
+        ["data_date", "total_ad_spend_amt"],
+        [["2026-07-11", 100], ["2026-07-12", 200], ["2026-07-13", 300]],
+        "cookie_bff",
+    )
+
+    assert result.success is True
+    assert result.data["query"]["row_count"] == 3
+    assert "metric result is not unique" not in result.errors
+    assert "2026-07-11" in result.message
+    assert result.steps[-1]["step"] == "closed_loop_verification"

@@ -329,8 +329,11 @@ class MetricQueryPlanner:
         hour_partition = self._safe_identifier(str(hour_value)) if hour_value else ""
 
         data_date_column = business_date or date_partition
-        select_lines = [f"  {data_date_column} AS data_date"]
-        if hour_partition:
+        include_data_date = query.query_type == "trend" or query.time_range.kind != "range"
+        select_lines: list[str] = []
+        if include_data_date:
+            select_lines.append(f"  {data_date_column} AS data_date")
+        if hour_partition and include_data_date:
             select_lines.append(f"  {hour_partition} AS data_hour")
         for dimension in selected_dimensions:
             select_lines.append(f"  {self._safe_identifier(str(dimension['column']))}")
@@ -385,15 +388,24 @@ class MetricQueryPlanner:
 
         lines = ["SELECT", ",\n".join(select_lines), f"FROM {table}", "WHERE"]
         lines.append("  " + "\n  AND ".join(filters))
-        group_columns = [data_date_column]
-        if hour_partition:
+        group_columns: list[str] = []
+        if include_data_date:
+            group_columns.append(data_date_column)
+        if hour_partition and include_data_date:
             group_columns.append(hour_partition)
         group_columns.extend(
             self._safe_identifier(str(item["column"])) for item in selected_dimensions
         )
-        if aggregation in {"sum", "count", "ratio"}:
+        if aggregation in {"sum", "count", "ratio"} and group_columns:
             lines.append("GROUP BY " + ", ".join(dict.fromkeys(group_columns)))
-        if selected_dimensions:
+        if query.query_type == "trend":
+            order_columns = [data_date_column]
+            order_columns.extend(
+                self._safe_identifier(str(item["column"])) for item in selected_dimensions
+            )
+            lines.append("ORDER BY " + ", ".join(dict.fromkeys(order_columns)) + " ASC")
+            lines.append(f"LIMIT {query.limit}")
+        elif selected_dimensions:
             direction = "ASC" if query.order == "asc" else "DESC"
             lines.append(f"ORDER BY {self._safe_identifier(measure_alias)} {direction}")
             lines.append(f"LIMIT {query.limit}")
