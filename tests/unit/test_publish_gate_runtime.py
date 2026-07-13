@@ -186,9 +186,7 @@ async def test_record_deployment(gate):
         payload={},
     )
 
-    result = await gate.record_deployment(
-        request.request_id, ["node-1", "node-1"], success=True
-    )
+    result = await gate.record_deployment(request.request_id, ["node-1", "node-1"], success=True)
 
     assert result is not None
     assert result.deployment_status == "deployed"

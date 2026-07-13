@@ -141,13 +141,14 @@ async def capabilities() -> dict[str, Any]:
 async def publish_requests() -> dict[str, Any]:
     """列出当前进程内等待人工处理的发布请求。"""
     requests = await _publish_gate().list_pending_requests()
-    return {"requests": [_publish_request_payload(item) for item in requests], "total": len(requests)}
+    return {
+        "requests": [_publish_request_payload(item) for item in requests],
+        "total": len(requests),
+    }
 
 
 @router.post("/publish-gate/{request_id}/approve")
-async def approve_publish_request(
-    request_id: str, payload: PublishReviewRequest
-) -> dict[str, Any]:
+async def approve_publish_request(request_id: str, payload: PublishReviewRequest) -> dict[str, Any]:
     """人工批准后才调用 DataWorks 发布接口；失败时保留待审批以便重试。"""
     gate = _publish_gate()
     request = await gate.get_request(request_id)
@@ -166,7 +167,9 @@ async def approve_publish_request(
     comment = payload.comment or f"Publish Gate {request.request_id} approved by {payload.reviewer}"
     try:
         deployed = bool(await node_client.deploy_nodes(node_ids, comment=comment))
-        deploy_error = "" if deployed else str(getattr(node_client, "last_error", "发布接口返回失败"))
+        deploy_error = (
+            "" if deployed else str(getattr(node_client, "last_error", "发布接口返回失败"))
+        )
     except Exception as exc:
         logger.exception("Publish Gate deployment failed: %s", request_id)
         deployed = False
@@ -192,9 +195,7 @@ async def approve_publish_request(
 
 
 @router.post("/publish-gate/{request_id}/reject")
-async def reject_publish_request(
-    request_id: str, payload: PublishReviewRequest
-) -> dict[str, Any]:
+async def reject_publish_request(request_id: str, payload: PublishReviewRequest) -> dict[str, Any]:
     """人工拒绝发布，不调用任何 DataWorks 发布接口。"""
     gate = _publish_gate()
     request = await gate.get_request(request_id)

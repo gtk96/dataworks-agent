@@ -1,4 +1,4 @@
-﻿"""LangGraph-backed bounded observe-act-verify-repair runtime."""
+"""LangGraph-backed bounded observe-act-verify-repair runtime."""
 
 from __future__ import annotations
 
@@ -252,12 +252,16 @@ class LoopKernel[T]:
             result = state["last_result"]
             iterations = list(state["iterations"])
             current = iterations[-1]
-            repair_value = repair(
-                dict(state.get("runtime_state", {})),
-                result,
-                current.decision,
-                current.iteration,
-            ) if repair is not None else RepairResult(False)
+            repair_value = (
+                repair(
+                    dict(state.get("runtime_state", {})),
+                    result,
+                    current.decision,
+                    current.iteration,
+                )
+                if repair is not None
+                else RepairResult(False)
+            )
             repair_result = (
                 await repair_value if inspect.isawaitable(repair_value) else repair_value
             )

@@ -92,9 +92,7 @@ class TaskExecutor:
             if not all(dep in executed for dep in step.depends_on):
                 error = f"Step {step.step_id} dependency is not complete"
                 errors.append(error)
-                self._monitor.record_step_complete(
-                    plan.task_id, step.step_id, False, error=error
-                )
+                self._monitor.record_step_complete(plan.task_id, step.step_id, False, error=error)
                 step_results.append(
                     StepResult(
                         step_id=step.step_id,

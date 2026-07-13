@@ -1,4 +1,4 @@
-﻿"""LangGraph-backed conversational context for clarification follow-ups."""
+"""LangGraph-backed conversational context for clarification follow-ups."""
 
 from __future__ import annotations
 

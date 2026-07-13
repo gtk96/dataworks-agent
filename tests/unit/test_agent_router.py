@@ -291,9 +291,7 @@ def test_publish_gate_approve_deploys_only_after_human_action(monkeypatch):
     assert data["success"] is True
     assert data["request"]["status"] == "approved"
     assert data["request"]["deployment_status"] == "deployed"
-    node_client.deploy_nodes.assert_awaited_once_with(
-        ["node-1", "node-2"], comment="人工确认"
-    )
+    node_client.deploy_nodes.assert_awaited_once_with(["node-1", "node-2"], comment="人工确认")
 
 
 def test_publish_gate_reject_never_deploys(monkeypatch):
