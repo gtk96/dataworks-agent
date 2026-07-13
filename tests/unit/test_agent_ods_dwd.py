@@ -30,6 +30,22 @@ REALTIME_ODS_DWD = (
 )
 
 
+def test_parser_extracts_endpoint_oss_path_and_json_format_from_followup() -> None:
+    message = (
+        "oss 数据源 sample_material_report 建模处理\n"
+        "补充信息：oss://oss-cn-shenzhen-internal.aliyuncs.com/"
+        "example-data-bucket/ads/data/sample_material_report/ 字段是 json"
+    )
+
+    intent = IntentParser().parse(message)
+
+    assert intent.action in {"agent_workflow", "ods_dwd_modeling", "forward_modeling"}
+    assert intent.params["source_type"] == "oss"
+    assert intent.params["datasource_name"] == "sample_material_report"
+    assert intent.params["file_format"] == "json"
+    assert intent.params["oss_path"].endswith("/sample_material_report/")
+
+
 def test_parser_recognizes_mysql_ods_dwd_entities() -> None:
     intent = IntentParser().parse(MYSQL_ODS_DWD)
 

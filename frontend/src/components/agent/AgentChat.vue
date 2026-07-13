@@ -108,6 +108,36 @@
               </li>
             </ol>
 
+            <section
+              v-if="sourceDiscovery.visible"
+              class="source-discovery"
+              :class="{ success: sourceDiscovery.success }"
+              data-testid="source-discovery"
+            >
+              <div class="source-discovery-title">
+                <div><strong>OSS 字段探测</strong><span>建表前受限读取样本，不展示或保存样本正文</span></div>
+                <span>{{ sourceDiscovery.statusText }}</span>
+              </div>
+              <div class="source-discovery-grid">
+                <div><small>请求 Endpoint</small><strong>{{ sourceDiscovery.endpoint }}</strong></div>
+                <div><small>实际 Endpoint</small><strong>{{ sourceDiscovery.endpointUsed || '-' }}</strong></div>
+                <div><small>Bucket</small><strong>{{ sourceDiscovery.bucket }}</strong></div>
+                <div><small>Prefix</small><strong>{{ sourceDiscovery.prefix }}</strong></div>
+                <div><small>文件格式</small><strong>{{ sourceDiscovery.fileFormat }}</strong></div>
+                <div><small>推断字段</small><strong>{{ sourceDiscovery.columnCount }}</strong></div>
+              </div>
+              <div v-if="sourceDiscovery.success" class="source-discovery-evidence">
+                <span>样本对象：{{ sourceDiscovery.sampleObject || '-' }}</span>
+                <span>采样记录：{{ sourceDiscovery.recordCount }}</span>
+              </div>
+              <div v-else class="source-discovery-blocker">
+                <strong>{{ sourceDiscovery.errorCode || 'schema_discovery_failed' }}</strong>
+                <p>{{ sourceDiscovery.error || '字段探测尚未完成。' }}</p>
+                <p v-if="sourceDiscovery.nextAction"><b>下一步：</b>{{ sourceDiscovery.nextAction }}</p>
+                <small v-if="sourceDiscovery.attemptedEndpoints.length">已尝试：{{ sourceDiscovery.attemptedEndpoints.join(' → ') }}</small>
+              </div>
+            </section>
+
             <div v-if="executionTables.length" class="created-resources">
               <span v-for="resource in executionTables" :key="resource">{{ resource }}</span>
             </div>
@@ -262,6 +292,7 @@ import {
 import ChatMessage from './ChatMessage.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
+import { buildSourceDiscoveryView } from './sourceDiscovery'
 import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentExecutionMode } from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
 
@@ -299,6 +330,7 @@ interface AgentPayload {
     next_actions?: string[]
     agent_mode?: string
     semantic_plan?: SemanticPlan
+    source_discovery?: Record<string, unknown>
     query?: {
       sql?: string
       columns?: string[]
@@ -400,6 +432,7 @@ const publishGateText = computed(() => {
   if (publishRequest.value) return '待审批'
   return lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布'
 })
+const sourceDiscovery = computed(() => buildSourceDiscoveryView(lastPayload.value?.data?.source_discovery))
 const executionTables = computed(() => {
   const rows = lastPayload.value?.data?.executed ?? []
   return rows.map((row) => String(row.table ?? row.node_name ?? '')).filter(Boolean)
@@ -612,12 +645,13 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .semantic-proof { margin: 14px 20px 0; padding: 14px; border: 1px solid #dfe8ff; border-radius: 10px; background: #f8faff; }
 .semantic-proof-title { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.semantic-proof-title div { display:flex; flex-direction:column; gap:3px; }.semantic-proof-title strong { color:#252536; font-size:13px; }.semantic-proof-title div span { color:#7b7b87; font-size:10px; }.semantic-proof-title>span { padding:3px 7px; border-radius:5px; background:#e9edff; color:#5946d8; font-size:10px; font-weight:700; }
 .semantic-proof-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }.semantic-proof-grid div { min-width:0; padding:9px; border-radius:7px; background:#fff; }.semantic-proof-grid small,.semantic-proof-row small { display:block; margin-bottom:3px; color:#92929c; font-size:9px; }.semantic-proof-grid strong { display:block; overflow:hidden; color:#454550; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.source-discovery{margin:14px 20px;padding:14px;border:1px solid #f0d5a8;border-radius:10px;background:#fffaf2}.source-discovery.success{border-color:#bfe4cc;background:#f4fbf6}.source-discovery-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.source-discovery-title div strong{display:block;color:#714d14;font-size:12px}.source-discovery.success .source-discovery-title div strong{color:#23723f}.source-discovery-title div span{display:block;margin-top:3px;color:#999184;font-size:9px}.source-discovery-title>span{padding:3px 7px;border-radius:999px;background:#fff0d6;color:#9b6100;font-size:9px}.source-discovery.success .source-discovery-title>span{background:#dff4e6;color:#257342}.source-discovery-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.source-discovery-grid div{min-width:0;padding:8px;border-radius:7px;background:rgba(255,255,255,.78)}.source-discovery-grid small{display:block;color:#999184;font-size:8px}.source-discovery-grid strong{display:block;overflow:hidden;margin-top:3px;color:#55505a;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.source-discovery-evidence{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;color:#4f6f59;font-size:10px}.source-discovery-blocker{margin-top:10px;padding:10px;border-radius:7px;background:#fff}.source-discovery-blocker>strong{color:#a15d00;font-size:10px}.source-discovery-blocker p{margin:5px 0 0;color:#6d6253;font-size:10px;line-height:1.5}.source-discovery-blocker b{color:#8d5b0e}.source-discovery-blocker small{display:block;margin-top:7px;color:#999184;font-size:9px;word-break:break-all}.step-needs_context{background:#fff0d6!important;color:#9b6100!important}
 .semantic-proof-row { margin-top:8px; color:#5e5e68; font-size:10px; }.semantic-proof-row code { white-space:normal; word-break:break-all; }.semantic-proof ul { margin:9px 0 0; padding-left:16px; color:#686873; font-size:10px; line-height:1.6; }.semantic-checks{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.semantic-checks span{padding:4px 7px;border-radius:6px;background:#fff0f0;color:#b33;font-size:10px}.semantic-checks span.passed{background:#eaf8ef;color:#247a43}
 .technical-collapse { border-top: 1px solid #ededf0; border-bottom: 0; padding: 0 20px; }.technical-collapse :deep(.el-collapse-item__header){font-size:11px;color:#777780}.artifact-list article { margin-bottom: 10px; }.artifact-list strong { color: #55555d; font-size: 11px; }.artifact-list pre,.json-detail { max-height: 260px; overflow: auto; padding: 12px; border-radius: 8px; background: #17171b; color: #dddde3; font-size: 10px; white-space: pre-wrap; }.artifact-list p { color: #66666e; font-size: 12px; white-space: pre-wrap; }
 .question-card { margin: 14px 0 20px 40px; padding: 16px; border: 1px solid #f0d5a8; border-radius: 10px; background: #fffaf2; }.question-card>strong { display: block; margin-bottom: 8px; color: #8d5b0e; font-size: 12px; }.question-card button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border: 0; border-top: 1px solid #f3e5cb; background: transparent; color: #765723; font-size: 12px; cursor: pointer; text-align: left; }
 .composer-shell { min-height: 0; flex-shrink: 0; padding: 12px 24px 14px; background: linear-gradient(180deg,rgba(255,255,255,.5),#fff 18%); }.composer-box { width: min(900px,100%); margin: 0 auto; overflow: hidden; border: 1px solid #d9d9de; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.055); transition: .2s; }.composer-box.focused { border-color: #8a72f8; box-shadow: 0 0 0 3px rgba(107,78,255,.09),0 8px 24px rgba(0,0,0,.06); }.composer-box textarea { width: 100%; min-height: 52px; max-height: 140px; box-sizing: border-box; resize: none; padding: 15px 16px 8px; border: 0; outline: 0; color: #2c2c32; font: 13px/1.6 inherit; }.composer-box textarea::placeholder { color: #aaaab0; }.composer-toolbar { display: flex; align-items: center; gap: 10px; padding: 5px 7px 7px 11px; }.settings-button { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: #777780; font-size: 11px; cursor: pointer; }.settings-button:hover { background: #f2f2f4; }.guard-hint { display: flex; align-items: center; gap: 4px; color: #aaaab0; font-size: 10px; }.send-button { width: 31px; height: 31px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 8px; background: #6748ef; color: #fff; cursor: pointer; }.send-button:disabled { background: #d8d4e8; cursor: not-allowed; }.send-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }.composer-shell>p { margin: 7px 0 0; color: #aaaab0; font-size: 9px; text-align: center; }.run-settings>strong { display: block; margin-bottom: 10px; }.run-settings label { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #ededf0; color: #55555d; font-size: 12px; }.run-settings label span small { display: block; margin-top: 2px; color: #aaaab0; font-size: 9px; }
 @keyframes pulse{to{opacity:.25;transform:translateY(-2px)}}@keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:900px){.agent-workspace{grid-template-columns:1fr}.conversation-rail{display:none}.result-metrics{grid-template-columns:repeat(2,1fr)}.result-metrics div:nth-child(2){border-right:0}.prompt-grid{grid-template-columns:1fr}.chat-header{padding:0 16px}.composer-shell{padding-left:12px;padding-right:12px}.message-list{width:calc(100% - 24px)}.welcome-panel{width:calc(100% - 24px)}}
+@media(max-width:900px){.source-discovery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.agent-workspace{grid-template-columns:1fr}.conversation-rail{display:none}.result-metrics{grid-template-columns:repeat(2,1fr)}.result-metrics div:nth-child(2){border-right:0}.prompt-grid{grid-template-columns:1fr}.chat-header{padding:0 16px}.composer-shell{padding-left:12px;padding-right:12px}.message-list{width:calc(100% - 24px)}.welcome-panel{width:calc(100% - 24px)}}
 .mode-control { display: flex; align-items: center; gap: 8px; color: #55555d; font-size: 11px; font-weight: 600; }
 .execution-warning { padding: 4px 7px; border: 1px solid #ffd7a8; border-radius: 6px; background: #fff7e8; color: #a85b00; font-size: 10px; }
 .response-errors { margin-top: 12px; padding: 11px 12px; border: 1px solid #ffd2d2; border-radius: 9px; background: #fff7f7; color: #8f2f2f; }

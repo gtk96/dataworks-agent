@@ -1864,8 +1864,8 @@ class AgentWorkflowService:
             subject = f" `{identifier}`" if identifier else ""
             question = (
                 f"已识别为 OSS 建模，但{subject} 还不能定位到 OSS 对象。"
-                "请补充完整 oss:// 路径、文件格式和字段定义，"
-                "例如：oss://bucket/path/file.csv，CSV，字段 material_id bigint, spend decimal(18,2)。"
+                "请补充完整 oss:// 路径；Agent 会使用本地 AK/SK 受限读取样本并自动推断 JSON 字段。"
+                "如果目录没有扩展名，可同时说明“文件格式是 JSON”。"
             )
             return WorkflowResult(
                 True,
@@ -1884,7 +1884,7 @@ class AgentWorkflowService:
                     "source_type": source_type,
                     "needs_clarification": True,
                     "clarifying_questions": [question],
-                    "missing_context": ["oss_path", "file_format", "columns"],
+                    "missing_context": ["oss_path"],
                     "generated_tables": {},
                     "publish_gate": "not_requested",
                 },
@@ -1895,7 +1895,7 @@ class AgentWorkflowService:
         if not any(by_layer.values()) and source_table and self._requests_full_chain(message):
             generated_tables = self._derive_forward_table_names(
                 source_table=source_table,
-                datasource=datasource or "source",
+                datasource=datasource or (source_table if source_type == "oss" else "source"),
                 source_type=source_type,
                 granularity=granularity,
             )
@@ -1960,7 +1960,9 @@ class AgentWorkflowService:
                 errors=["missing target tables"],
             )
 
-        preflight = await self._official_datasource_preflight(datasource)
+        preflight = await self._official_datasource_preflight(
+            None if source_type == "oss" else datasource
+        )
         self._set_step_status(execution_steps, "official_mcp_health", preflight["status"])
         executed: list[dict[str, Any]] = []
         upstream = source_table or ""
@@ -1977,16 +1979,26 @@ class AgentWorkflowService:
                 schedule_minute=schedule_minute,
                 initialize=initialize_data,
             )
-            executed.append({"layer": "ODS", "table": ods_table, "result": ods_result})
+            needs_context = bool(ods_result.get("needs_context"))
+            if ods_result.get("success"):
+                executed.append({"layer": "ODS", "table": ods_table, "result": ods_result})
             self._set_step_status(
                 execution_steps,
                 "discover_source_schema",
-                "completed" if ods_result.get("success") else "warning",
+                "completed"
+                if ods_result.get("success")
+                else "needs_context"
+                if needs_context
+                else "failed",
             )
             self._set_step_status(
                 execution_steps,
                 "create_ods_table_and_source_node",
-                "completed" if ods_result.get("success") else "failed",
+                "completed"
+                if ods_result.get("success")
+                else "skipped"
+                if needs_context
+                else "failed",
             )
             if initialize_data:
                 init_status = (
@@ -1997,6 +2009,31 @@ class AgentWorkflowService:
                 )
                 self._set_step_status(execution_steps, "initialize_ods_data", init_status)
             if not ods_result.get("success"):
+                if needs_context:
+                    question = str(
+                        ods_result.get("clarifying_question")
+                        or "OSS 字段探测受阻。请修复读取权限，或直接补充字段定义后继续。"
+                    )
+                    return WorkflowResult(
+                        True,
+                        str(ods_result.get("message") or "OSS 源已识别，但字段探测需要补充上下文。"),
+                        "forward_modeling",
+                        mode,
+                        steps=execution_steps,
+                        data={
+                            "executed": executed,
+                            "attempted": [{"layer": "ODS", "table": ods_table}],
+                            "official_mcp_preflight": preflight,
+                            "source_type": source_type,
+                            "source_discovery": ods_result.get("schema_discovery") or {},
+                            "needs_clarification": True,
+                            "clarifying_questions": [question],
+                            "missing_context": ods_result.get("missing_context")
+                            or ["oss_read_permission_or_columns"],
+                            "generated_tables": generated_tables,
+                            "publish_gate": "not_requested",
+                        },
+                    )
                 return WorkflowResult(
                     False,
                     "ODS 建表、节点或初始化失败，已停止下游建模。",
@@ -2061,6 +2098,10 @@ class AgentWorkflowService:
             "source_type": source_type,
             "generated_tables": generated_tables,
         }
+        if source_type == "oss" and executed:
+            result_data["source_discovery"] = executed[0]["result"].get(
+                "schema_discovery", {}
+            )
         message_text = (
             "开发环境全链路已完成：表已创建，节点与调度已保存；"
             "初始化按请求执行，正式发布仍等待 Publish Gate。"
@@ -2119,12 +2160,15 @@ class AgentWorkflowService:
         source_name = source_table.split(".")[-1].lower()
         safe_source = re.sub(r"[^a-z0-9_]+", "_", source_name).strip("_") or "source_table"
         safe_datasource = re.sub(r"[^a-z0-9_]+", "_", datasource.lower()).strip("_") or "source"
-        ods_table = generate_ods_di_table_name(
-            safe_datasource,
-            safe_source,
-            granularity,
-            source_type=source_type,
-        )
+        if source_type == "oss" and safe_datasource == safe_source:
+            ods_table = f"ods_oss_{safe_source}_{granularity.lower()}"
+        else:
+            ods_table = generate_ods_di_table_name(
+                safe_datasource,
+                safe_source,
+                granularity,
+                source_type=source_type,
+            )
         suffix = "hi" if granularity in {"hour", "hourly"} else "di"
         return {
             "ods": ods_table,
@@ -2219,22 +2263,97 @@ class AgentWorkflowService:
         return columns
 
     async def _ensure_oss_table(
-        self, target_table: str, granularity: str, columns: list[dict[str, Any]]
+        self,
+        target_table: str,
+        granularity: str,
+        columns: list[dict[str, Any]],
+        *,
+        oss_path: str,
+        file_format: str,
     ) -> dict[str, Any]:
         mc = app_state._maxcompute_client
         if await mc.table_exists(target_table, project=settings.dataworks_dev_schema):
-            return {"status": "exists"}
+            return {
+                "status": "exists",
+                "columns": columns,
+                "schema_discovery": {
+                    "success": True,
+                    "source": "existing_target_table",
+                    "file_format": file_format,
+                },
+            }
+
+        schema_discovery: dict[str, Any]
+        if columns:
+            schema_discovery = {
+                "success": True,
+                "source": "explicit_columns",
+                "file_format": file_format,
+                "columns": columns,
+            }
+        else:
+            from dataworks_agent.services.ods_oss import discover_oss_schema
+
+            schema_discovery = await asyncio.to_thread(
+                discover_oss_schema,
+                oss_path,
+                file_format,
+            )
+            if not schema_discovery.get("success"):
+                location = schema_discovery.get("location") or {}
+                endpoint = str(location.get("endpoint") or "自动按地域推导")
+                bucket = str(location.get("bucket") or "未识别")
+                prefix = str(location.get("object_key") or "") or "根目录"
+                detected_format = str(schema_discovery.get("file_format") or "未确定").upper()
+                reason = str(schema_discovery.get("error") or "未知原因")
+                next_action = str(
+                    schema_discovery.get("next_action")
+                    or "请修复 OSS 读取权限，或直接提供字段定义。"
+                )
+                return {
+                    "status": "needs_context",
+                    "error": reason,
+                    "message": (
+                        "已识别 OSS 地址和文件格式，但在建表前的真实字段探测阶段受阻。"
+                        f" Endpoint: {endpoint}；Bucket: {bucket}；Prefix: {prefix}；"
+                        f"格式: {detected_format}。"
+                    ),
+                    "clarifying_question": f"字段探测失败：{reason}。下一步：{next_action}",
+                    "missing_context": ["oss_read_permission_or_columns"],
+                    "schema_discovery": schema_discovery,
+                }
+            columns = list(schema_discovery.get("columns") or [])
+
         if not columns:
             return {
-                "status": "failed",
-                "error": "OSS 新表无法自动推断文件字段；请在同一句话中补充“字段 id bigint, name string”。",
+                "status": "needs_context",
+                "error": "OSS 样本未推断出可建表字段",
+                "clarifying_question": "请确认 JSON 样本包含对象字段，或直接提供字段定义。",
+                "missing_context": ["columns"],
+                "schema_discovery": schema_discovery,
             }
+        reserved = [
+            str(column.get("name") or "")
+            for column in columns
+            if str(column.get("name") or "").lower() in {"dt", "ht"}
+        ]
+        if reserved:
+            return {
+                "status": "needs_context",
+                "error": f"OSS 字段与 ODS 分区字段冲突：{'、'.join(reserved)}",
+                "clarifying_question": "请确认冲突字段的映射方式后再建表。",
+                "missing_context": ["column_mapping"],
+                "schema_discovery": schema_discovery,
+            }
+
         ddl_columns = ",\n".join(
             f"  `{column['name']}` {self._normalize_mc_type(str(column.get('type', 'string')))}"
             for column in columns
         )
         partitions = (
-            "`dt` STRING, `ht` STRING" if granularity in {"hour", "hourly"} else "`dt` STRING"
+            "`dt` STRING, `ht` STRING"
+            if granularity in {"hour", "hourly"}
+            else "`dt` STRING"
         )
         ddl = (
             f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
@@ -2245,6 +2364,8 @@ class AgentWorkflowService:
             "status": "created" if ddl_result.success else "failed",
             "ddl": ddl,
             "error": ddl_result.error,
+            "columns": columns,
+            "schema_discovery": schema_discovery,
         }
 
     async def _ensure_table_from_source(
@@ -2323,24 +2444,95 @@ class AgentWorkflowService:
             )
 
         if source_type == "oss":
+            from dataworks_agent.services.ods_oss import (
+                OssImportPipeline,
+                infer_file_format,
+                parse_oss_path,
+            )
+
             oss_path = params.get("oss_path") or self._extractor.extract_oss_path(message)
             if not oss_path:
                 return {"success": False, "error": "OSS ODS 需要 oss:// 路径"}
+            try:
+                location = parse_oss_path(str(oss_path))
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "needs_context": True,
+                    "error": str(exc),
+                    "message": "OSS 地址无法规范化，尚未执行建表或建节点。",
+                    "clarifying_question": f"{exc}。请提供有效的 OSS 地址后继续。",
+                    "missing_context": ["oss_path"],
+                    "schema_discovery": {
+                        "success": False,
+                        "error_code": "invalid_location",
+                        "error": str(exc),
+                    },
+                }
+            canonical_path = str(location["canonical_uri"])
             columns = params.get("columns") or self._extract_inline_columns(message)
-            ensure_result = await self._ensure_oss_table(target_table, granularity, columns)
+            requested_format = (
+                params.get("file_format") or self._extractor.extract_file_format(message)
+            )
+            file_format = infer_file_format(canonical_path, str(requested_format or ""))
+            if columns and not file_format:
+                schema_discovery = {
+                    "success": False,
+                    "location": location,
+                    "file_format": "",
+                    "error_code": "format_required",
+                    "error": "OSS 文件格式尚未确定",
+                    "next_action": "请补充文件格式，例如“文件格式是 JSON”。",
+                }
+                return {
+                    "success": False,
+                    "needs_context": True,
+                    "error": schema_discovery["error"],
+                    "message": "OSS 地址和字段已识别，但文件格式尚未确定，未建表或建节点。",
+                    "clarifying_question": schema_discovery["next_action"],
+                    "missing_context": ["file_format"],
+                    "schema_discovery": schema_discovery,
+                }
+            ensure_result = await self._ensure_oss_table(
+                target_table,
+                granularity,
+                columns,
+                oss_path=str(oss_path),
+                file_format=file_format,
+            )
+            if ensure_result.get("status") == "needs_context":
+                return {
+                    "success": False,
+                    "needs_context": True,
+                    "error": ensure_result.get("error"),
+                    "message": ensure_result.get("message"),
+                    "clarifying_question": ensure_result.get("clarifying_question"),
+                    "missing_context": ensure_result.get("missing_context"),
+                    "schema_discovery": ensure_result.get("schema_discovery") or {},
+                    "steps": {"discover_schema": ensure_result},
+                }
             if ensure_result.get("status") == "failed":
                 return {
                     "success": False,
                     "error": ensure_result.get("error"),
+                    "schema_discovery": ensure_result.get("schema_discovery") or {},
                     "steps": {"ensure_table": ensure_result},
                 }
-            from dataworks_agent.services.ods_oss import OssImportPipeline
 
-            file_format = str(params.get("file_format") or str(oss_path).rsplit(".", 1)[-1]).lower()
+            schema_discovery = ensure_result.get("schema_discovery") or {}
+            file_format = str(schema_discovery.get("file_format") or file_format).lower()
             if file_format not in {"csv", "json", "parquet"}:
-                file_format = "csv"
+                return {
+                    "success": False,
+                    "needs_context": True,
+                    "error": "无法确定 OSS 文件格式",
+                    "message": "OSS 地址已识别，但文件格式尚未确定，未创建节点。",
+                    "clarifying_question": "请补充文件格式，例如“文件格式是 JSON”。",
+                    "missing_context": ["file_format"],
+                    "schema_discovery": schema_discovery,
+                }
             result = await OssImportPipeline(nodes).run(
-                oss_path=str(oss_path),
+                oss_path=canonical_path,
                 target_table=target_table,
                 file_format=file_format,
                 wildcard=str(params.get("wildcard") or ""),
@@ -2349,6 +2541,8 @@ class AgentWorkflowService:
                 publish=False,
             )
             result.setdefault("steps", {})["ensure_table"] = ensure_result
+            result["schema_discovery"] = schema_discovery
+            result["oss_location"] = location
             return result
 
         if source_type == "realtime":

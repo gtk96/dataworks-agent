@@ -29,6 +29,7 @@ dependencies = [
     "alibabacloud-credentials>=1.0.0",
     "mcp>=1.0.0",
     "langgraph>=1.2.9,<2",
+    "oss2>=2.19.0",
 ]
 
 [project.scripts]

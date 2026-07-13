@@ -7,8 +7,9 @@ describe('Agent step status', () => {
       { status: 'planned' },
       { status: 'required_only_for_publish' },
       { status: 'completed' },
+      { status: 'needs_context' },
     ])
-    expect(summary).toEqual({ completed: 1, planned: 2, warning: 0, failed: 0, total: 3 })
+    expect(summary).toEqual({ completed: 1, planned: 2, warning: 1, failed: 0, total: 4 })
   })
 
   it('renders markers from each real step status', () => {

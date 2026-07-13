@@ -229,7 +229,7 @@ async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() ->
     agent = ChatAgent()
     conversation_id = "oss-followup"
     first = await agent.chat(
-        "oss 数据源 tiktok_smart_plus_material_report 建模处理",
+        "oss 数据源 sample_material_report 建模处理",
         execution_mode="auto",
         conversation_id=conversation_id,
     )
@@ -243,7 +243,10 @@ async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() ->
             mode="dev_execute",
         )
     )
-    followup = "oss://bucket/tiktok/material.csv，CSV，字段 material_id bigint"
+    followup = (
+        "oss://oss-cn-shenzhen-internal.aliyuncs.com/example-data-bucket/"
+        "ads/data/sample_material_report/ 字段是 json"
+    )
     second = await agent.chat(
         followup,
         execution_mode="auto",
@@ -251,7 +254,10 @@ async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() ->
     )
 
     assert second.success is True
-    sent_message = agent._workflow_service.execute.await_args.kwargs["message"]
-    assert "tiktok_smart_plus_material_report" in sent_message
-    assert followup in sent_message
+    sent = agent._workflow_service.execute.await_args.kwargs
+    assert "sample_material_report" in sent["message"]
+    assert followup in sent["message"]
+    assert sent["params"]["source_type"] == "oss"
+    assert sent["params"]["file_format"] == "json"
+    assert sent["params"]["oss_path"] == followup.removesuffix(" 字段是 json")
     assert await agent._conversation_graph.pending_objective(conversation_id) == ""

@@ -4,6 +4,7 @@ export interface AgentStepLike {
 
 const COMPLETED = new Set(['completed', 'success', 'done', 'ok'])
 const PLANNED = new Set(['planned', 'pending', 'required_only_for_publish'])
+const ATTENTION = new Set(['warning', 'skipped', 'approval_required', 'needs_context'])
 
 export function summarizeAgentSteps(steps: AgentStepLike[]) {
   let completed = 0
@@ -14,7 +15,7 @@ export function summarizeAgentSteps(steps: AgentStepLike[]) {
     const status = String(step.status ?? '').toLowerCase()
     if (COMPLETED.has(status)) completed += 1
     else if (PLANNED.has(status)) planned += 1
-    else if (status === 'warning' || status === 'skipped' || status === 'approval_required') warning += 1
+    else if (ATTENTION.has(status)) warning += 1
     else if (status === 'failed' || status === 'error' || status === 'blocked') failed += 1
   }
   return { completed, planned, warning, failed, total: steps.length }

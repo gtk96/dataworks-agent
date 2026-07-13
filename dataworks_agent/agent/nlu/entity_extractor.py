@@ -196,6 +196,29 @@ class EntityExtractor:
         match = re.search(r"(oss://[^\s\u3002\uff0c,;\uff1b]+)", text, re.IGNORECASE)
         return match.group(1) if match else None
 
+    def extract_file_format(self, text: str) -> str | None:
+        """Extract an OSS file format, including common conversational aliases."""
+        patterns = [
+            r"(?:文件|数据)?格式\s*(?:是|为|:|：)?\s*(json(?:\s*lines?)?|jsonl|ndjson|csv|parquet)",
+            r"(?:字段|文件)\s*(?:是|为|:|：)\s*(json(?:\s*lines?)?|jsonl|ndjson|csv|parquet)",
+        ]
+        lowered = text.lower()
+        for pattern in patterns:
+            match = re.search(pattern, lowered, re.IGNORECASE)
+            if match:
+                value = re.sub(r"[\s_-]+", " ", match.group(1).lower()).strip()
+                return "json" if value in {"json line", "json lines", "jsonl", "ndjson"} else value
+        oss_path = self.extract_oss_path(text)
+        if oss_path:
+            path = oss_path.lower().split("?", 1)[0]
+            if path.endswith((".json", ".jsonl", ".ndjson")):
+                return "json"
+            if path.endswith(".csv"):
+                return "csv"
+            if path.endswith(".parquet"):
+                return "parquet"
+        return None
+
     def extract_ods_table(self, text: str) -> str | None:
         """Extract ODS table."""
         for table in self.extract_table_names(text):
@@ -318,6 +341,10 @@ class EntityExtractor:
             oss_path = self.extract_oss_path(text)
             if oss_path:
                 params["oss_path"] = oss_path
+        if "file_format" in wanted:
+            file_format = self.extract_file_format(text)
+            if file_format:
+                params["file_format"] = file_format
         if "ods_table" in wanted:
             ods_table = self.extract_ods_table(text)
             if ods_table:

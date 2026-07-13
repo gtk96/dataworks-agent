@@ -1388,11 +1388,11 @@ async def test_oss_modeling_auto_mode_requests_real_source_context() -> None:
     service = AgentWorkflowService()
 
     result = await service.execute(
-        message="oss 数据源 tiktok_smart_plus_material_report 建模处理",
+        message="oss 数据源 sample_material_report 建模处理",
         action="agent_workflow",
         params={
             "source_type": "oss",
-            "datasource_name": "tiktok_smart_plus_material_report",
+            "datasource_name": "sample_material_report",
         },
         execution_mode="auto",
     )
@@ -1400,7 +1400,7 @@ async def test_oss_modeling_auto_mode_requests_real_source_context() -> None:
     assert result.success is True
     assert result.mode == "dev_execute"
     assert result.data["needs_clarification"] is True
-    assert result.data["missing_context"] == ["oss_path", "file_format", "columns"]
+    assert result.data["missing_context"] == ["oss_path"]
     assert "oss://" in result.data["clarifying_questions"][0]
     assert result.steps == [
         {
@@ -1429,14 +1429,14 @@ async def test_oss_modeling_auto_mode_executes_full_dev_chain_when_context_is_co
 
     result = await service.execute(
         message=(
-            "oss 数据源 tiktok_smart_plus_material_report 建模处理 "
+            "oss 数据源 sample_material_report 建模处理 "
             "oss://bucket/tiktok/material.csv，CSV，"
             "字段 material_id bigint, spend decimal(18,2)"
         ),
         action="agent_workflow",
         params={
             "source_type": "oss",
-            "datasource_name": "tiktok_smart_plus_material_report",
+            "datasource_name": "sample_material_report",
             "oss_path": "oss://bucket/tiktok/material.csv",
             "columns": [
                 {"name": "material_id", "type": "bigint"},
@@ -1452,3 +1452,91 @@ async def test_oss_modeling_auto_mode_executes_full_dev_chain_when_context_is_co
     assert [item["layer"] for item in result.data["executed"]] == ["ODS", "DWD", "DIM", "DWS"]
     service._execute_ods.assert_awaited_once()
     assert service._deploy_warehouse_layer.await_count == 3
+
+@pytest.mark.asyncio
+async def test_oss_schema_discovery_blocker_is_context_not_execution_failure() -> None:
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = object()
+    app_state._node_client = object()
+    service._official_datasource_preflight = AsyncMock(return_value={"status": "completed"})
+    service._execute_ods = AsyncMock(
+        return_value={
+            "success": False,
+            "needs_context": True,
+            "message": "OSS 源已识别，但字段探测需要补充上下文。",
+            "clarifying_question": "请授予 OSS 最小读权限后继续。",
+            "missing_context": ["oss_read_permission_or_columns"],
+            "schema_discovery": {
+                "success": False,
+                "location": {
+                    "endpoint": "oss-cn-shenzhen-internal.aliyuncs.com",
+                    "bucket": "example-data-bucket",
+                    "object_key": "ads/data/sample_material_report",
+                },
+                "file_format": "json",
+                "error_code": "accessdenied",
+                "error": "AccessDenied",
+                "next_action": "授予 ListObjects/GetObject 最小读权限",
+            },
+        }
+    )
+
+    result = await service.execute(
+        message=(
+            "oss 数据源 sample_material_report 建模处理 "
+            "oss://oss-cn-shenzhen-internal.aliyuncs.com/example-data-bucket/"
+            "ads/data/sample_material_report/ 字段是 json"
+        ),
+        action="agent_workflow",
+        params={
+            "source_type": "oss",
+            "datasource_name": "sample_material_report",
+            "oss_path": (
+                "oss://oss-cn-shenzhen-internal.aliyuncs.com/example-data-bucket/"
+                "ads/data/sample_material_report/"
+            ),
+            "file_format": "json",
+        },
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.data["needs_clarification"] is True
+    assert result.data["executed"] == []
+    assert result.data["attempted"] == [
+        {"layer": "ODS", "table": "ods_oss_sample_material_report_day"}
+    ]
+    assert result.data["source_discovery"]["error_code"] == "accessdenied"
+    assert all("non_retryable" not in error for error in result.errors)
+    assert next(
+        step for step in result.steps if step["step"] == "discover_source_schema"
+    )["status"] == "needs_context"
+    assert next(
+        step for step in result.steps if step["step"] == "create_ods_table_and_source_node"
+    )["status"] == "skipped"
+
+@pytest.mark.asyncio
+async def test_oss_explicit_columns_without_format_has_no_write_side_effect() -> None:
+    service = AgentWorkflowService()
+    service._ensure_oss_table = AsyncMock()
+
+    result = await service._execute_ods(
+        message="oss://bucket/path/ 字段 id bigint",
+        params={
+            "oss_path": "oss://bucket/path/",
+            "columns": [{"name": "id", "type": "bigint"}],
+        },
+        source_type="oss",
+        datasource="sample",
+        source_table="sample",
+        target_table="ods_oss_sample_day",
+        granularity="day",
+        schedule_minute=0,
+        initialize=False,
+    )
+
+    assert result["success"] is False
+    assert result["needs_context"] is True
+    assert result["missing_context"] == ["file_format"]
+    assert result["schema_discovery"]["error_code"] == "format_required"
+    service._ensure_oss_table.assert_not_awaited()
