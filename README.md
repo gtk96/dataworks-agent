@@ -1,397 +1,188 @@
 # dataworks-agent
 
-> 智能数仓建模系统 — DataWorks 全流程自动化
+> 面向阿里云 DataWorks 的可视化数仓 Agent：用自然语言完成建模、分析、排障和执行编排。
 
-把 DataWorks 上的数仓建模工作 (ODS/DWD/DWS/DIM/DMR 各层) 从"手工建表 + 手工配调度 + 手工 SQL 推送"自动化，前端可视化操作，后端通过 AK/SK OpenAPI + MaxCompute 执行，Cookie BFF + CDP 兜底，并保留阿里云官方 DataWorks MCP。
+本项目不是替代 DataWorks，而是在其上增加一层可审计的 Agent 工作台：统一理解业务目标、生成执行计划、调用开发环境能力、验证结果，并把生产发布停在人工审批闸口。
+
+## 核心能力
+
+| 场景 | 能力 | 当前边界 |
+|---|---|---|
+| 正向建模 | 数据源/存量 ODS → ODS、DWD、DIM、DWS 的表、SQL、节点、依赖和调度 | 可规划；Dev 新建表和节点可执行 |
+| 逆向建模 | 读取存量表、节点脚本、结构和依赖，生成分层与语义候选 | 依赖真实元数据权限 |
+| 异常排查 | 汇总任务、节点、依赖、日志和运行底座状态，给出恢复建议 | 高风险修复需确认 |
+| 自主问数 | 口径澄清、资产约束、只读 SQL、最新分区和结果对账 | 未认证口径不冒充生产口径 |
+| Cookie 管理 | 检查并维护 Cookie/BFF/CDP 兜底通道 | 仅补足 AK/SK 权限缺口 |
+
+Agent 统一使用有界循环：
+
+```text
+Objective → Act → Verify → Repair → Retry → Stop
+```
+
+## 设计原则
+
+1. **开源框架优先**：LangGraph 负责 Agent 状态图、检查点和重试编排，不重复制造通用运行时。
+2. **通用能力上线**：工作流、执行护栏、审批、可视化和知识结构属于产品能力。
+3. **私有知识留本地**：AK/SK、Cookie、业务指标、公司目录、真实表样例和 Badcase 不进入公共代码库。
+4. **前端体验优先**：测试用于守住回归，但不能替代真实页面、真实接口和真实用户路径验收。
+5. **生产发布人工确认**：Agent 可以执行受控的 Dev 操作，不能绕过 Publish Gate 自动发布生产。
+6. **双通道长期并存**：AK/SK/OpenAPI 负责开发执行；Cookie/BFF/CDP 负责 OpenAPI 无权限覆盖的元数据能力。
+
+更完整的通用化边界见 [docs/product/agent_operating_model.md](docs/product/agent_operating_model.md)。
+
+## 架构
+
+```mermaid
+flowchart LR
+    UI[Vue Agent 工作台] --> API[FastAPI]
+    API --> LG[LangGraph Agent Runtime]
+    LG --> Guard[验证与安全护栏]
+    Guard --> OpenAPI[DataWorks OpenAPI / MaxCompute]
+    Guard --> MCP[阿里云官方 MCP]
+    Guard --> Cookie[Cookie / BFF / CDP 兜底]
+    OpenAPI --> Gate[Publish Gate]
+    Gate -->|人工批准| Prod[生产发布]
+```
 
 ## 技术栈
 
-- **后端**: FastAPI + SQLAlchemy + SQLite + Pydantic + httpx + structlog (Python 3.12+)
-- **前端**: Vue 3 + Vite + Element Plus + Vue Router (TypeScript)
-- **外部依赖**: 阿里云 DataWorks OpenAPI/官方 MCP + MaxCompute + DataWorks BFF API + Chrome DevTools Protocol (CDP) + Playwright；不依赖外部 `data-mcp` 服务
-- **浏览器自动化**: Chrome `--remote-debugging-port=9222` 用于登录态保持与 Cookie 提取
+- **Agent**：LangGraph
+- **后端**：Python 3.12、FastAPI、Pydantic、SQLAlchemy、SQLite、httpx、structlog
+- **前端**：Vue 3、TypeScript、Vite、Element Plus、Pinia、Vue Router
+- **数据平台**：DataWorks OpenAPI 2024-05-18、MaxCompute/pyodps、阿里云官方 DataWorks MCP
+- **兼容通道**：DataWorks BFF、Chrome DevTools Protocol、Playwright
+- **模型接入**：OpenAI 兼容 API
 
 ## 快速启动
 
-### 前置
+### 环境要求
 
-- Python ≥ 3.12 + [uv](https://docs.astral.sh/uv/)
-- Node.js ≥ 18
-- Chrome 浏览器
-- 可访问 DataWorks 工作空间 (阿里云账号 + Cookie)
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 20.19+（或 22.12+）
+- Dev 执行需要可用的 DataWorks/MaxCompute AK/SK
+- Cookie 兜底需要已登录 DataWorks 的 Chrome 调试会话
 
-### 启动后端
+### 1. 配置
 
-```bash
-# Windows: 一键启动(端口清理 + Chrome + uvicorn)
-start.bat
+```powershell
+Copy-Item .env.example .env
+uv sync
+```
 
-# 或手动启动
+至少检查以下配置：
+
+- `LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY`
+- `DATAWORKS_PROJECT_ID`、`DATAWORKS_REGION`
+- `MAXCOMPUTE_PROJECT`、`MAXCOMPUTE_ENDPOINT`
+- `ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`（Dev 执行）
+- `COOKIE_ENCRYPTION_KEY`（至少 16 个字符）
+
+完整配置及说明见 [.env.example](.env.example)。
+
+### 2. 启动后端
+
+```powershell
 uv run python -m dataworks_agent.main
 ```
 
-服务监听 `http://localhost:8085`，启动时自动执行冒烟检查 (阿里云官方 MCP / BFF / CDP / Cookie / DB)。
+后端地址：`http://127.0.0.1:8085`
 
-### 启动前端
+需要同时拉起 Chrome/Cookie 链路时，也可以运行：
 
-```bash
-cd frontend
+```powershell
+.\start.bat
+```
+
+### 3. 启动前端
+
+```powershell
+Set-Location frontend
 npm install
 npm run dev
 ```
 
-前端默认 `http://localhost:5173`，通过 Vite proxy 把 `/api/*` 转发到后端 8085。
+前端地址：`http://localhost:3000`
 
-## 自主问数语义闭环
+## 执行边界
 
-业务问数不再在 `workflow_service.py` 里按问句硬编码 SQL，而是按下列链路生成和验证查询：
+### Agent 模式
+
+| 模式 | 行为 |
+|---|---|
+| `plan` | 只生成计划和产物，不写 DataWorks |
+| `auto` | 自动选择规划或受控 Dev 执行，遇到风险操作暂停 |
+| `dev_execute` | 允许 Dev 新建表、节点和初始化；修改、删除、发布仍受控 |
+
+### 操作审批
+
+| 操作 | 策略 |
+|---|---|
+| Dev 新建表 | 允许自动执行 |
+| Dev 新建节点 | 允许自动执行 |
+| 修改已有节点 | 执行前确认 |
+| 删除节点 | 执行前确认 |
+| 生产发布 | 必须人工批准 Publish Gate |
+
+## 核心 API
+
+| API | 用途 |
+|---|---|
+| `POST /agent/chat` | 对话规划或 Dev 执行 |
+| `GET /agent/capabilities` | 查看运行框架和各执行通道状态 |
+| `GET /agent/status` | 查看最近任务状态 |
+| `GET /agent/status/{task_id}` | 查看指定任务状态 |
+| `WS /agent/ws` | 实时对话与状态更新 |
+| `GET /agent/publish-gate/requests` | 查看待审批发布请求 |
+| `POST /agent/publish-gate/{request_id}/approve` | 人工批准并发布 |
+| `POST /agent/publish-gate/{request_id}/reject` | 人工拒绝发布 |
+
+默认还提供建模、治理、血缘、同步、任务和产物等 `/api/*` 路由；实验性语义/Runtime/MCP Server 路由由 `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES` 控制。
+
+## 关键目录
 
 ```text
-自然语言 -> 数据专辑资产直接命中/验证血缘 -> approved 语义指标 -> 真实 DDL 字段 -> 粒度 -> 最新分区 -> 只读 SQL -> DWS/DWD 对账 -> 验收
+dataworks_agent/
+├── agent/          # 对话理解、规划、执行和状态图
+├── runtime/        # LangGraph 循环、工作流、审批与评测
+├── modeling/       # DDL/DML、建模引擎和 DataWorks 产物
+├── services/       # DI、Hologres、OSS、Realtime 等数据接入
+├── api_clients/    # OpenAPI、MaxCompute、BFF、CDP 客户端
+├── semantic/       # 指标、语义知识与问数约束
+├── governance/     # DDL、词根、血缘和规范检查
+└── routers/        # FastAPI 路由
+
+frontend/src/
+├── components/agent/ # Agent 对话与执行可视化
+├── pages/            # 页面
+└── router/           # 前端路由
+
+tests/              # 后端测试与评测
+frontend/e2e/       # 浏览器 E2E
+scripts/            # 运维脚本
+docs/               # 设计、计划、评审和产品文档
 ```
 
-- `dataworks_agent/semantic/metrics.json` 是可版本化的 baseline，`SemanticLayer` 中更高版本的 approved 定义优先。
-- 数据专辑不是"业务域提示"，而是选表资产证据。指标表和对账表必须在指标声明的专辑中直接命中，或存在已验证血缘；只有同业务域但没有资产关系时禁止执行。
-- approved 指标定义负责 measure、dimension、filter、freshness 与对账契约；DDL 存在只能证明字段可用，不能证明选表正确。
-- 语义问数必须同时通过 8 项硬验收：专辑资产、指标字段、查询粒度、最新分区、只读 SQL、真实执行、结果结构、DWS/DWD 对账。任一失败都不能显示"验收通过"。
-- `dataworks_agent/semantic/knowledge.json` 保存经营指标的结构化知识证据。经营分析表、数据专辑、真实 DDL、生产节点 SQL 和血缘都可作为候选证据，但证据不会自动变成生产口径。
-- `SQLKnowledgeExtractor` 可从生产 SQL 提取表、聚合表达式、Alias、CASE、过滤和 GROUP BY，抽取结果始终是 draft。
-- 只有人工确认并写入完整 `query_contract`（表、度量、最新分区、数据专辑或已验证血缘）且状态为 approved 的指标，才能进入真实执行及 8 项闭环验收。
-- 完全未知且未认证的指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
-- `tests/evaluation/autonomous_query_cases.json` 是自主问数 golden corpus，CI 使用 `verify_autonomous_query` 验证指标识别、维度/日期/Top N、追问、SQL 约束与 draft 拒绝；新增口径必须先补评测用例。
+## 验证
 
-## Unified Loop Engineering Runtime
+文档或后端小改动先做最小检查；功能改动最终必须补前端构建和真实页面验收。
 
-The five conversational workflows (data Q&A, forward modeling, reverse modeling,
-issue diagnosis, and Cookie management) now share one bounded execution loop:
+```powershell
+uv run python -m compileall -q dataworks_agent
+uv run ruff check .
+uv run python -m pytest tests/unit/test_agent tests/unit/test_agent_router.py -q --tb=short
 
-```text
-Objective -> Act -> Verify -> Repair -> Retry -> Stop
+Set-Location frontend
+npm run build
+npm run test:unit
 ```
 
-- **Outcome Contract**: workflow `success` flags are not trusted without observable
-  query verification, layer execution results, metadata evidence, diagnosis evidence,
-  or Cookie health evidence.
-- **Stop Policy**: maximum iterations, repeated actions, no-progress rounds, and
-  deadlines are bounded; missing context and publish approval stop immediately.
-- **EventLog / Checkpoint**: each act/verify/repair iteration is recorded and
-  checkpointed without allowing logging failures to block the workflow.
-- **Badcase Gate**: CI runs `uv run python -m dataworks_agent.scripts.verify_agent_loop`
-  and requires every corpus case to pass with `false_success_rate == 0`.
-- **Safety Boundary**: automatic repair is limited to transient retry and 9222 Cookie
-  refresh. Development writes remain bounded and publication still uses Publish Gate.
+上线前不要只看测试数量，应确认：页面可打开、对话可继续、执行步骤可见、确认点有效、Publish Gate 不可绕过。
 
-This is a unified Loop Kernel integrated into the five workflow entry paths. It does
-not claim every self-evolution, long-term-memory, or production-autonomy capability
-from the research literature.
+## 安全与知识边界
 
-## 目录结构
-
-```
-dataworks_agent/             # 后端 (FastAPI)
-├── api_clients/             # DataWorks BFF + CDP 客户端
-├── cookie/                  # Cookie 加密 + 健康监测
-├── db/                      # SQLite + 任务模型 + 备份
-├── governance/              # DDL 检查 / 血缘 / 词根 / 更新模式推断
-├── mcp/                     # 阿里云官方 DataWorks MCP + 原生客户端兼容操作
-├── middleware/              # 限流/熔断/幂等中间件(框架,未激活)
-├── modeling/                # 建模引擎 (DDL/DML/调度/血缘)
-│   └── dwd/                 # DWD 专属生成器
-├── naming/                  # 表名/路径/调度参数常量
-├── routers/                 # REST API 路由 (19 个模块)
-├── services/                # ODS 各种来源 (DI/Holo/OSS/Realtime)
-├── scripts/                 # 离线运维 CLI 工具 (deploy_ods / repush_ods_dml / verify_ods_params)
-├── standards/               # 数仓标准 (yaml 规范 + 词根)
-├── task_engine/             # 任务状态机 + 持久化队列
-└── warehouse/               # 各层 yaml 规范
-
-frontend/                    # 前端 (Vue 3 + Vite)
-├── src/pages/               # 18 个页面
-├── src/router/              # 路由
-├── src/components/          # 公共组件
-├── src/utils/               # 工具函数 (request / sse)
-├── e2e/                     # Playwright E2E 测试 + fake BFF server
-└── playwright.config.ts     # Playwright 配置
-
-scripts/                     # 顶层离线运维脚本
-├── deploy_dwd.py            # 批量部署 DWD 节点
-├── deploy_dim.py            # 批量部署 DIM 节点(日全量)
-├── push_*.py                # 增量推送(DML/依赖/参数)
-├── delete_*_nodes.py        # 节点删除
-└── rebuild_dwd_root.py      # DWD 根节点重建
-
-# 注意: deploy_ods / repush_ods_dml / verify_ods_params 已挪进 dataworks_agent/scripts/ 包内
-# 运行方式: `uv run python -m dataworks_agent.scripts.<name>`
-
-tests/                       # 单元 / 集成 / 冒烟
-├── unit/                    # 单元测试文件 (~691 tests)
-├── integration/             # 集成测试 + conftest mock fixture (~100 tests)
-└── smoke/                   # 发布前冒烟 (~15 tests)
-```
-
-## 已实现的核心能力
-
-### 1. ODS 数据集成 (4 源)
-
-- **DI **(向导模式): `services/ods_di/` — 解析源表 + 推断 WHERE 条件 + 创建 DI 节点
-- **Hologres**: `services/ods_holo/` — IMPORT FOREIGN SCHEMA 同步
-- **OSS**: `services/ods_oss/` — OSS 文件导入
-- **Realtime**: `services/ods_realtime/` — Binlog → Delta → ODS
-
-### 2. DWD 可视化建模 + 自动化部署
-
-- 前端建模工作台 5 步向导 + JSON 模式
-- 后端建模引擎六步部署: DDL → 建表 → SQL → 节点 → 调度 → 发布
-
-### 3. DIM 日全量推送
-
-- 批量部署脚本一次跑完多张表
-- 调度参数: `DAILY_SQL_PARAMETERS` (1 个 `bizdate`)
-- 自依赖: `CrossCycleDependsOnSelf`
-
-### 4. SQL 导入 + 字段映射推断
-
-- 前端 SQL 导入组件选择 SQL 目录 → 自动解析 DDL → 推断字段类型 → 一键建表
-- `modeling/field_mapper.py:infer_column_type()` 规则推断 (amt→decimal, cnt→bigint, id→string)
-
-### 5. 治理工具链
-
-- **DDL 规范检查**: `governance/ddl_checker.py` — 命名/语法/LIFECYCLE/类型/分区
-- **SQL 血缘解析**: `governance/sql_lineage.py` — sqlglot 解析 source_tables + JOIN
-- **上游追溯 + 血缘导出**: `governance/lineage_service.py` — BFS 上游 + ZIP 打包
-- **下游影响**: 基于 BFF 双向 DAG
-- **词根校验**: `modeling/root_checker.py` — 使用 MaxCompute/BFF 同步到 SQLite 的词根缓存与内置字典
-- **表名解析 / 更新模式推断 / 仓库标准**: 7 个治理模块全在生产路径
-
-### 6. 任务编排 + 持久化队列
-
-- 状态机 (`task_engine/state_machine.py`): 7 步 pending→completed + cancel/suspend/resume + 指数退避重试
-- 持久化队列 (`task_engine/persistent_queue.py`): SQLite + lease/claim 心跳
-- 意图日志 (`task_engine/intent_logger.py`): 防进程崩溃后 BFF 操作证据丢失
-- SSE 实时进度流 (前端 `sse.ts`)
-
-### 7. 运维自维护
-
-- **Cookie 健康保活**: `cookie/health.py` 定时心跳 + WARN/CRITICAL 阈值
-- **DB 备份**: `db/backup.py` 定时全量 + 关键事件触发增量
-- **启动冒烟**: `bootstrap.py` 覆盖阿里云官方 MCP/BFF/CDP/Cookie/DB
-- **BFF 客户端**: 作为 Cookie 链路的长期兜底保留 (无 AK/SK 等价的能力按 Capability Matrix 仍在调用)
-- **阿里云官方 MCP**: `mcp/official_dataworks.py` stdio/npm，按白名单提供辅助工具；核心执行不依赖 MCP
-
-### 8. Semantic / Runtime platform (L0-L5, hidden by default)
-
-These modules remain in the repo as future-capability skeletons, but they are not exposed in the default product profile. The default user path is the Agent-first ODS+DWD conversational loop.
-
-- Backend: set `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` to mount `/api/semantic`, `/api/runtime`, and `/api/mcp-server`.
-- Frontend: set `VITE_ENABLE_ADVANCED_TOOLS=true` to show the optional backstage tools menu and routes.
-
-Skeleton modules: `semantic/layer.py`, `semantic/graph.py`, `runtime/service.py`, `mcp_server/server.py`, `runtime/forward_flow.py`, `runtime/reverse_flow.py`, `runtime/attribution.py`, `runtime/self_heal.py`, `runtime/evaluator.py`.
-
-### 9. Agent Chat Assistant
-
-#### Current capability boundary
-
-The local Agent now has a closed loop for natural-language input -> NLU intent/entity parsing -> task planning -> dry-run/proposal tool execution -> status feedback. It is designed to turn DataWorks modeling, lineage, and status requests into auditable plans and draft artifacts. The chat path must not pretend that online writes or publishes have already happened.
-
-Current execution boundary:
-
-- **Supported**: recognize table creation, lineage query, status check, end-to-end DataWorks workflow, and conversational ODS+DWD modeling intents; extract target table, layer, schedule, source type, datasource, ODS/DWD table, OSS path, and granularity entities; generate task plans, ODS route plans, DWD DDL/SQL previews, dependency drafts, task status, and recommended next actions.
-- **Safety**: `agent/executor/tool_executor.py` only runs in dry-run/proposal mode. Real online writes such as publish, delete, overwrite, or DataWorks node creation must still use the existing modeling flow, destructive-operation guard, and Publish Gate.
-- **Capability split**: AK/SK and Cookie BFF fallback coexist according to the Capability Matrix. The chat Agent can suggest the route, but it does not remove or bypass the Cookie fallback path.
-
-#### Supported examples
-
-- **Create table draft**: `create ods_user table`
-- **Lineage query plan**: `query ods_user lineage` or `query ods_user`
-- **Status check**: `check task status`
-- **Complex planning**: `create ods_user table and configure schedule`
-- **ODS+DWD proposal**: `build hourly ODS from mysql datasource orders, then create dwd_trade_order_detail`
-- **ODS route coverage**: batch DB (`ods_di`), Hologres (`ods_holo`), OSS (`ods_oss`), realtime/CDC (`ods_realtime`), and existing ODS tables all stop at dry-run/proposal plus Publish Gate boundary.
-
-#### Core modules
-
-| Module | Path | Description |
-|------|------|------|
-| NLU parsing | `agent/nlu/` | Intent recognition, entity extraction, template and fallback matching |
-| Task planning | `agent/planner/` | Task decomposition, dependency ordering, safe dry-run workflow |
-| Tool execution | `agent/executor/` | Draft artifacts, validate guardrails, recommend next actions; no direct online write |
-| Execution monitor | `agent/monitor/execution_monitor.py` | Task and step status tracking |
-| Core orchestration | `agent/core.py` | Chat management, plan execution, response formatting |
-
-#### API endpoints
-
-- `POST /agent/chat` - chat endpoint that returns Agent plan/draft/status response.
-- `GET /agent/status` - latest Agent task status.
-- `GET /agent/status/{task_id}` - task status by id.
-- `WS /agent/ws` - realtime chat endpoint, returning `response` and available `status` events.
-
-#### Usage examples
-
-```bash
-# Simple dry-run/proposal
-curl -X POST http://localhost:8085/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "create ods_user table"}'
-
-# Lineage query plan
-curl -X POST http://localhost:8085/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "query ods_user"}'
-
-# Latest status
-curl http://localhost:8085/agent/status
-```
-
-#### Frontend chat components
-
-- `AgentChat.vue` - main chat window with message list, input box, status panel, and ODS+DWD-first prompt chips.
-- `ChatMessage.vue` - single message renderer with Markdown support.
-- `TaskExecution.vue` / `ExecutionProgress.vue` - compact task progress display used by the Agent panel.
-
-## 推送脚本 (SOP)
-
-### ODS
-
-```bash
-uv run python -m dataworks_agent.scripts.deploy_ods         # 一次性部署
-uv run python -m dataworks_agent.scripts.repush_ods_dml     # 重推 DML + 调度参数
-uv run python -m dataworks_agent.scripts.repush_ods_dml --dry-run  # 仅解析/抽取,不动线上
-uv run python -m dataworks_agent.scripts.verify_ods_params  # 线上 vs 本地 DML 字节级 diff + 语义校验
-```
-
-### DWD
-
-```bash
-uv run python scripts/deploy_dwd.py        # 一次性部署
-uv run python scripts/push_dwd.py          # 重推 DML
-uv run python scripts/push_dwd_deps.py     # 重推依赖
-uv run python scripts/push_dwd_params.py   # 重推调度参数
-uv run python scripts/rebuild_dwd_root.py  # 重建根节点
-```
-
-### DIM (日全量)
-
-```bash
-uv run python scripts/deploy_dim.py        # 一次性部署
-uv run python scripts/push_dim_dml.py      # 重推 DML
-uv run python scripts/push_dim_deps.py     # 重推依赖
-uv run python scripts/push_dim_params.py   # 重推调度参数
-```
-
-### 删除节点
-
-```bash
-uv run python scripts/delete_dwd_nodes.py "<业务域>/MaxCompute/数据开发/02_DWD/"
-uv run python scripts/delete_dim_nodes.py "<业务域>/MaxCompute/数据开发/01_DIM/"
-```
-
-## Frontend pages (slim default)
-
-Default profile keeps only the Agent-first core entry points:
-
-| Path | Page | Purpose |
-|---|---|---|
-| `/` | ModelingDashboard | Agent workspace and conversational ODS+DWD planning |
-| `/tasks` | TaskList | Task list, filtering, retry |
-| `/tasks/:id` | TaskDetail | Task detail + SSE progress |
-| `/artifacts` | ArtifactsView | DDL/DML artifact archive |
-
-Set `VITE_ENABLE_ADVANCED_TOOLS=true` to additionally show backstage tools such as modeling forms, DI, datasources, governance, semantic hub, sync, SQL import, DWD JSON workbench, pipeline queue, and settings.
-
-## Backend routes (slim default)
-
-Default profile mounts Agent-first and existing modeling-loop routes. L1-L5 skeleton routes are opt-in.
-
-| Prefix | Module | Default |
-|---|---|---|
-| `/agent` | Agent conversational ODS+DWD / planning | enabled |
-| `/api/modeling` | Modeling task CRUD + SSE | enabled |
-| `/api/dwd` | DWD modeling | enabled |
-| `/api/pipeline` | Persistent pipeline queue | enabled |
-| `/api/deploy` | Batch deploy | enabled |
-| `/api/governance` | Governance checks | enabled |
-| `/api/sync` | Dev/prod sync | enabled |
-| `/api/cookie` | Cookie management | enabled |
-| `/api/lineage` | Lineage tracing | enabled |
-| `/api/import` | SQL import | enabled |
-| `/api/roots` | Word-root validation | enabled |
-| `/api/artifacts` | Artifacts | enabled |
-| `/api/monitor` | Dashboard + WebSocket monitor | enabled |
-| `/api/logs` | Task logs | enabled |
-| `/api/workspace` | Datasource and workspace helpers | enabled |
-| `/api/semantic` | Semantic skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
-| `/api/runtime` | Runtime skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
-| `/api/mcp-server` | MCP Server skeleton | `ENABLE_EXPERIMENTAL_PLATFORM_ROUTES=true` only |
-
-## 配置
-
-通过 `.env` 注入 `dataworks_agent/config.py:Settings`:
-
-- `DATAWORKS_PROJECT_ID` — 工作空间 ID
-- `DATAWORKS_BFF_BASE_URL` — BFF 网关地址
-- `COOKIE_*` — Cookie 加密密钥
-- `OFFICIAL_DATAWORKS_MCP_*` — 阿里云官方 DataWorks MCP 启动与工具白名单配置
-- `GIRO_BOT_*` — 通知机器人 (可选)
-
-## 测试
-
-**总计 1,123 个测试** (单元 691 + 集成 100 + E2E 15)，多种测试分工互补:
-
-| 类别 | 工具 | 数量 | 跑速 | 覆盖 | 跑命令 |
-|---|---|---|---|---|---|
-| 后端单元 | pytest | 691 | ~15s | 纯函数 / 类 / 业务逻辑 (不连外部) | `uv run pytest tests/unit/` |
-| 后端集成 | pytest + httpx ASGITransport | 100 | ~18s | 路由 + 中间件 + 53 个端点 (全 mock) | `uv run pytest tests/integration/` |
-| 前端单元 | Vitest | 13 | ~1s | 组件逻辑 / 工具函数 | `cd frontend && npm run test:unit` |
-| E2E | Playwright + Chromium | 15 | ~30s | 15 个页面的真用户路径 | `cd frontend && npm run test:e2e` |
-
-### 集成测试 (`tests/integration/`)
-
-- `conftest.py` — 通用 `mocked_client` fixture: ASGI 内存级调用 + mock bff_client / cookie / keepalive + 临时 sqlite
-- 15 个测试文件覆盖所有页面
-- 跑前会跳过 lifespan 和 frontend StaticFiles mount，避免 SPA 干扰
-
-### E2E 测试 (`frontend/e2e/`)
-
-- `fake-server.mjs` — 纯 Node 0 依赖 mock BFF，接 `:8085` 返回固定 JSON
-- `playwright.config.ts` — webServer 模式自动起 vite + fake server
-- 15 个 spec 覆盖 15 个关键用户路径
-- 失败用例自动保留 trace + video + screenshot (`test-results/`)
-- 跑前确保 `:8085` 和 `:3000` 端口空闲 (fake server 在 `reuseExistingServer: true` 下会复用旧进程导致缓存)
-
-### 调试技巧
-
-```bash
-# 集成: 只跑某个页面
-uv run pytest tests/integration/test_governance_hub_api.py -v
-
-# E2E: 看某个 spec 的 trace
-cd frontend && npx playwright test governance.spec.ts
-npx playwright show-trace test-results/governance-*/trace.zip
-
-# 集成 fixture 自测 (验证 mock 框架)
-uv run pytest tests/integration/test_mocked_fixture.py -v
-```
-
-## 数据库
-
-- 位置: `data/dw_modeling.db` (SQLite)
-- 备份: `data/dw_modeling.db.bak` (定时) + `.bak` 增量文件
-- 主要表: `modeling_tasks` (建模任务)、`artifacts` (DDL/DML 产物)、`task_step_logs` (步骤日志)、`pipeline_batches` (管道批次)
-
-## 已知限制
-
-Current warehouse modeling closed-loops are productionized. Known gaps:
-
-- Semantic / Agent Runtime (L0-L5) 骨架阶段，默认隐藏，不应视为生产就绪
-- 任务自动监控报警 (无失败通知)
-- 血缘预存 + 增量计算 (`lineage_edges` 表为空，血缘全是实时算)
-- 中间件 (`middleware/`) 已实现并注册 4 个: 限流/幂等/IP 隔离/熔断；1 个未注册: 权限
-- 发布门控第 3 项检查 (无严重错误) 未实现
-- 产权追踪 (`modeling/ownership.py`) 已在 `modeling/engine.py` 和 `main.py` 中调用
-- 前端 TypeScript 类型体系不完整 (各页面多用 `any`)
-
-## 贡献
-
-- 阅读 `CLAUDE.md` 了解项目工作约束
-- 新增功能遵循现有分层: `routers/` 暴露 API → `modeling/` 或 `services/` 业务 → `api_clients/` 调外部
-- 单元测试与实现放在 `tests/unit/test_<module>.py`
+- 凭据只通过环境变量或本地 `.env` 注入，不写入代码、SQLite、日志或 Git。
+- 通用仓库只保存能力、规则和知识结构，不保存私有业务指标与真实账号数据。
+- 破坏性操作必须经过项目内 guard；生产发布只认 Publish Gate 的人工结果。
+- OpenAPI 元数据权限不足时走 Cookie 兜底，不通过扩大 AK/SK 权限或前端直连绕过。
