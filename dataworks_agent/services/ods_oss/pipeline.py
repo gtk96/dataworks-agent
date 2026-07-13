@@ -43,6 +43,7 @@ class OssImportPipeline:
         task_index: int = 0,
         total_tasks: int = 1,
         publish: bool = True,
+        ingestion_mode: str = "structured",
     ) -> dict[str, Any]:
         result: dict[str, Any] = {"target_table": target_table, "success": True, "steps": {}}
 
@@ -59,6 +60,7 @@ class OssImportPipeline:
             file_format=file_format,
             wildcard=wildcard,
             schedule_type=schedule_type,
+            raw_json_text=ingestion_mode == "raw_json_text",
         )
         result["steps"]["build_sql"] = {"status": "ok", "sql_length": len(sql)}
 

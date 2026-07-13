@@ -665,6 +665,29 @@ async def test_execute_ods_routes_oss_without_publish(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ensure_oss_table_places_comment_before_partitions():
+    service = AgentWorkflowService()
+    mc = SimpleNamespace(
+        table_exists=AsyncMock(return_value=False),
+        execute_ddl=AsyncMock(return_value=SimpleNamespace(success=True, error=None)),
+    )
+    app_state._maxcompute_client = mc
+
+    result = await service._ensure_oss_table(
+        "ods_oss_sample_day",
+        "day",
+        [{"name": "json_data", "type": "string"}],
+        oss_path="oss://bucket/path/",
+        file_format="json",
+    )
+
+    assert result["status"] == "created"
+    ddl = mc.execute_ddl.await_args.args[0]
+    assert ") COMMENT 'OSS Agent generated' PARTITIONED BY (`dt` STRING);" in ddl
+    assert "PARTITIONED BY (`dt` STRING) COMMENT" not in ddl
+
+
+@pytest.mark.asyncio
 async def test_execute_ods_routes_realtime_without_publish(monkeypatch):
     from dataworks_agent.services.ods_realtime import RealtimeSyncPipeline
 

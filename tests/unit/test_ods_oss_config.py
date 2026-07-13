@@ -131,3 +131,15 @@ class TestConstants:
 
     def test_default_dependencies(self) -> None:
         assert OSS_DEFAULT_DEPENDENCIES[0]["type"] == "CrossCycleDependsOnSelf"
+
+
+def test_build_oss_import_sql_supports_raw_json_text_mode() -> None:
+    sql = build_oss_import_sql(
+        target_table="ods_oss_report_day",
+        oss_path="oss://bucket-name/ads/report/",
+        file_format="json",
+        raw_json_text=True,
+    )
+
+    assert "STORED AS TEXTFILE" in sql
+    assert "JsonSerDe" not in sql

@@ -122,6 +122,7 @@ def build_oss_import_sql(
     file_format: str,
     wildcard: str = "",
     schedule_type: str = "day",
+    raw_json_text: bool = False,
 ) -> str:
     """Generate LOAD OVERWRITE SQL for OSS → ODS import."""
     full_path = str(parse_oss_path(oss_path)["canonical_uri"]).rstrip("/")
@@ -146,6 +147,8 @@ def build_oss_import_sql(
             "        'quoteChar' = '\"'\n"
             "    )\n"
         )
+    elif fmt == "json" and raw_json_text:
+        format_options = "    STORED AS TEXTFILE\n"
     elif fmt == "json":
         format_options = "    ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'\n"
     elif fmt == "parquet":

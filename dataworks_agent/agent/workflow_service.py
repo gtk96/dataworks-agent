@@ -1864,7 +1864,7 @@ class AgentWorkflowService:
             subject = f" `{identifier}`" if identifier else ""
             question = (
                 f"已识别为 OSS 建模，但{subject} 还不能定位到 OSS 对象。"
-                "请补充完整 oss:// 路径；Agent 会使用本地 AK/SK 受限读取样本并自动推断 JSON 字段。"
+                "请补充完整 oss:// 路径；Agent 会优先复用 DataWorks 托管元数据，必要时再用本地 OSS SDK 受限探测字段。"
                 "如果目录没有扩展名，可同时说明“文件格式是 JSON”。"
             )
             return WorkflowResult(
@@ -2029,7 +2029,7 @@ class AgentWorkflowService:
                             "needs_clarification": True,
                             "clarifying_questions": [question],
                             "missing_context": ods_result.get("missing_context")
-                            or ["oss_read_permission_or_columns"],
+                            or ["managed_source_or_columns"],
                             "generated_tables": generated_tables,
                             "publish_gate": "not_requested",
                         },
@@ -2279,6 +2279,7 @@ class AgentWorkflowService:
                 "schema_discovery": {
                     "success": True,
                     "source": "existing_target_table",
+                    "channel": "existing_target_table",
                     "file_format": file_format,
                 },
             }
@@ -2288,14 +2289,15 @@ class AgentWorkflowService:
             schema_discovery = {
                 "success": True,
                 "source": "explicit_columns",
+                "channel": "explicit_columns",
                 "file_format": file_format,
                 "columns": columns,
             }
         else:
-            from dataworks_agent.services.ods_oss import discover_oss_schema
+            from dataworks_agent.services.ods_oss import discover_oss_schema_with_fallback
 
-            schema_discovery = await asyncio.to_thread(
-                discover_oss_schema,
+            schema_discovery = await discover_oss_schema_with_fallback(
+                getattr(app_state, "_bff_client", None),
                 oss_path,
                 file_format,
             )
@@ -2319,7 +2321,7 @@ class AgentWorkflowService:
                         f"格式: {detected_format}。"
                     ),
                     "clarifying_question": f"字段探测失败：{reason}。下一步：{next_action}",
-                    "missing_context": ["oss_read_permission_or_columns"],
+                    "missing_context": ["managed_source_or_columns"],
                     "schema_discovery": schema_discovery,
                 }
             columns = list(schema_discovery.get("columns") or [])
@@ -2357,7 +2359,7 @@ class AgentWorkflowService:
         )
         ddl = (
             f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
-            f"{ddl_columns}\n) PARTITIONED BY ({partitions}) COMMENT 'OSS Agent generated';"
+            f"{ddl_columns}\n) COMMENT 'OSS Agent generated' PARTITIONED BY ({partitions});"
         )
         ddl_result = await mc.execute_ddl(ddl)
         return {
@@ -2386,7 +2388,7 @@ class AgentWorkflowService:
         )
         ddl = (
             f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
-            f"{ddl_columns}\n) PARTITIONED BY ({partitions}) COMMENT 'Realtime Agent generated';"
+            f"{ddl_columns}\n) COMMENT 'Realtime Agent generated' PARTITIONED BY ({partitions});"
         )
         ddl_result = await mc.execute_ddl(ddl)
         return {
@@ -2539,6 +2541,7 @@ class AgentWorkflowService:
                 schedule_type=normalized_granularity,
                 schedule_minute=schedule_minute,
                 publish=False,
+                ingestion_mode=str(schema_discovery.get("ingestion_mode") or "structured"),
             )
             result.setdefault("steps", {})["ensure_table"] = ensure_result
             result["schema_discovery"] = schema_discovery
@@ -2645,7 +2648,7 @@ class AgentWorkflowService:
             for c in columns
         )
         partitions = ", ".join(f"`{name}` STRING" for name in partition_names)
-        ddl = f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n{ddl_cols}\n) PARTITIONED BY ({partitions}) COMMENT '{layer} Agent generated';"
+        ddl = f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n{ddl_cols}\n) COMMENT '{layer} Agent generated' PARTITIONED BY ({partitions});"
         if not await mc.table_exists(target_table, project=settings.dataworks_dev_schema):
             ddl_result = await mc.execute_ddl(ddl)
             if not ddl_result.success:

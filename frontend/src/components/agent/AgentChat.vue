@@ -115,20 +115,24 @@
               data-testid="source-discovery"
             >
               <div class="source-discovery-title">
-                <div><strong>OSS 字段探测</strong><span>建表前受限读取样本，不展示或保存样本正文</span></div>
+                <div><strong>OSS 字段探测</strong><span>优先复用 DataWorks 托管元数据，不展示或保存样本正文</span></div>
                 <span>{{ sourceDiscovery.statusText }}</span>
               </div>
               <div class="source-discovery-grid">
-                <div><small>请求 Endpoint</small><strong>{{ sourceDiscovery.endpoint }}</strong></div>
-                <div><small>实际 Endpoint</small><strong>{{ sourceDiscovery.endpointUsed || '-' }}</strong></div>
+                <div><small>探测通道</small><strong>{{ sourceDiscovery.channelText }}</strong></div>
+                <div v-if="sourceDiscovery.datasourceName"><small>托管数据源</small><strong>{{ sourceDiscovery.datasourceName }}</strong></div>
+                <div v-if="sourceDiscovery.metadataSourceText"><small>元数据来源</small><strong>{{ sourceDiscovery.metadataSourceText }}</strong></div>
+                <div v-if="sourceDiscovery.showEndpoint"><small>请求 Endpoint</small><strong>{{ sourceDiscovery.endpoint }}</strong></div>
+                <div v-if="sourceDiscovery.showEndpoint"><small>实际 Endpoint</small><strong>{{ sourceDiscovery.endpointUsed || '-' }}</strong></div>
                 <div><small>Bucket</small><strong>{{ sourceDiscovery.bucket }}</strong></div>
                 <div><small>Prefix</small><strong>{{ sourceDiscovery.prefix }}</strong></div>
                 <div><small>文件格式</small><strong>{{ sourceDiscovery.fileFormat }}</strong></div>
-                <div><small>推断字段</small><strong>{{ sourceDiscovery.columnCount }}</strong></div>
+                <div><small>字段数量</small><strong>{{ sourceDiscovery.columnCount }}</strong></div>
               </div>
               <div v-if="sourceDiscovery.success" class="source-discovery-evidence">
-                <span>样本对象：{{ sourceDiscovery.sampleObject || '-' }}</span>
-                <span>采样记录：{{ sourceDiscovery.recordCount }}</span>
+                <span v-if="sourceDiscovery.sampleObject">样本对象：{{ sourceDiscovery.sampleObject }}</span>
+                <span v-if="sourceDiscovery.channel === 'local_oss_sdk'">采样记录：{{ sourceDiscovery.recordCount }}</span>
+                <span>未展示或保存样本正文</span>
               </div>
               <div v-else class="source-discovery-blocker">
                 <strong>{{ sourceDiscovery.errorCode || 'schema_discovery_failed' }}</strong>
