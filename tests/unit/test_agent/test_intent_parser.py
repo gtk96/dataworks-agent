@@ -112,6 +112,24 @@ def test_parse_reverse_analysis_as_reverse_modeling(parser):
     assert result.params["table_name"] == "giikin_aliyun.tb_rp_ord_order_cnt_hi"
 
 
+def test_parse_reverse_analysis_keeps_prefixed_tb_table(parser):
+    result = parser.parse("逆向分析 tb_dwd_ord_gk_order_info_crt_df")
+    assert result.action == "reverse_modeling"
+    assert result.params["table_name"] == "tb_dwd_ord_gk_order_info_crt_df"
+
+
+def test_parse_reverse_analysis_does_not_strip_tb_prefix_from_project_table(parser):
+    result = parser.parse("逆向分析 giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df")
+    assert result.action == "reverse_modeling"
+    assert result.params["table_name"] == "giikin_aliyun.tb_dwd_ord_gk_order_info_crt_df"
+
+
+def test_query_lineage_does_not_strip_table_inside_plain_identifier(parser):
+    result = parser.parse("查询 abc_tb_dwd_ord_gk_order_info_crt_df 的血缘")
+    assert result.params.get("table_name") != "dwd_ord_gk_order_info_crt_df"
+    assert "table_name" not in result.params
+
+
 def test_parse_execution_foundation_check_as_diagnose_issue(parser):
     result = parser.parse("\u68c0\u67e5\u6267\u884c\u5e95\u5ea7")
     assert result.action == "diagnose_issue"

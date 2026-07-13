@@ -14,6 +14,21 @@
         </button>
       </div>
 
+      <div class="rail-section policy-stack">
+        <article class="boundary-card">
+          <span class="rail-label">执行边界</span>
+          <ul>
+            <li v-for="item in executionBoundary" :key="item.label" :class="item.tone">
+              <strong>{{ item.label }}</strong><small>{{ item.detail }}</small>
+            </li>
+          </ul>
+        </article>
+        <article class="boundary-card knowledge-card">
+          <span class="rail-label">知识边界</span>
+          <p>通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。</p>
+        </article>
+      </div>
+
       <div class="rail-bottom">
         <div class="runtime-card">
           <div class="runtime-title">
@@ -38,7 +53,7 @@
             <strong>DataWorks Agent</strong>
             <span class="edition">Workspace</span>
           </div>
-          <p>一句话完成建模、诊断、问数和 Cookie 管理</p>
+          <p>一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。</p>
         </div>
         <div class="header-actions">
           <span class="connection-pill">
@@ -52,7 +67,7 @@
         <div v-if="messages.length <= 1" class="welcome-panel">
           <div class="agent-orb"><MagicStick /></div>
           <h1>今天想让数据 Agent 完成什么？</h1>
-          <p>直接描述业务目标。无需选择工具，Agent 会自动组合 AK/SK、9222 Cookie 和阿里云官方 MCP。</p>
+          <p>直接描述业务目标。Agent 负责自动编排执行路径，改节点、删节点和生产发布会停在确认点。</p>
           <div class="prompt-grid">
             <button v-for="prompt in starterPrompts" :key="prompt.title" type="button" @click="selectPrompt(prompt.text)">
               <span class="prompt-icon"><el-icon><component :is="prompt.icon" /></el-icon></span>
@@ -176,7 +191,7 @@
             v-model="input"
             rows="1"
             :disabled="loading"
-            placeholder="给 DataWorks Agent 发消息，例如：把 orders 做成 ODS→DWD→DWS 小时链路并初始化"
+            placeholder="给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化"
             @focus="inputFocused = true"
             @blur="inputFocused = false"
             @keydown.enter.exact.prevent="sendMessage"
@@ -186,7 +201,7 @@
               <span>执行模式</span>
               <el-segmented v-model="executionMode" :options="modeOptions" size="small" />
             </div>
-            <span v-if="executionMode === 'dev_execute'" class="execution-warning">将写入开发环境</span>
+            <span v-if="executionMode === 'dev_execute'" class="execution-warning">仅开发环境写入；改/删/发布会先停下确认</span>
             <el-popover placement="top-start" :width="320" trigger="click">
               <template #reference>
                 <button class="settings-button" type="button" title="高级执行设置"><el-icon><Setting /></el-icon>高级设置</button>
@@ -197,7 +212,7 @@
                 <label><span>提交发布审批<small>只创建 Publish Gate，不自动上线</small></span><el-switch v-model="requestPublish" /></label>
               </div>
             </el-popover>
-            <span class="guard-hint"><el-icon><Lock /></el-icon>生产变更受 Publish Gate 保护</span>
+            <span class="guard-hint"><el-icon><Lock /></el-icon>{{ modeDescription }}</span>
             <button class="send-button" type="button" :disabled="!input.trim() || loading" @click="sendMessage">
               <el-icon v-if="!loading"><Promotion /></el-icon><span v-else class="send-spinner" />
             </button>
@@ -293,15 +308,15 @@ const lastPayload = ref<AgentPayload | null>(null)
 const capabilities = ref<Record<string, unknown>>({})
 
 const modeOptions = [
-  { label: '自动', value: 'auto' },
-  { label: '规划', value: 'plan' },
-  { label: '开发执行', value: 'dev_execute' },
+  { label: '自动编排', value: 'auto' },
+  { label: '只规划', value: 'plan' },
+  { label: '开发执行(dev)', value: 'dev_execute' },
 ]
 const capabilityPrompts = [
   { title: '正向建模', icon: MagicStick, text: '把 <数据源> 的 <源表> 做成 ODS→DWD→DIM→DWS 全链路，创建开发表、节点和调度；先给我规划，不发布生产。' },
   { title: '逆向建模', icon: Search, text: '逆向分析存量表 <请输入真实表名或节点 ID>，读取真实结构、血缘、分层和语义候选。' },
   { title: '异常排查', icon: Tools, text: '排查 DataWorks 任务 <请输入任务 ID、实例 ID 或节点 ID>，检查日志、依赖和运行底座，给出恢复建议。' },
-  { title: '自主问数', icon: DataAnalysis, text: '金狮家族今天各平台广告花费是多少？' },
+  { title: '自主问数', icon: DataAnalysis, text: '查询 <业务指标> 今天按 <维度> 的结果；如果口径未沉淀，请先列出需要我确认的口径。' },
   { title: 'Cookie 管理', icon: Connection, text: '检查 AK/SK、官方 MCP、Cookie BFF 和 9222 调试浏览器的当前状态。' },
 ]
 const starterPrompts = [
@@ -311,8 +326,22 @@ const starterPrompts = [
   { title: '直接问业务数据', description: '只读 SQL 护栏下自然语言查询 MaxCompute', icon: DataAnalysis, text: capabilityPrompts[3].text },
 ]
 
+const executionBoundary = [
+  { label: 'Dev 建表', detail: '允许自动执行', tone: 'allow' },
+  { label: 'Dev 建节点', detail: '允许自动执行', tone: 'allow' },
+  { label: '改已有节点', detail: '执行前确认', tone: 'confirm' },
+  { label: '删除节点', detail: '执行前确认', tone: 'confirm' },
+  { label: '生产发布', detail: '人工确认', tone: 'manual' },
+]
+const modeDescriptions: Record<AgentExecutionMode, string> = {
+  auto: '自动判断：能线上执行的走 dev，风险操作停在确认点',
+  plan: '只生成计划和产物，不写线上环境',
+  dev_execute: '允许 dev 建表/建节点；修改、删除、发布仍需确认',
+}
+
 const isRealtime = computed(() => ws.value?.readyState === WebSocket.OPEN)
 const connectionText = computed(() => isRealtime.value ? '实时连接' : 'HTTP 可用')
+const modeDescription = computed(() => modeDescriptions[executionMode.value])
 const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? lastPayload.value?.data?.steps ?? [])
 const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_questions ?? [])
 const nextActions = computed(() => lastPayload.value?.data?.next_actions ?? [])
@@ -526,4 +555,16 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .next-actions strong { width: 100%; color: #55555d; }
 .next-actions button { padding: 6px 9px; border: 1px solid #dedee6; border-radius: 7px; background: #fff; color: #5c45c7; font-size: 11px; cursor: pointer; }
 .next-actions button:hover { border-color: #8a72f8; background: #f8f6ff; }
+
+.policy-stack { gap: 10px; }
+.boundary-card { padding: 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.06); }
+.boundary-card .rail-label { margin-bottom: 8px; display: block; }
+.boundary-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.boundary-card li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border-radius: 8px; background: rgba(255,255,255,.06); }
+.boundary-card li strong { color: #f5f4ff; font-size: 11px; }
+.boundary-card li small { color: #b9b4df; font-size: 10px; white-space: nowrap; }
+.boundary-card li.allow small { color: #83e0ad; }
+.boundary-card li.confirm small { color: #ffd27b; }
+.boundary-card li.manual small { color: #ff9f9f; }
+.knowledge-card p { margin: 0; color: #d6d2f4; font-size: 11px; line-height: 1.55; }
 </style>

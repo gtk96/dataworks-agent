@@ -57,3 +57,5 @@ remaining_partitions_*.sql
 
 # 含阿里云 AK 脱敏清单的本地敏感文件，禁止进入版本库
 replace-expressions.txt
+AGENTS.md
+CLAUDE.md

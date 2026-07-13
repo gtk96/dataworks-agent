@@ -9,7 +9,7 @@ from typing import Any
 class EntityExtractor:
     """Extract deterministic entities from natural language text."""
 
-    _TABLE_PATTERN = r"((?:ods|dwd|dws|dim|dmr|ads|tmp|cda)[_a-zA-Z0-9]+)(?=[^a-zA-Z0-9]|$)"
+    _TABLE_PATTERN = r"(?<![a-zA-Z0-9_])((?:tb_)?(?:ods|dwd|dws|dim|dmr|ads|tmp|cda)[_a-zA-Z0-9]+)(?=[^a-zA-Z0-9_]|$)"
     _RAW_TABLE_PATTERN = r"([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)?)"
 
     def extract_table_name(self, text: str) -> str | None:
@@ -32,7 +32,8 @@ class EntityExtractor:
             return generic_match.group(1) if generic_match else None
 
         for table in tables:
-            if table.lower().startswith(("dwd_", "dws_", "dim_", "dmr_", "ads_")):
+            normalized = table.lower().removeprefix("tb_")
+            if normalized.startswith(("dwd_", "dws_", "dim_", "dmr_", "ads_")):
                 return table
         return tables[0]
 
