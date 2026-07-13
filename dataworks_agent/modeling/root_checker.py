@@ -1,4 +1,4 @@
-"""RootChecker — 词根合规性校验，MCP check_column_roots 主力 + 备用本地降级。"""
+"""RootChecker — 使用线上同步到 SQLite 的词根与内置字典校验。"""
 
 from __future__ import annotations
 
@@ -38,47 +38,15 @@ class RootChecker:
         logger.info("任务 %s 词根校验通过 (%d 字段)", task_id, len(field_names))
 
     async def check_fields(self, fields: list[str]) -> RootCheckResult:
-        """校验字段列表的词根合规性。优先 MCP，MCP 不可用时走本地降级。"""
-        try:
-            return await self._check_via_mcp(fields)
-        except Exception as e:
-            logger.warning("MCP 词根校验不可用，降级为本地校验: %s", e)
-            return self._check_local_fallback(fields)
-
-    async def _check_via_mcp(self, fields: list[str]) -> RootCheckResult:
-        """通过 MCP check_column_roots 校验。"""
-        from dataworks_agent.mcp.operations import check_column_roots
-
-        raw = await check_column_roots(",".join(fields))
-
-        field_results = []
-        for r in raw or []:
-            field_results.append(
-                RootCheckField(
-                    field_name=r.get("column_name", ""),
-                    valid=r.get("is_valid", False),
-                    invalid_segments=r.get("invalid_parts", []),
-                    suggested_name=r.get("suggested_name"),
-                )
-            )
-
-        all_valid = all(f.valid for f in field_results)
-        return RootCheckResult(
-            passed=all_valid,
-            field_results=field_results,
-            summary=(
-                f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规"
-                "（线上词根表 dim_pub_column_dictionary_static）"
-            ),
-            source="online",
-        )
+        """使用本地缓存校验；缓存由治理同步任务从 MaxCompute/BFF 更新。"""
+        return self._check_local_fallback(fields)
 
     def check_fields_local(self, fields: list[str]) -> RootCheckResult:
         """仅使用内置词根字典（离线降级）。"""
         return self._check_local_fallback(fields)
 
     def _check_local_fallback(self, fields: list[str]) -> RootCheckResult:
-        """本地降级：基于内置词根字典校验各段。"""
+        """基于线上同步缓存与内置词根字典校验各段。"""
         from dataworks_agent.standards.loader import valid_root_tokens, validate_field_roots
 
         roots = valid_root_tokens()
@@ -100,7 +68,7 @@ class RootChecker:
             field_results=field_results,
             summary=(
                 f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规"
-                "（本地词根字典，非线上最新）"
+                "（本地缓存词根字典）"
             ),
             source="local",
         )

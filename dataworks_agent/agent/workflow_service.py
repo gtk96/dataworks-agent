@@ -2257,7 +2257,7 @@ class AgentWorkflowService:
 
             pipeline = HoloOdsPipeline(
                 bff,
-                app_state.mcp_pool,
+                None,
                 node_client=nodes,
                 mc_client=app_state._maxcompute_client,
             )
@@ -2359,7 +2359,7 @@ class AgentWorkflowService:
 
         pipeline = DIPipeline(
             bff,
-            app_state.mcp_pool,
+            None,
             node_client=nodes,
             mc_client=app_state._maxcompute_client,
         )

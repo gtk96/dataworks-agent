@@ -1,8 +1,6 @@
-"""Cookie 同步 — 单元测试。"""
+"""Cookie 更新仅刷新 BFF 内存态。"""
 
 from __future__ import annotations
-
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,16 +19,12 @@ def test_invalidate_bff_session_clears_cookie_cache():
 
 
 @pytest.mark.asyncio
-async def test_apply_cookie_update_syncs_mcp(monkeypatch):
+async def test_apply_cookie_update_only_invalidates_bff():
     bff = DataWorksClient()
+    bff._cookie = "stale"
     app_state._bff_client = bff
 
-    mcp = MagicMock()
-    mcp.set_cookie_header = MagicMock()
-    mcp.call_tool = AsyncMock(return_value={"success": True})
-    app_state._mcp_pool = mcp
-
     await apply_cookie_update("new_cookie=value")
+
     assert bff._cookie == ""
-    mcp.set_cookie_header.assert_called_once_with("new_cookie=value")
-    mcp.call_tool.assert_awaited_once()
+    assert not hasattr(app_state, "mcp_pool")

@@ -37,6 +37,22 @@ def test_parse_root_rows_skips_header() -> None:
     assert entries[1]["is_digit"] is True
 
 
+def test_parse_root_rows_deduplicates_column_names() -> None:
+    rows = [
+        ["column_name", "column_desc", "is_digit"],
+        ["order_id", "", "0"],
+        ["order_id", "Order ID", "0"],
+        ["order_amt", "Order amount", "1"],
+    ]
+
+    entries = _parse_root_rows(rows)
+
+    assert entries == [
+        {"column_name": "order_id", "column_desc": "Order ID", "is_digit": False},
+        {"column_name": "order_amt", "column_desc": "Order amount", "is_digit": True},
+    ]
+
+
 def test_persist_and_load_from_db(word_root_db) -> None:
     mod._persist_entries(
         [

@@ -67,14 +67,12 @@ async def cookie_status(request: Request):
 
 @router.get("/verify")
 async def verify_cookie(request: Request):
-    """验证 Cookie 有效性（三通道全检）。"""
+    """验证 Cookie 有效性（BFF + CDP）。"""
     from dataworks_agent.state import app_state
 
     bff = getattr(app_state, "_bff_client", None)
     cdp = getattr(app_state, "_cdp_client", None)
-    mcp = app_state.mcp_pool
-
-    result = await full_cookie_health_check(mcp, bff, cdp)
+    result = await full_cookie_health_check(bff, cdp)
     return result
 
 

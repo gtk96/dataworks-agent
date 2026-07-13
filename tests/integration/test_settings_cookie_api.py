@@ -21,6 +21,25 @@ async def test_health_endpoint(mocked_client):
 
 
 @pytest.mark.asyncio
+async def test_health_reports_official_mcp_status(mocked_client, monkeypatch):
+    """health.mcp reports the official MCP, not the removed external data-mcp."""
+    from types import SimpleNamespace
+
+    from dataworks_agent.state import app_state
+
+    monkeypatch.setattr(
+        app_state,
+        "_official_mcp_client",
+        SimpleNamespace(status=SimpleNamespace(connected=True)),
+    )
+
+    resp = await mocked_client.get("/api/health")
+
+    assert resp.status_code == 200
+    assert resp.json()["checks"]["mcp"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_settings_get(mocked_client):
     """/api/settings 返回项目配置。"""
     resp = await mocked_client.get("/api/settings")

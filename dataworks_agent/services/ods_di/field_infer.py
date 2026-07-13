@@ -57,7 +57,7 @@ async def query_columns(
         f"ORDER BY column_position"
     )
 
-    body_list = await run_odps_query(bff, mcp, query_sql)
+    body_list = await run_odps_query(bff, query_sql)
     if body_list:
         columns = _normalize_columns(body_list)
         if columns:
@@ -96,7 +96,7 @@ async def query_columns_from_ddl_registry(
         f"LIMIT 1"
     )
 
-    body_list = await run_odps_query(bff, mcp, query_sql)
+    body_list = await run_odps_query(bff, query_sql)
     if not body_list or not body_list[0] or not body_list[0][0]:
         return None
 

@@ -2,13 +2,13 @@
 
 > 智能数仓建模系统 — DataWorks 全流程自动化 (v0.1.1)
 
-把 DataWorks 上的数仓建模工作(ODS/DWD/DWS/DIM/DMR 各层)从"手工建表 + 手工配调度 + 手工 SQL 推送"自动化,前端可视化操作,后端调 BFF + MCP + CDP 完成。
+把 DataWorks 上的数仓建模工作(ODS/DWD/DWS/DIM/DMR 各层)从"手工建表 + 手工配调度 + 手工 SQL 推送"自动化,前端可视化操作,后端通过 AK/SK OpenAPI + MaxCompute 执行，Cookie BFF + CDP 兜底，并保留阿里云官方 DataWorks MCP。
 
 ## 技术栈
 
 - **后端**: FastAPI + SQLAlchemy + SQLite + Pydantic + httpx + structlog (Python 3.12+)
 - **前端**: Vue 3 + Vite + Element Plus + Vue Router (TypeScript)
-- **外部依赖**: DataWorks BFF API + MCP (Model Context Protocol) + Chrome DevTools Protocol (CDP) + Playwright
+- **外部依赖**: 阿里云 DataWorks OpenAPI/官方 MCP + MaxCompute + DataWorks BFF API + Chrome DevTools Protocol (CDP) + Playwright；不依赖外部 `data-mcp` 服务
 - **浏览器自动化**: Chrome `--remote-debugging-port=9222` 用于登录态保持与 Cookie 提取
 
 ## 快速启动
@@ -30,7 +30,7 @@ start.bat
 uv run python -m dataworks_agent.main
 ```
 
-服务监听 `http://localhost:8085`,启动时自动执行冒烟检查(MCP / BFF / CDP / Cookie / DB)。
+服务监听 `http://localhost:8085`,启动时自动执行冒烟检查(阿里云官方 MCP / BFF / CDP / Cookie / DB)。
 
 ### 启动前端
 
@@ -95,7 +95,7 @@ dataworks_agent/             # 后端 (FastAPI)
 ├── cookie/                  # Cookie 加密 + 健康监测
 ├── db/                      # SQLite + 任务模型 + 备份
 ├── governance/              # DDL 检查 / 血缘 / 词根 / 更新模式推断
-├── mcp/                     # MCP 客户端池 + DataWorks 操作
+├── mcp/                     # 阿里云官方 DataWorks MCP + 原生客户端兼容操作
 ├── middleware/              # 限流/熔断/幂等中间件(框架,未激活)
 ├── modeling/                # 建模引擎 (DDL/DML/调度/血缘)
 │   └── dwd/                 # DWD 专属生成器
@@ -157,7 +157,7 @@ tests/                       # 单元 / 集成 / 冒烟
 - **SQL 血缘解析**: `governance/sql_lineage.py` — sqlglot 解析 source_tables + JOIN
 - **上游追溯 + 血缘导出**: `governance/lineage_service.py` — BFS 上游 + ZIP 打包
 - **下游影响**: `routers/lineage.py:/downstream` — 基于 BFF dma/listLineage 双向 DAG
-- **词根校验**: `modeling/root_checker.py` — MCP 优先,本地词根字典回退
+- **词根校验**: `modeling/root_checker.py` — 使用 MaxCompute/BFF 同步到 SQLite 的词根缓存与内置字典
 - **表名解析 / 更新模式推断 / 仓库标准**: 7 个治理模块全在生产路径
 
 ### 6. 任务编排 + 持久化队列
@@ -169,9 +169,9 @@ tests/                       # 单元 / 集成 / 冒烟
 ### 7. 运维自维护
 - **Cookie 健康保活**: `cookie/health.py` 5min 心跳 + WARN/CRITICAL 阈值
 - **DB 备份**: `db/backup.py` 1h 全量 + 关键事件触发增量
-- **启动冒烟**: `bootstrap.py` 覆盖 MCP/BFF/CDP/Cookie/DB
+- **启动冒烟**: `bootstrap.py` 覆盖阿里云官方 MCP/BFF/CDP/Cookie/DB
 - **BFF 客户端**: `bff_client.py:735` 行,作为 Cookie 链路的长期兜底保留(无 AK/SK 等价的能力按 Capability Matrix 仍在调用)
-- **MCP 客户端池**: `mcp/pool.py` Streamable HTTP + JSON-RPC
+- **阿里云官方 MCP**: `mcp/official_dataworks.py` stdio/npm，按白名单提供辅助工具；核心执行不依赖 MCP
 
 ### 8. Semantic / Runtime platform (L0-L5, hidden by default)
 
@@ -319,7 +319,7 @@ Default profile mounts Agent-first and existing modeling-loop routes. L1-L5 skel
 - `DATAWORKS_PROJECT_ID` — 工作空间 ID
 - `DATAWORKS_BFF_BASE_URL` — BFF 网关地址
 - `COOKIE_*` — Cookie 加密密钥
-- `MCP_*` — MCP server URL
+- `OFFICIAL_DATAWORKS_MCP_*` — 阿里云官方 DataWorks MCP 启动与工具白名单配置
 - `GIRO_BOT_*` — 通知机器人(可选)
 
 ## 测试
@@ -335,7 +335,7 @@ Default profile mounts Agent-first and existing modeling-loop routes. L1-L5 skel
 
 ### 集成测试 (`tests/integration/`)
 
-- `conftest.py` — 通用 `mocked_client` fixture:ASGI 内存级调用 + mock mcp_pool / bff_client / cookie / keepalive + 临时 sqlite
+- `conftest.py` — 通用 `mocked_client` fixture:ASGI 内存级调用 + mock bff_client / cookie / keepalive + 临时 sqlite
 - 15 个测试文件覆盖所有页面
 - 跑前会跳过 lifespan 和 frontend StaticFiles mount,避免 SPA 干扰
 

@@ -22,7 +22,11 @@ async def health():
 
     # 使用启动检查结果（避免每次 health check 都重连 CDP）
     sr = app_state.smoke_results
-    mcp_ok = "ok" if sr.get("mcp", {}).get("ok") else "degraded"
+    official_mcp = getattr(app_state, "_official_mcp_client", None)
+    official_connected = bool(
+        official_mcp is not None and getattr(official_mcp.status, "connected", False)
+    )
+    mcp_ok = "ok" if official_connected or sr.get("official_mcp", {}).get("ok") else "degraded"
     bff_ok = "ok" if sr.get("bff", {}).get("ok") else "degraded"
     cdp_ok = "ok" if sr.get("cdp", {}).get("ok") else "degraded"
     cookie_ok = "ok" if sr.get("cookie", {}).get("ok") else "degraded"

@@ -104,18 +104,7 @@ async def lifespan(app: FastAPI):
         logger.warning("CDP 客户端不可用（Cookie 链路长期兜底，缺配置则降级）: %s", e)
         app_state._cdp_client = None
 
-    # 3. 初始化 MCP（认证走 mcp.json 的 Bearer token，与 Cookie 无关）+ BFF（Cookie 链路，缺配置则降级）
-    try:
-        from dataworks_agent.mcp.pool import MCPClientPool
-
-        mcp_pool = MCPClientPool()
-        await mcp_pool.connect()
-        app_state.mcp_pool = mcp_pool
-        logger.info("MCP 连接池就绪")
-    except Exception as e:
-        logger.warning("MCP 连接池初始化失败（服务降级运行）: %s", e)
-        app_state.mcp_pool = None
-
+    # 3. BFF Cookie 兜底链路（外部 data-mcp 已移除）
     try:
         from dataworks_agent.api_clients.bff_client import DataWorksClient
 
@@ -265,8 +254,6 @@ async def lifespan(app: FastAPI):
         await _word_root_sync_task
     if app_state._official_mcp_client:
         await app_state._official_mcp_client.close()
-    if app_state.mcp_pool:
-        await app_state.mcp_pool.disconnect()
     if app_state._bff_client:
         await app_state._bff_client.close()
     if app_state._cdp_client:

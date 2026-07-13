@@ -15,17 +15,6 @@ async def startup_smoke_check() -> None:
     """系统启动后检查各组件状态，结果写入 app_state 供前端展示。"""
     results: dict[str, dict] = {}
 
-    # —— MCP ——
-    mcp = app_state.mcp_pool
-    if mcp:
-        try:
-            user = await mcp.call_tool("get_current_user", {})
-            results["mcp"] = {"ok": True, "msg": f"已连接, 用户: {str(user)[:50]}"}
-        except Exception as e:
-            results["mcp"] = {"ok": False, "msg": f"连接异常: {str(e)[:80]}"}
-    else:
-        results["mcp"] = {"ok": False, "msg": "未配置"}
-
     # Official DataWorks MCP
     official_mcp = getattr(app_state, "_official_mcp_client", None)
     if official_mcp:
@@ -81,11 +70,7 @@ async def startup_smoke_check() -> None:
         try:
             from dataworks_agent.cookie.health import cookie_health_monitor
 
-            health = (
-                await cookie_health_monitor.check(mcp)
-                if mcp
-                else {"status": "unknown", "expires_in": 0}
-            )
+            health = await cookie_health_monitor.check(bff)
             cookie_str = decrypt_cookie()
             results["cookie"] = {
                 "ok": health["status"] in ("healthy", "warning"),

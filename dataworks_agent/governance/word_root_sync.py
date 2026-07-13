@@ -50,7 +50,14 @@ def _parse_root_rows(body_list: list[list[Any]]) -> list[dict[str, Any]]:
                 "is_digit": is_digit,
             }
         )
-    return entries
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        name = entry["column_name"]
+        current = deduped.get(name)
+        if current is None or (not current["column_desc"] and entry["column_desc"]):
+            deduped[name] = entry
+    return list(deduped.values())
 
 
 def _persist_entries(entries: list[dict[str, Any]], refreshed_at: str) -> None:
@@ -108,10 +115,9 @@ where column_name is not null and trim(column_name) <> ''
 """.strip()
 
     bff = getattr(app_state, "_bff_client", None)
-    mcp = app_state.mcp_pool
-    rows = await run_odps_query(bff, mcp, sql)
+    rows = await run_odps_query(bff, sql)
     if not rows:
-        raise RuntimeError("无法从线上词根表拉取数据（MaxCompute/BFF/MCP 不可用或查询失败）")
+        raise RuntimeError("无法从线上词根表拉取数据（MaxCompute/BFF 不可用或查询失败）")
 
     entries = _parse_root_rows(rows)
     if not entries:

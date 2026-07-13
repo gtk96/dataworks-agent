@@ -179,7 +179,7 @@ async def governance_runtime_hints():
         "maxcompute_project": settings.maxcompute_project,
         "bff_available": getattr(app_state, "_bff_client", None) is not None,
         "openapi_available": getattr(app_state, "_openapi_client", None) is not None,
-        "mcp_available": getattr(app_state, "mcp_pool", None) is not None,
+        "mcp_available": getattr(app_state, "_official_mcp_client", None) is not None,
     }
 
 

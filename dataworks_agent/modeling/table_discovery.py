@@ -1,4 +1,4 @@
-"""TableDiscovery — 源表发现，双路径: data-mcp 内部表 + BFF 外部数据源。"""
+"""TableDiscovery — 通过原生 MaxCompute/BFF 发现内部表与外部数据源。"""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ class TableDiscovery:
             return []
 
     async def get_table_structure(self, table: str) -> TableStructure:
-        """获取表字段详情 — MCP 优先，BFF IDA 回退。"""
+        """获取表字段详情 — MaxCompute 元数据优先，BFF IDA 回退。"""
         from dataworks_agent.mcp.operations import get_table_ddl
 
         # 支持 schema.table 格式
@@ -66,13 +66,13 @@ class TableDiscovery:
             elif isinstance(raw, str):
                 ddl = raw
         except Exception as exc:
-            logger.debug("MCP get_table_ddl 失败: %s", exc)
+            logger.debug("原生 get_table_ddl 失败: %s", exc)
 
         if ddl and "CREATE TABLE" in ddl.upper():
             return self._parse_ddl_to_structure(bare_table, ddl)
 
         # BFF 回退：查 information_schema
-        logger.info("MCP 不可用，尝试 BFF 查询 %s.%s 字段", schema, bare_table)
+        logger.info("MaxCompute 元数据不可用，尝试 BFF 查询 %s.%s 字段", schema, bare_table)
         return await self._query_columns_via_bff(f"{schema}.{bare_table}")
 
     async def list_data_sources(self, keyword: str = "") -> list[DataSourceInfo]:

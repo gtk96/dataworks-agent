@@ -10,7 +10,6 @@ from dataworks_agent.cookie.health import CookieHealthMonitor, cookie_health_mon
 from dataworks_agent.cookie.sync import (
     apply_cookie_update,
     invalidate_bff_session,
-    sync_cookie_to_mcp,
 )
 from dataworks_agent.cookie.verify import full_cookie_health_check, get_cookie_header
 
@@ -27,6 +26,5 @@ __all__ = [
     "invalidate_bff_session",
     "run_cookie_background_refresh_once",
     "save_cookie",
-    "sync_cookie_to_mcp",
     "touch_cookie_poll",
 ]

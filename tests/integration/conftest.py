@@ -3,8 +3,8 @@
 设计目标:
 - 完全内存化(不发真 HTTP / 不连真 BFF / 不连真 MCP)
 - 每个测试独立的临时 SQLite
-- 业务路由可调,但所有外部依赖(mcp_pool / bff_client._http / cookie / smtp)被替换为 mock
-- lifespan 启动被跳过(避免真实 MCP/BFF 初始化失败)
+- 业务路由可调,但所有外部依赖(bff_client._http / cookie / smtp)被替换为 mock
+- lifespan 启动被跳过(避免真实 BFF/OpenAPI 初始化)
 
 使用方式:
     def test_xxx(mocked_client):
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -74,30 +74,6 @@ class FakeAsyncClient:
         self.is_closed = True
 
 
-def make_fake_mcp(tool_responses: dict | None = None) -> MagicMock:
-    """构造 mock mcp_pool: call_tool(tool_name, args) 返回预设响应。
-
-    tool_responses: {"tool_name": response_dict_or_list, ...}
-    默认所有工具返回空列表(适合 lineage/upstream_tasks 这类期望 list[dict] 的调用)。
-    """
-    responses = tool_responses or {}
-
-    async def call_tool(tool_name: str, arguments: dict):
-        if tool_name in responses:
-            r = responses[tool_name]
-            if callable(r):
-                return r(tool_name, arguments)
-            return r
-        # 默认返回空 list(更接近 BFF list_tasks 的真实返回,避免 AttributeError)
-        return []
-
-    pool = MagicMock()
-    pool.call_tool = AsyncMock(side_effect=call_tool)
-    pool.connect = AsyncMock()
-    pool.disconnect = AsyncMock()
-    return pool
-
-
 # ───────────────────────────────────────────────────────────
 # 临时数据库 fixture
 # ───────────────────────────────────────────────────────────
@@ -128,16 +104,11 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest_asyncio.fixture
 async def mocked_app_state(monkeypatch, temp_db):
-    """替换 app_state 上的所有外部依赖: mcp_pool / bff_client / cookie / keepalive。"""
+    """替换 app_state 上的 BFF、Cookie 与 keepalive 外部依赖。"""
+    from dataworks_agent.api_clients.bff_client import DataWorksClient
     from dataworks_agent.state import app_state
 
-    # 1. MCP pool — 默认空响应,可由具体测试覆盖
-    fake_mcp = make_fake_mcp()
-    monkeypatch.setattr(app_state, "_mcp_pool", fake_mcp)
-    monkeypatch.setattr(app_state, "mcp_pool", fake_mcp)
-
-    # 2. BFF client — FakeAsyncClient 注入 _http
-    from dataworks_agent.api_clients.bff_client import DataWorksClient
+    # 1. BFF client — FakeAsyncClient 注入 _http
 
     fake_bff = DataWorksClient()
     fake_bff._http = FakeAsyncClient()
@@ -147,7 +118,7 @@ async def mocked_app_state(monkeypatch, temp_db):
     # AppState 没有声明 _bff_client,main.py 动态 setattr
     app_state._bff_client = fake_bff
 
-    # 3. Cookie decrypt — 返回固定值
+    # 2. Cookie decrypt — 返回固定值
     def fake_decrypt_cookie():
         return "fake_cookie_for_tests"
 
@@ -155,29 +126,20 @@ async def mocked_app_state(monkeypatch, temp_db):
     # routers.cookie imports decrypt_cookie directly, so patch that bound reference too.
     monkeypatch.setattr("dataworks_agent.routers.cookie.decrypt_cookie", fake_decrypt_cookie)
 
-    # 4. Cookie keepalive — 禁用避免后台任务泄漏
+    # 3. Cookie keepalive — 禁用避免后台任务泄漏
     monkeypatch.setattr("dataworks_agent.config.settings.cookie_keepalive_enabled", False)
 
-    # 5. CDP 客户端 — 设为 None(测试不需要浏览器)
+    # 4. CDP 客户端 — 设为 None(测试不需要浏览器)
     app_state._cdp_client = None
 
-    # 6. Smoke 状态
+    # 5. Smoke 状态
     app_state.smoke_ok = True
     app_state.smoke_failures = []
     app_state.smoke_results = {}
     # cookie_health 用合法 enum 值,避免 Pydantic 校验失败
     app_state.cookie_health = "healthy"
 
-    return SimpleNamespace(
-        app_state=app_state,
-        mcp=fake_mcp,
-        bff=fake_bff,
-        set_mcp_responses=lambda r: setattr(
-            fake_mcp,
-            "call_tool",
-            AsyncMock(side_effect=lambda tool, args: r.get(tool, {"status": "ok"})),
-        ),
-    )
+    return SimpleNamespace(app_state=app_state, bff=fake_bff)
 
 
 # ───────────────────────────────────────────────────────────
@@ -188,7 +150,7 @@ async def mocked_app_state(monkeypatch, temp_db):
 def assert_routed_response(resp, allowed: tuple = (200, 404, 422, 500, 503), label: str = ""):
     """断言响应状态码是"路由能进"的合法值(404 = 资源不存在,合法)。
 
-    默认接受 200(成功)/404(资源不存在)/422(参数不全)/500(BFF/MCP mock 不可用)/
+    默认接受 200(成功)/404(资源不存在)/422(参数不全)/500(BFF/OpenAPI mock 不可用)/
     503(资源不可用)。只有真正的 5xx server error 或路由 404 才算失败。
     """
     if resp.status_code not in allowed:

@@ -241,7 +241,7 @@ async def preview_holo_table_columns(
     from dataworks_agent.services.ods_holo.column_resolver import load_holo_ods_columns
 
     bff = getattr(app_state, "_bff_client", None)
-    mcp = app_state.mcp_pool
+    mcp = None
     if not bff:
         raise HTTPException(status_code=503, detail="BFF 不可用")
 
@@ -365,10 +365,6 @@ async def create_di_node(req: CreateDIRequest, request: Request):
     bff = getattr(app_state, "_bff_client", None)
     if not bff:
         raise HTTPException(status_code=503, detail="BFF 不可用")
-    mcp = app_state.mcp_pool
-    if not mcp:
-        raise HTTPException(status_code=503, detail="MCP 不可用")
-
     di_source_type = (req.source_type or "mysql").strip().lower()
     if di_source_type in {"holo", "hologres"}:
         di_source_type = "hologres"
@@ -384,7 +380,7 @@ async def create_di_node(req: CreateDIRequest, request: Request):
 
     pipeline = DIPipeline(
         bff_client=bff,
-        mcp_pool=mcp,
+        mcp_pool=None,
         node_client=getattr(app_state, "_node_client", None),
         mc_client=getattr(app_state, "_maxcompute_client", None),
     )
@@ -456,7 +452,7 @@ async def preview_holo_dml(req: PreviewHoloDmlRequest):
         raise HTTPException(status_code=400, detail="请指定 Holo 原生 schema")
 
     bff = getattr(app_state, "_bff_client", None)
-    mcp = app_state.mcp_pool
+    mcp = None
     if not bff:
         raise HTTPException(status_code=503, detail="BFF 不可用")
 
@@ -504,7 +500,7 @@ async def create_holo_node(req: CreateHoloRequest, request: Request):
     client_ip = getattr(request.state, "client_ip", "127.0.0.1")
 
     bff = getattr(app_state, "_bff_client", None)
-    mcp = app_state.mcp_pool
+    mcp = None
     if not bff:
         raise HTTPException(status_code=503, detail="BFF 不可用")
 

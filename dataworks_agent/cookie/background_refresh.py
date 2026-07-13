@@ -93,7 +93,6 @@ async def run_cookie_background_refresh_once(*, force: bool = False) -> dict:
         return {"status": "skipped", "detail": "busy"}
 
     bff = getattr(app_state, "_bff_client", None)
-    mcp = app_state.mcp_pool
     cookie = ""
     try:
         cookie = decrypt_cookie()
@@ -103,16 +102,9 @@ async def run_cookie_background_refresh_once(*, force: bool = False) -> dict:
     err = ""
     if cookie and not force:
         try:
-            ok, err, username = await verify_cookie_access(cookie, bff=bff, mcp_pool=mcp)
+            ok, err, username = await verify_cookie_access(cookie, bff=bff)
             if ok:
-                if err:
-                    app_state.cookie_health = "degraded"
-                elif mcp:
-                    from dataworks_agent.cookie.health import cookie_health_monitor
-
-                    await cookie_health_monitor.check(mcp)
-                else:
-                    app_state.cookie_health = "healthy"
+                app_state.cookie_health = "healthy"
                 touch_cookie_poll(
                     action="valid",
                     detail=f"Cookie 仍有效（{username or '—'}）",
@@ -133,16 +125,9 @@ async def run_cookie_background_refresh_once(*, force: bool = False) -> dict:
 
     if result["status"] == "success":
         try:
-            ok, verify_err, username = await verify_cookie_access(bff=bff, mcp_pool=mcp)
+            ok, verify_err, username = await verify_cookie_access(bff=bff)
             if ok:
-                if verify_err:
-                    app_state.cookie_health = "degraded"
-                elif mcp:
-                    from dataworks_agent.cookie.health import cookie_health_monitor
-
-                    await cookie_health_monitor.check(mcp)
-                else:
-                    app_state.cookie_health = "healthy"
+                app_state.cookie_health = "healthy"
                 touch_cookie_poll(
                     action="refreshed",
                     detail=f"已同步（{username or '—'}）"
