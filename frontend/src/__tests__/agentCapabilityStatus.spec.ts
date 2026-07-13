@@ -11,6 +11,15 @@ describe('Agent capability status', () => {
     official_mcp: { connected: true },
   }
 
+  it('shows LangGraph as the primary Agent runtime', () => {
+    const badges = buildCapabilityBadges({
+      ...base,
+      agent_runtime: { framework: 'LangGraph', ready: true },
+      cookie_health: 'healthy',
+    })
+    expect(badges[0]).toEqual({ label: 'LangGraph', online: true })
+  })
+
   it('does not report an expired cookie as online', () => {
     const badges = buildCapabilityBadges({ ...base, cookie_health: 'expired' })
     expect(badges.find((item) => item.label.startsWith('Cookie'))).toEqual({ label: 'Cookie(过期)', online: false })

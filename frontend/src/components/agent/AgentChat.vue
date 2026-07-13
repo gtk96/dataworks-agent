@@ -112,6 +112,26 @@
               <span v-for="resource in executionTables" :key="resource">{{ resource }}</span>
             </div>
 
+            <section v-if="publishRequest" class="publish-approval" data-testid="publish-approval">
+              <div class="publish-approval-head">
+                <div>
+                  <small>PUBLISH GATE</small>
+                  <strong>{{ publishRequestStatusText }}</strong>
+                </div>
+                <span>{{ String(publishRequest.table_name || '待发布节点') }}</span>
+              </div>
+              <p>开发表、节点与调度已保存为草稿。只有点击“批准并发布”后，Agent 才会调用 DataWorks 发布接口。</p>
+              <div v-if="String(publishRequest.status || 'pending') === 'pending'" class="publish-actions">
+                <button type="button" class="approve-button" :disabled="Boolean(reviewingDecision)" @click="reviewPublish('approve')">
+                  {{ reviewingDecision === 'approve' ? '正在发布…' : '批准并发布' }}
+                </button>
+                <button type="button" class="reject-button" :disabled="Boolean(reviewingDecision)" @click="reviewPublish('reject')">
+                  {{ reviewingDecision === 'reject' ? '正在拒绝…' : '拒绝' }}
+                </button>
+              </div>
+              <p v-if="publishReviewFeedback" class="publish-feedback">{{ publishReviewFeedback }}</p>
+            </section>
+
             <section v-if="semanticPlan" class="semantic-proof" data-testid="semantic-proof">
               <div class="semantic-proof-title">
                 <div><strong>语义选表与闭环证据</strong><span>展示资产、字段、粒度、时效与对账证据</span></div>
@@ -242,7 +262,7 @@ import {
 import ChatMessage from './ChatMessage.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
-import { buildAgentChatRequest, requestAgentChat, type AgentExecutionMode } from './chatInteraction'
+import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentExecutionMode } from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
 
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
@@ -293,6 +313,8 @@ interface AgentPayload {
 }
 
 const input = ref('')
+const reviewingDecision = ref<'' | 'approve' | 'reject'>('')
+const publishReviewFeedback = ref('')
 const inputFocused = ref(false)
 const activeClarifyingQuestion = ref('')
 const loading = ref(false)
@@ -352,14 +374,32 @@ const responseErrors = computed(() => {
   const primary = lastPayload.value?.error
   return [...new Set([...(Array.isArray(errors) ? errors.map(String) : []), ...(primary ? [primary] : [])])].slice(0, 3)
 })
-const agentMode = computed(() => lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle'))
-const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
+const publishRequest = computed(() => lastPayload.value?.data?.publish_request as Record<string, unknown> | undefined)
+const publishRequestStatusText = computed(() => {
+  if (publishRequest.value?.deployment_status === 'deployed') return '已人工批准并发布'
+  if (publishRequest.value?.deployment_status === 'failed') return '发布失败，可重新批准重试'
+  if (publishRequest.value?.status === 'rejected') return '已拒绝，未发布'
+  if (publishRequest.value?.status === 'approved') return '已批准'
+  return '等待人工审批'
+})
+const agentMode = computed(() => {
+  if (publishRequest.value?.deployment_status === 'deployed') return 'executed'
+  if (publishRequest.value?.status === 'rejected') return 'rejected'
+  return lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle')
+})
+const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', rejected: '已拒绝', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
 const resultTitle = computed(() => lastPayload.value?.data?.plan?.summary || lastPayload.value?.message || 'Agent 执行结果')
 const stepSummary = computed(() => summarizeAgentSteps(planSteps.value))
 const completedStepCount = computed(() => planSteps.value.length ? stepSummary.value.completed : (currentStatus.value?.completed_steps ?? 0))
 const stepMetricValue = computed(() => planSteps.value.length ? `${completedStepCount.value}/${planSteps.value.length}` : '—')
 const stepMetricLabel = computed(() => stepSummary.value.planned ? `已执行 · ${stepSummary.value.planned} 已规划` : '步骤完成')
-const publishGateText = computed(() => lastPayload.value?.data?.publish_request ? '待审批' : lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布')
+const publishGateText = computed(() => {
+  if (publishRequest.value?.deployment_status === 'deployed') return '已发布'
+  if (publishRequest.value?.deployment_status === 'failed') return '发布失败'
+  if (publishRequest.value?.status === 'rejected') return '已拒绝'
+  if (publishRequest.value) return '待审批'
+  return lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布'
+})
 const executionTables = computed(() => {
   const rows = lastPayload.value?.data?.executed ?? []
   return rows.map((row) => String(row.table ?? row.node_name ?? '')).filter(Boolean)
@@ -450,6 +490,8 @@ function resetConversation() {
   currentStatus.value = null
   input.value = ''
   activeClarifyingQuestion.value = ''
+  reviewingDecision.value = ''
+  publishReviewFeedback.value = ''
 }
 async function loadCapabilities() {
   try {
@@ -494,12 +536,34 @@ async function sendMessage() {
 }
 function handleAgentResponse(payload: AgentPayload) {
   lastPayload.value = payload
+  publishReviewFeedback.value = ''
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
   activeClarifyingQuestion.value = payload.data?.clarifying_questions?.[0] ?? ''
   messages.value.push({ id: idempotencyKey(), text: payload.message, isUser: false, timestamp: new Date() })
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)
+}
+async function reviewPublish(decision: 'approve' | 'reject') {
+  const requestId = String(publishRequest.value?.request_id ?? '')
+  if (!requestId || reviewingDecision.value) return
+  reviewingDecision.value = decision
+  publishReviewFeedback.value = ''
+  try {
+    const result = await reviewPublishRequest(requestId, decision)
+    if (lastPayload.value?.data) {
+      lastPayload.value.data.publish_request = result.request
+      lastPayload.value.data.publish_gate = result.request.deployment_status === 'deployed' ? 'deployed' : String(result.request.status ?? 'approval_required')
+      lastPayload.value.data.agent_mode = result.request.deployment_status === 'deployed' ? 'executed' : result.request.status === 'rejected' ? 'rejected' : 'approval_required'
+    }
+    publishReviewFeedback.value = result.message
+    messages.value.push({ id: idempotencyKey(), text: result.message, isUser: false, timestamp: new Date() })
+  } catch (error) {
+    publishReviewFeedback.value = `审批操作失败：${error instanceof Error ? error.message : String(error)}`
+  } finally {
+    reviewingDecision.value = ''
+    nextTick(scrollToBottom)
+  }
 }
 function selectPrompt(text: string) { input.value = text; nextTick(() => composerInput.value?.focus()) }
 function prepareClarification(question: string) {
@@ -563,6 +627,20 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .next-actions strong { width: 100%; color: #55555d; }
 .next-actions button { padding: 6px 9px; border: 1px solid #dedee6; border-radius: 7px; background: #fff; color: #5c45c7; font-size: 11px; cursor: pointer; }
 .next-actions button:hover { border-color: #8a72f8; background: #f8f6ff; }
+
+.publish-approval { margin-top: 14px; padding: 14px; border: 1px solid #ead9a6; border-radius: 10px; background: #fffaf0; }
+.publish-approval-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.publish-approval-head div { display: grid; gap: 2px; }
+.publish-approval-head small { color: #9a6a00; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.publish-approval-head strong { color: #4a3a10; font-size: 13px; }
+.publish-approval-head>span { max-width: 48%; overflow: hidden; color: #80631b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.publish-approval>p { margin: 9px 0 0; color: #6b5a2d; font-size: 11px; line-height: 1.55; }
+.publish-actions { display: flex; gap: 8px; margin-top: 12px; }
+.publish-actions button { padding: 7px 12px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.publish-actions button:disabled { opacity: .55; cursor: wait; }
+.approve-button { border: 1px solid #6748ef; background: #6748ef; color: #fff; }
+.reject-button { border: 1px solid #d7caa5; background: #fff; color: #775f20; }
+.publish-approval .publish-feedback { color: #4f4380; font-weight: 600; }
 
 .policy-stack { gap: 10px; }
 .boundary-card { padding: 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.06); }

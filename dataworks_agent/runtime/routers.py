@@ -10,6 +10,17 @@ from pydantic import BaseModel, Field
 router = APIRouter()
 
 
+def _publish_gate():
+    from dataworks_agent.runtime.publish_gate import PublishGate
+    from dataworks_agent.state import app_state
+
+    gate = getattr(app_state, "_publish_gate", None)
+    if gate is None:
+        gate = PublishGate()
+        app_state._publish_gate = gate
+    return gate
+
+
 class SessionRequest(BaseModel):
     """会话请求。"""
 
@@ -281,10 +292,7 @@ async def self_heal(body: dict[str, Any]):
 @router.post("/publish-gate/interrupt")
 async def publish_gate_interrupt(body: dict[str, Any]):
     """发布审批中断。"""
-    from dataworks_agent.runtime.publish_gate import PublishGate
-
-    gate = PublishGate()
-    request = await gate.interrupt_for_approval(
+    request = await _publish_gate().interrupt_for_approval(
         run_id=body.get("run_id", ""),
         session_id=body.get("session_id", ""),
         table_name=body.get("table_name", ""),
@@ -302,10 +310,7 @@ async def publish_gate_interrupt(body: dict[str, Any]):
 @router.get("/publish-gate/requests")
 async def list_publish_requests():
     """列出待审批请求。"""
-    from dataworks_agent.runtime.publish_gate import PublishGate
-
-    gate = PublishGate()
-    requests = await gate.list_pending_requests()
+    requests = await _publish_gate().list_pending_requests()
 
     return {
         "requests": [

@@ -91,6 +91,10 @@ async def test_forward_plan_does_not_require_execution_clients():
     assert result.mode == "plan"
     assert all(step["status"] in {"planned", "required_only_for_publish"} for step in result.steps)
     assert any(step["step"] == "create_ods_table_and_source_node" for step in result.steps)
+    assert not {
+        "credential_and_cookie_health",
+        "official_mcp_health",
+    }.intersection(step["step"] for step in result.steps)
 
 
 @pytest.mark.asyncio

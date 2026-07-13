@@ -50,6 +50,7 @@ async def test_loop_repairs_transient_failure_then_verifies():
     assert outcome.stop_reason == StopReason.VERIFIED_SUCCESS
     assert calls == 2
     assert outcome.iterations[0].repair.action == "retry"
+    assert outcome.to_dict()["runtime"]["framework"] == "langgraph"
 
 
 @pytest.mark.asyncio

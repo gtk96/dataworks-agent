@@ -53,3 +53,30 @@ export async function requestAgentChat<T>(
     window.clearTimeout(timeout)
   }
 }
+
+export interface PublishReviewResponse {
+  success: boolean
+  message: string
+  request: Record<string, unknown>
+}
+
+export async function reviewPublishRequest(
+  requestId: string,
+  decision: 'approve' | 'reject',
+  fetcher: typeof fetch = fetch,
+): Promise<PublishReviewResponse> {
+  const response = await fetcher(
+    `/agent/publish-gate/${encodeURIComponent(requestId)}/${decision}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewer: 'web-user' }),
+    },
+  )
+  const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = data && typeof data === 'object' && 'detail' in data ? String(data.detail) : `HTTP ${response.status}`
+    throw new Error(detail)
+  }
+  return data as PublishReviewResponse
+}

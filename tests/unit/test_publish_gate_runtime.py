@@ -162,3 +162,35 @@ def test_publish_request_post_init():
         change_type="create",
     )
     assert request.created_at != ""
+
+
+def test_extract_node_ids_recurses_and_deduplicates(gate):
+    payload = {
+        "executed": [
+            {"result": {"node_uuid": "node-1"}},
+            {"result": {"steps": {"create_node": {"node_uuid": "node-2"}}}},
+            {"result": {"node_uuid": "node-1"}},
+        ]
+    }
+
+    assert gate.extract_node_ids(payload) == ["node-1", "node-2"]
+
+
+@pytest.mark.asyncio
+async def test_record_deployment(gate):
+    request = await gate.interrupt_for_approval(
+        run_id="run_001",
+        session_id="sess_001",
+        table_name="dwd_ord_order_day",
+        change_type="create",
+        payload={},
+    )
+
+    result = await gate.record_deployment(
+        request.request_id, ["node-1", "node-1"], success=True
+    )
+
+    assert result is not None
+    assert result.deployment_status == "deployed"
+    assert result.deployment_node_ids == ["node-1"]
+    assert result.deployed_at

@@ -8,6 +8,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from typing import Any, Literal
 
 import sqlglot
@@ -387,6 +388,12 @@ class AgentWorkflowService:
         if raw_cookie_health in {"expired", "critical"} and (cookie_bff or cdp_9222):
             cookie_health = "degraded"
         return {
+            "agent_runtime": {
+                "framework": "LangGraph",
+                "version": version("langgraph"),
+                "ready": True,
+                "checkpoint": "langgraph.memory",
+            },
             "ak_sk": bool(settings.aliyun_access_key_id and settings.aliyun_access_key_secret),
             "openapi": getattr(app_state, "_openapi_client", None) is not None,
             "maxcompute": getattr(app_state, "_maxcompute_client", None) is not None,
@@ -2134,10 +2141,9 @@ class AgentWorkflowService:
         initialize: bool,
         source_type: str = "mysql",
     ) -> list[dict[str, Any]]:
-        steps = [
-            {"step": "credential_and_cookie_health", "status": "planned"},
-            {"step": "official_mcp_health", "status": "planned"},
-        ]
+        # Connectivity checks remain mandatory execution preflight, but they are
+        # implementation details rather than user-facing modeling milestones.
+        steps: list[dict[str, Any]] = []
         if by_layer["ods"]:
             steps.extend(
                 [

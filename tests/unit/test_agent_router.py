@@ -247,3 +247,127 @@ def test_capabilities_endpoint(monkeypatch):
     assert response.status_code == 200
     assert response.json()["capabilities"]["ak_sk"] is True
     assert response.json()["capabilities"]["official_mcp"]["connected"] is True
+
+
+def test_publish_gate_approve_deploys_only_after_human_action(monkeypatch):
+    import asyncio
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import dataworks_agent.routers.agent as agent_module
+    from dataworks_agent.runtime.publish_gate import PublishGate
+
+    gate = PublishGate()
+    publish_request = asyncio.run(
+        gate.interrupt_for_approval(
+            run_id="run-1",
+            session_id="session-1",
+            table_name="dws_test",
+            change_type="create",
+            payload={
+                "executed": [
+                    {"result": {"node_uuid": "node-1"}},
+                    {"result": {"steps": {"node": {"node_uuid": "node-2"}}}},
+                ]
+            },
+        )
+    )
+    node_client = MagicMock()
+    node_client.deploy_nodes = AsyncMock(return_value=True)
+    node_client.last_error = ""
+    monkeypatch.setattr(agent_module.app_state, "_publish_gate", gate)
+    monkeypatch.setattr(agent_module.app_state, "_node_client", node_client)
+
+    app = FastAPI()
+    app.include_router(router, prefix="/agent")
+    response = TestClient(app).post(
+        f"/agent/publish-gate/{publish_request.request_id}/approve",
+        json={"reviewer": "tester", "comment": "人工确认"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["request"]["status"] == "approved"
+    assert data["request"]["deployment_status"] == "deployed"
+    node_client.deploy_nodes.assert_awaited_once_with(
+        ["node-1", "node-2"], comment="人工确认"
+    )
+
+
+def test_publish_gate_reject_never_deploys(monkeypatch):
+    import asyncio
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import dataworks_agent.routers.agent as agent_module
+    from dataworks_agent.runtime.publish_gate import PublishGate
+
+    gate = PublishGate()
+    publish_request = asyncio.run(
+        gate.interrupt_for_approval(
+            run_id="run-2",
+            session_id="session-2",
+            table_name="dws_test",
+            change_type="create",
+            payload={"executed": [{"result": {"node_uuid": "node-1"}}]},
+        )
+    )
+    node_client = MagicMock()
+    node_client.deploy_nodes = AsyncMock(return_value=True)
+    monkeypatch.setattr(agent_module.app_state, "_publish_gate", gate)
+    monkeypatch.setattr(agent_module.app_state, "_node_client", node_client)
+
+    app = FastAPI()
+    app.include_router(router, prefix="/agent")
+    response = TestClient(app).post(
+        f"/agent/publish-gate/{publish_request.request_id}/reject",
+        json={"reviewer": "tester", "comment": "暂不发布"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["request"]["status"] == "rejected"
+    assert "未发布" in data["message"]
+    node_client.deploy_nodes.assert_not_awaited()
+
+
+def test_publish_gate_failed_deploy_stays_pending(monkeypatch):
+    import asyncio
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    import dataworks_agent.routers.agent as agent_module
+    from dataworks_agent.runtime.publish_gate import PublishGate
+
+    gate = PublishGate()
+    publish_request = asyncio.run(
+        gate.interrupt_for_approval(
+            run_id="run-3",
+            session_id="session-3",
+            table_name="dws_test",
+            change_type="create",
+            payload={"executed": [{"result": {"node_uuid": "node-1"}}]},
+        )
+    )
+    node_client = MagicMock()
+    node_client.deploy_nodes = AsyncMock(return_value=False)
+    node_client.last_error = "deployment unavailable"
+    monkeypatch.setattr(agent_module.app_state, "_publish_gate", gate)
+    monkeypatch.setattr(agent_module.app_state, "_node_client", node_client)
+
+    app = FastAPI()
+    app.include_router(router, prefix="/agent")
+    response = TestClient(app).post(
+        f"/agent/publish-gate/{publish_request.request_id}/approve",
+        json={"reviewer": "tester"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is False
+    assert data["request"]["status"] == "pending"
+    assert data["request"]["deployment_status"] == "failed"

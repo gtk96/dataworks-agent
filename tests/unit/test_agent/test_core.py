@@ -254,4 +254,4 @@ async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() ->
     sent_message = agent._workflow_service.execute.await_args.kwargs["message"]
     assert "tiktok_smart_plus_material_report" in sent_message
     assert followup in sent_message
-    assert conversation_id not in agent._workflow_frames
+    assert await agent._conversation_graph.pending_objective(conversation_id) == ""

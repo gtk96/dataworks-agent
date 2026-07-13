@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it, vi } from 'vitest'
-import { buildAgentChatRequest, requestAgentChat } from '@/components/agent/chatInteraction'
+import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest } from '@/components/agent/chatInteraction'
 
 describe('Agent chat interaction', () => {
   it('builds an automatic execution request for conversational use', () => {
@@ -49,6 +49,19 @@ describe('Agent chat interaction', () => {
       publish: false,
       conversation_id: 'conversation-1',
     })
+  })
+
+  it('submits an explicit human publish decision', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ success: true, message: '已发布', request: { status: 'approved' } }),
+    })
+
+    await expect(reviewPublishRequest('pub/1', 'approve', fetcher as typeof fetch)).resolves.toMatchObject({ success: true })
+    expect(fetcher).toHaveBeenCalledWith(
+      '/agent/publish-gate/pub%2F1/approve',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
 })

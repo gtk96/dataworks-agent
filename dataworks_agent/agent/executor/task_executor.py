@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from dataworks_agent.agent.executor.tool_executor import ToolExecutor, ToolResult
 from dataworks_agent.agent.monitor.execution_monitor import ExecutionMonitor, ExecutionStatus
@@ -56,6 +58,13 @@ class ExecutionResult:
         }
 
 
+class _PlanExecutionState(TypedDict):
+    index: int
+    executed: set[str]
+    step_results: list[StepResult]
+    errors: list[str]
+
+
 class TaskExecutor:
     """Execute a TaskPlan step by step with lightweight retry support."""
 
@@ -70,21 +79,36 @@ class TaskExecutor:
         return self._monitor
 
     def execute(self, plan: TaskPlan) -> ExecutionResult:
-        """Execute all steps in dependency order."""
-        step_results: list[StepResult] = []
-        errors: list[str] = []
-        executed: set[str] = set()
+        """Execute a plan through a LangGraph state machine."""
         self._monitor.start_task(plan.task_id, plan.steps)
 
-        for step in plan.steps:
+        def execute_next(state: _PlanExecutionState) -> dict[str, Any]:
+            index = state["index"]
+            step = plan.steps[index]
+            executed = set(state["executed"])
+            step_results = list(state["step_results"])
+            errors = list(state["errors"])
+
             if not all(dep in executed for dep in step.depends_on):
                 error = f"Step {step.step_id} dependency is not complete"
                 errors.append(error)
-                self._monitor.record_step_complete(plan.task_id, step.step_id, False, error=error)
-                step_results.append(
-                    StepResult(step_id=step.step_id, tool=step.tool, success=False, error=error)
+                self._monitor.record_step_complete(
+                    plan.task_id, step.step_id, False, error=error
                 )
-                continue
+                step_results.append(
+                    StepResult(
+                        step_id=step.step_id,
+                        tool=step.tool,
+                        success=False,
+                        error=error,
+                    )
+                )
+                return {
+                    "index": index + 1,
+                    "executed": executed,
+                    "step_results": step_results,
+                    "errors": errors,
+                }
 
             logger.info("Executing Agent step %s: %s", step.step_id, step.tool)
             self._monitor.record_step_start(
@@ -103,28 +127,50 @@ class TaskExecutor:
                 data=tool_result.data,
                 warnings=tool_result.warnings,
             )
-
-            step_result = StepResult(
-                step_id=step.step_id,
-                tool=step.tool,
-                success=tool_result.success,
-                data=tool_result.data,
-                error=tool_result.error,
-                warnings=tool_result.warnings,
+            step_results.append(
+                StepResult(
+                    step_id=step.step_id,
+                    tool=step.tool,
+                    success=tool_result.success,
+                    data=tool_result.data,
+                    error=tool_result.error,
+                    warnings=tool_result.warnings,
+                )
             )
-            step_results.append(step_result)
-
             if tool_result.success:
                 executed.add(step.step_id)
             else:
                 errors.append(f"Step {step.step_id} failed: {tool_result.error}")
+            return {
+                "index": index + 1,
+                "executed": executed,
+                "step_results": step_results,
+                "errors": errors,
+            }
+
+        def route_next(state: _PlanExecutionState) -> str:
+            return "done" if state["index"] >= len(plan.steps) else "next"
+
+        builder = StateGraph(_PlanExecutionState)
+        builder.add_node("execute_step", execute_next)
+        builder.add_edge(START, "execute_step")
+        builder.add_conditional_edges(
+            "execute_step",
+            route_next,
+            {"next": "execute_step", "done": END},
+        )
+        graph = builder.compile()
+        final_state = graph.invoke(
+            {"index": 0, "executed": set(), "step_results": [], "errors": []}
+        )
 
         self._monitor.complete_task(plan.task_id)
         status = self._monitor.get_status(plan.task_id)
+        errors = final_state["errors"]
         return ExecutionResult(
             success=len(errors) == 0,
             task_id=plan.task_id,
-            step_results=step_results,
+            step_results=final_state["step_results"],
             errors=errors,
             status=status,
         )

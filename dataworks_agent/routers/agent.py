@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from dataworks_agent.agent.core import ChatAgent
+from dataworks_agent.runtime.publish_gate import PublishGate, PublishRequest
+from dataworks_agent.state import app_state
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,40 @@ class ChatResponse(BaseModel):
     error: str | None = None
 
 
+class PublishReviewRequest(BaseModel):
+    """人工发布审批输入。"""
+
+    reviewer: str = Field(default="web-user", min_length=1, max_length=128)
+    comment: str = Field(default="", max_length=1000)
+
+
+def _publish_gate() -> PublishGate:
+    gate = getattr(app_state, "_publish_gate", None)
+    if gate is None:
+        gate = PublishGate()
+        app_state._publish_gate = gate
+    return gate
+
+
+def _publish_request_payload(request: PublishRequest) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "run_id": request.run_id,
+        "session_id": request.session_id,
+        "table_name": request.table_name,
+        "change_type": request.change_type,
+        "status": request.status,
+        "reviewer": request.reviewer,
+        "reviewed_at": request.reviewed_at,
+        "review_comment": request.review_comment,
+        "deployment_status": request.deployment_status,
+        "deployment_node_ids": request.deployment_node_ids,
+        "deployment_error": request.deployment_error,
+        "deployed_at": request.deployed_at,
+        "created_at": request.created_at,
+    }
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     """Handle conversational planning and development execution."""
@@ -99,6 +135,79 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
 async def capabilities() -> dict[str, Any]:
     """Expose the Agent execution matrix used by the conversational workspace."""
     return {"capabilities": _agent.capability_status()}
+
+
+@router.get("/publish-gate/requests")
+async def publish_requests() -> dict[str, Any]:
+    """列出当前进程内等待人工处理的发布请求。"""
+    requests = await _publish_gate().list_pending_requests()
+    return {"requests": [_publish_request_payload(item) for item in requests], "total": len(requests)}
+
+
+@router.post("/publish-gate/{request_id}/approve")
+async def approve_publish_request(
+    request_id: str, payload: PublishReviewRequest
+) -> dict[str, Any]:
+    """人工批准后才调用 DataWorks 发布接口；失败时保留待审批以便重试。"""
+    gate = _publish_gate()
+    request = await gate.get_request(request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="发布审批不存在")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail=f"发布审批已处理：{request.status}")
+
+    node_ids = gate.extract_node_ids(request.payload)
+    if not node_ids:
+        raise HTTPException(status_code=422, detail="审批载荷中没有可发布的节点 UUID")
+    node_client = getattr(app_state, "_node_client", None)
+    if node_client is None:
+        raise HTTPException(status_code=503, detail="DataWorks 节点发布通道未就绪")
+
+    comment = payload.comment or f"Publish Gate {request.request_id} approved by {payload.reviewer}"
+    try:
+        deployed = bool(await node_client.deploy_nodes(node_ids, comment=comment))
+        deploy_error = "" if deployed else str(getattr(node_client, "last_error", "发布接口返回失败"))
+    except Exception as exc:
+        logger.exception("Publish Gate deployment failed: %s", request_id)
+        deployed = False
+        deploy_error = str(exc)
+
+    if not deployed:
+        updated = await gate.record_deployment(
+            request_id, node_ids, success=False, error=deploy_error or "发布失败"
+        )
+        return {
+            "success": False,
+            "message": f"发布失败，审批仍保持待处理：{deploy_error or '未知错误'}",
+            "request": _publish_request_payload(updated or request),
+        }
+
+    approved = await gate.approve_request(request_id, payload.reviewer, payload.comment)
+    updated = await gate.record_deployment(request_id, node_ids, success=True)
+    return {
+        "success": True,
+        "message": f"已人工批准并发布 {len(node_ids)} 个节点。",
+        "request": _publish_request_payload(updated or approved or request),
+    }
+
+
+@router.post("/publish-gate/{request_id}/reject")
+async def reject_publish_request(
+    request_id: str, payload: PublishReviewRequest
+) -> dict[str, Any]:
+    """人工拒绝发布，不调用任何 DataWorks 发布接口。"""
+    gate = _publish_gate()
+    request = await gate.get_request(request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="发布审批不存在")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail=f"发布审批已处理：{request.status}")
+    rejected = await gate.reject_request(request_id, payload.reviewer, payload.comment)
+    return {
+        "success": True,
+        "message": "已拒绝，节点仍为开发草稿，未发布。",
+        "request": _publish_request_payload(rejected or request),
+    }
 
 
 @router.get("/status")

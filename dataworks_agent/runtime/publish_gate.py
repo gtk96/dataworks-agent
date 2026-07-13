@@ -28,6 +28,10 @@ class PublishRequest:
     reviewer: str = ""
     reviewed_at: str = ""
     review_comment: str = ""
+    deployment_status: str = "not_started"  # not_started / deployed / failed
+    deployment_node_ids: list[str] = field(default_factory=list)
+    deployment_error: str = ""
+    deployed_at: str = ""
     created_at: str = ""
 
     def __post_init__(self):
@@ -124,6 +128,45 @@ class PublishGate:
     async def list_pending_requests(self) -> list[PublishRequest]:
         """列出待审批请求。"""
         return [req for req in self._pending_requests.values() if req.status == "pending"]
+
+    async def record_deployment(
+        self,
+        request_id: str,
+        node_ids: list[str],
+        *,
+        success: bool,
+        error: str = "",
+    ) -> PublishRequest | None:
+        """记录人工审批触发的实际发布结果。"""
+        request = self._pending_requests.get(request_id)
+        if not request:
+            return None
+        request.deployment_node_ids = list(dict.fromkeys(str(item) for item in node_ids if item))
+        request.deployment_status = "deployed" if success else "failed"
+        request.deployment_error = error
+        request.deployed_at = datetime.now(UTC).isoformat() if success else ""
+        return request
+
+    @staticmethod
+    def extract_node_ids(payload: Any) -> list[str]:
+        """从发布载荷递归提取已保存的 DataWorks 节点 UUID。"""
+        found: list[str] = []
+
+        def visit(value: Any) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    if key == "node_uuid" and child not in (None, ""):
+                        found.append(str(child))
+                    elif key == "node_uuids" and isinstance(child, list):
+                        found.extend(str(item) for item in child if item not in (None, ""))
+                    else:
+                        visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+
+        visit(payload)
+        return list(dict.fromkeys(found))
 
     async def check_gate(self, table_name: str) -> dict[str, Any]:
         """检查发布门禁。"""

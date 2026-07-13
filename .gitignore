@@ -59,3 +59,9 @@ remaining_partitions_*.sql
 replace-expressions.txt
 AGENTS.md
 CLAUDE.md
+
+# Codex/IDE local workspace artifacts
+.codex-logs/
+.idea/
+tmp_agent_api.txt
+tmp_reverse_*.json

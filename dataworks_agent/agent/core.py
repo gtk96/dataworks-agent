@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
@@ -33,9 +34,9 @@ class ChatAgent:
         self._task_planner = TaskPlanner()
         self._task_executor = TaskExecutor()
         self._workflow_service = AgentWorkflowService()
+        self._conversation_graph = ConversationGraph()
         self._last_task_id: str | None = None
         self._query_frames: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._workflow_frames: dict[str, tuple[float, str]] = {}
         self._query_frame_ttl_seconds = 2 * 60 * 60
         self._query_frame_capacity = 128
 
@@ -59,7 +60,7 @@ class ChatAgent:
             )
 
         try:
-            message = self._resolve_workflow_followup(message, conversation_id)
+            message = await self._conversation_graph.resolve(message, conversation_id)
             intent = self._intent_parser.parse(message)
             business_query = self._resolve_business_query(message, conversation_id)
             if business_query is not None and (not request_type or request_type == "auto"):
@@ -116,7 +117,11 @@ class ChatAgent:
                     error=workflow.errors[0] if workflow.errors else None,
                 )
                 self._remember_business_query(conversation_id, data)
-                self._remember_workflow_context(conversation_id, message, data)
+                await self._conversation_graph.remember(
+                    conversation_id,
+                    message,
+                    needs_clarification=bool(data.get("needs_clarification")),
+                )
                 return response
 
             plan = self._task_planner.plan(intent)
@@ -131,46 +136,6 @@ class ChatAgent:
         except Exception as e:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
-
-    def _resolve_workflow_followup(self, message: str, conversation_id: str | None) -> str:
-        if not conversation_id:
-            return message
-        self._prune_workflow_frames()
-        previous = self._workflow_frames.get(conversation_id)
-        if previous is None:
-            return message
-        if any(word in message for word in ("取消", "重新开始", "新任务")):
-            self._workflow_frames.pop(conversation_id, None)
-            return message
-        return f"{previous[1]}\n补充信息：{message}"
-
-    def _remember_workflow_context(
-        self, conversation_id: str | None, message: str, data: dict[str, Any]
-    ) -> None:
-        if not conversation_id:
-            return
-        if data.get("needs_clarification"):
-            self._workflow_frames[conversation_id] = (time.monotonic(), message)
-            self._prune_workflow_frames()
-            return
-        self._workflow_frames.pop(conversation_id, None)
-
-    def _prune_workflow_frames(self) -> None:
-        now = time.monotonic()
-        expired = [
-            key
-            for key, (created_at, _) in self._workflow_frames.items()
-            if now - created_at > self._query_frame_ttl_seconds
-        ]
-        for key in expired:
-            self._workflow_frames.pop(key, None)
-        overflow = len(self._workflow_frames) - self._query_frame_capacity
-        if overflow > 0:
-            oldest = sorted(
-                self._workflow_frames, key=lambda key: self._workflow_frames[key][0]
-            )
-            for key in oldest[:overflow]:
-                self._workflow_frames.pop(key, None)
 
     def _resolve_business_query(
         self, message: str, conversation_id: str | None

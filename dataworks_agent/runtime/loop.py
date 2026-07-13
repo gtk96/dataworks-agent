@@ -1,4 +1,4 @@
-"""Bounded observe-act-verify-repair loop for reliable Agent workflows."""
+﻿"""LangGraph-backed bounded observe-act-verify-repair runtime."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, TypeVar
+from typing import Any, TypedDict, TypeVar
+
+from langgraph.graph import END, START, StateGraph
 
 T = TypeVar("T")
 LoopAction = Callable[[dict[str, Any], int], Awaitable[T]]
@@ -127,12 +129,29 @@ class LoopOutcome[T]:
             "iteration_count": len(self.iterations),
             "best_score": round(self.best_score, 4),
             "elapsed_ms": self.elapsed_ms,
+            "runtime": {
+                "framework": "langgraph",
+                "graph": "bounded_workflow_loop",
+            },
             "iterations": [item.to_dict() for item in self.iterations],
         }
 
 
+class _LoopState(TypedDict, total=False):
+    started: float
+    loop_run_id: str
+    runtime_state: dict[str, Any]
+    iteration: int
+    iterations: list[LoopIteration[Any]]
+    best_score: float
+    no_progress_rounds: int
+    fingerprints: dict[str, int]
+    last_result: Any
+    stop_reason: StopReason
+
+
 class LoopKernel[T]:
-    """Execute a bounded workflow until outcome verification passes or policy stops it."""
+    """Run reliable workflows on LangGraph instead of a project-local loop engine."""
 
     def __init__(self, policy: LoopPolicy | None = None) -> None:
         self.policy = policy or LoopPolicy()
@@ -148,98 +167,155 @@ class LoopKernel[T]:
         observer: LoopObserver | None = None,
         run_id: str | None = None,
     ) -> LoopOutcome[T]:
+        """Compile and execute a bounded LangGraph state machine."""
         started = time.monotonic()
-        state = dict(initial_state or {})
         loop_run_id = run_id or f"loop_{uuid.uuid4().hex[:12]}"
-        iterations: list[LoopIteration[T]] = []
-        best_score = -1.0
-        no_progress_rounds = 0
-        fingerprints: dict[str, int] = {}
-        last_result: T | None = None
-        stop_reason = StopReason.MAX_ITERATIONS
 
-        for iteration_number in range(1, self.policy.max_iterations + 1):
-            elapsed = time.monotonic() - started
-            if elapsed >= self.policy.deadline_seconds:
-                stop_reason = StopReason.DEADLINE_EXCEEDED
-                break
+        async def act_and_verify(state: _LoopState) -> dict[str, Any]:
+            if time.monotonic() - state["started"] >= self.policy.deadline_seconds:
+                return {"stop_reason": StopReason.DEADLINE_EXCEEDED}
 
+            iteration_number = state.get("iteration", 0) + 1
+            runtime_state = dict(state.get("runtime_state", {}))
             await self._notify(
                 observer,
                 "iteration_start",
-                {"run_id": loop_run_id, "iteration": iteration_number, "state": state},
+                {
+                    "run_id": state["loop_run_id"],
+                    "iteration": iteration_number,
+                    "state": runtime_state,
+                },
             )
+
             iteration_started = time.monotonic()
-            last_result = await action(state, iteration_number)
-            decision_value = verify(last_result, iteration_number)
+            result = await action(runtime_state, iteration_number)
+            decision_value = verify(result, iteration_number)
             decision = (
                 await decision_value if inspect.isawaitable(decision_value) else decision_value
             )
             item = LoopIteration(
                 iteration=iteration_number,
                 decision=decision,
-                result=last_result,
+                result=result,
                 elapsed_ms=int((time.monotonic() - iteration_started) * 1000),
             )
-            iterations.append(item)
+            iterations = [*state.get("iterations", []), item]
             await self._notify(observer, "iteration_verified", item.to_dict())
 
+            update: dict[str, Any] = {
+                "iteration": iteration_number,
+                "iterations": iterations,
+                "last_result": result,
+                "runtime_state": runtime_state,
+            }
             if decision.passed:
-                stop_reason = StopReason.VERIFIED_SUCCESS
-                break
+                update["stop_reason"] = StopReason.VERIFIED_SUCCESS
+                return update
             if decision.needs_context:
-                stop_reason = StopReason.NEEDS_CONTEXT
-                break
+                update["stop_reason"] = StopReason.NEEDS_CONTEXT
+                return update
             if decision.approval_required:
-                stop_reason = StopReason.APPROVAL_REQUIRED
-                break
+                update["stop_reason"] = StopReason.APPROVAL_REQUIRED
+                return update
             if not decision.retryable:
-                stop_reason = StopReason.NON_RETRYABLE
-                break
+                update["stop_reason"] = StopReason.NON_RETRYABLE
+                return update
 
             fingerprint = decision.action_fingerprint or decision.failure_class or "workflow"
+            fingerprints = dict(state.get("fingerprints", {}))
             fingerprints[fingerprint] = fingerprints.get(fingerprint, 0) + 1
+            update["fingerprints"] = fingerprints
             if fingerprints[fingerprint] >= self.policy.max_same_action:
-                stop_reason = StopReason.REPEATED_ACTION
-                break
+                update["stop_reason"] = StopReason.REPEATED_ACTION
+                return update
 
+            best_score = state.get("best_score", -1.0)
+            no_progress_rounds = state.get("no_progress_rounds", 0)
             if decision.score > best_score + self.policy.min_progress_delta:
                 best_score = decision.score
                 no_progress_rounds = 0
             else:
                 no_progress_rounds += 1
+            update["best_score"] = best_score
+            update["no_progress_rounds"] = no_progress_rounds
             if no_progress_rounds > self.policy.max_no_progress_rounds:
-                stop_reason = StopReason.NO_PROGRESS
-                break
-
+                update["stop_reason"] = StopReason.NO_PROGRESS
+                return update
             if iteration_number >= self.policy.max_iterations:
-                stop_reason = StopReason.MAX_ITERATIONS
-                break
+                update["stop_reason"] = StopReason.MAX_ITERATIONS
+                return update
             if repair is None:
-                stop_reason = StopReason.REPAIR_UNAVAILABLE
-                break
+                update["stop_reason"] = StopReason.REPAIR_UNAVAILABLE
+            return update
 
-            repair_value = repair(state, last_result, decision, iteration_number)
+        async def apply_repair(state: _LoopState) -> dict[str, Any]:
+            result = state["last_result"]
+            iterations = list(state["iterations"])
+            current = iterations[-1]
+            repair_value = repair(
+                dict(state.get("runtime_state", {})),
+                result,
+                current.decision,
+                current.iteration,
+            ) if repair is not None else RepairResult(False)
             repair_result = (
                 await repair_value if inspect.isawaitable(repair_value) else repair_value
             )
-            item.repair = repair_result
-            if repair_result.state_updates:
-                state.update(repair_result.state_updates)
+            current.repair = repair_result
+            runtime_state = dict(state.get("runtime_state", {}))
+            runtime_state.update(repair_result.state_updates)
             await self._notify(
                 observer,
                 "repair_applied" if repair_result.applied else "repair_skipped",
-                {"iteration": iteration_number, **item.to_dict()},
+                {"iteration": current.iteration, **current.to_dict()},
             )
+            update: dict[str, Any] = {
+                "iterations": iterations,
+                "runtime_state": runtime_state,
+            }
             if not repair_result.applied:
-                stop_reason = StopReason.REPAIR_UNAVAILABLE
-                break
+                update["stop_reason"] = StopReason.REPAIR_UNAVAILABLE
+            return update
 
+        def after_verify(state: _LoopState) -> str:
+            return "end" if state.get("stop_reason") is not None else "repair"
+
+        def after_repair(state: _LoopState) -> str:
+            return "end" if state.get("stop_reason") is not None else "act"
+
+        graph_builder = StateGraph(_LoopState)
+        graph_builder.add_node("act_and_verify", act_and_verify)
+        graph_builder.add_node("repair", apply_repair)
+        graph_builder.add_edge(START, "act_and_verify")
+        graph_builder.add_conditional_edges(
+            "act_and_verify",
+            after_verify,
+            {"repair": "repair", "end": END},
+        )
+        graph_builder.add_conditional_edges(
+            "repair",
+            after_repair,
+            {"act": "act_and_verify", "end": END},
+        )
+        graph = graph_builder.compile()
+        final_state = await graph.ainvoke(
+            {
+                "started": started,
+                "loop_run_id": loop_run_id,
+                "runtime_state": dict(initial_state or {}),
+                "iteration": 0,
+                "iterations": [],
+                "best_score": -1.0,
+                "no_progress_rounds": 0,
+                "fingerprints": {},
+            }
+        )
+
+        last_result = final_state.get("last_result")
         if last_result is None:
             raise RuntimeError("loop stopped before the first action completed")
-
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        best = max((item.decision.score for item in iterations), default=0.0)
+        stop_reason = final_state.get("stop_reason", StopReason.MAX_ITERATIONS)
+        iterations = final_state.get("iterations", [])
         outcome = LoopOutcome(
             run_id=loop_run_id,
             objective=objective,
@@ -247,8 +323,8 @@ class LoopKernel[T]:
             stop_reason=stop_reason,
             result=last_result,
             iterations=iterations,
-            elapsed_ms=elapsed_ms,
-            best_score=best,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            best_score=max((item.decision.score for item in iterations), default=0.0),
         )
         await self._notify(observer, "loop_stopped", outcome.to_dict())
         return outcome

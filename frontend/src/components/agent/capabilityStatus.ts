@@ -13,12 +13,14 @@ const COOKIE_HEALTH_LABELS: Record<string, string> = {
 }
 
 export function buildCapabilityBadges(capabilities: Record<string, unknown>): CapabilityBadge[] {
+  const runtime = capabilities.agent_runtime as Record<string, unknown> | undefined
   const official = capabilities.official_mcp as Record<string, unknown> | undefined
   const cookieHealth = String(capabilities.cookie_health ?? '').toLowerCase()
   const cookieOnline = Boolean(capabilities.cookie_bff) && COOKIE_USABLE.has(cookieHealth)
   const cookieSuffix = cookieHealth === 'degraded' ? COOKIE_HEALTH_LABELS.degraded : cookieOnline ? '' : COOKIE_HEALTH_LABELS[cookieHealth]
 
   return [
+    { label: runtime?.framework ? String(runtime.framework) : 'Agent Runtime', online: Boolean(runtime?.ready) },
     { label: 'AK/SK', online: Boolean(capabilities.ak_sk) },
     { label: 'OpenAPI', online: Boolean(capabilities.openapi) },
     { label: 'MaxCompute', online: Boolean(capabilities.maxcompute) },

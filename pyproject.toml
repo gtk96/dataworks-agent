@@ -28,6 +28,7 @@ dependencies = [
     # 因此这些依赖永久保留，不再计划移除
     "alibabacloud-credentials>=1.0.0",
     "mcp>=1.0.0",
+    "langgraph>=1.2.9,<2",
 ]
 
 [project.scripts]

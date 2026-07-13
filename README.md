@@ -6,6 +6,7 @@
 
 ## 技术栈
 
+- **Agent 运行主体**: LangGraph 1.x（StateGraph + Checkpointer + 条件路由）；项目代码只承载 DataWorks 领域节点、护栏和结果契约
 - **后端**: FastAPI + SQLAlchemy + SQLite + Pydantic + httpx + structlog (Python 3.12+)
 - **前端**: Vue 3 + Vite + Element Plus + Vue Router (TypeScript)
 - **外部依赖**: 阿里云 DataWorks OpenAPI/官方 MCP + MaxCompute + DataWorks BFF API + Chrome DevTools Protocol (CDP) + Playwright；不依赖外部 `data-mcp` 服务
@@ -62,10 +63,9 @@ npm run dev
 - 完全未知且未认证的指标可使用数据专辑元数据约束 LLM 规划；无 LLM 时返回候选表和口径澄清，不报为系统故障。
 - `tests/evaluation/autonomous_query_cases.json` 是自主问数 golden corpus，CI 使用 `verify_autonomous_query` 验证指标识别、维度/日期/Top N、追问、SQL 约束与 draft 拒绝；新增口径必须先补评测用例。
 
-## Unified Loop Engineering Runtime
+## LangGraph Agent Runtime
 
-The five conversational workflows (data Q&A, forward modeling, reverse modeling,
-issue diagnosis, and Cookie management) now share one bounded execution loop:
+LangGraph 是项目的 Agent 运行主体，而不是仅作为旁路依赖。五类对话工作流（自主问数、正向建模、逆向建模、异常排查、Cookie 管理）统一进入 LangGraph StateGraph：
 
 ```text
 Objective -> Act -> Verify -> Repair -> Retry -> Stop
@@ -76,16 +76,21 @@ Objective -> Act -> Verify -> Repair -> Retry -> Stop
   or Cookie health evidence.
 - **Stop Policy**: maximum iterations, repeated actions, no-progress rounds, and
   deadlines are bounded; missing context and publish approval stop immediately.
-- **EventLog / Checkpoint**: each act/verify/repair iteration is recorded and
-  checkpointed without allowing logging failures to block the workflow.
+- **EventLog / Checkpoint**: 每轮 act/verify/repair 都记录事件；会话澄清上下文使用 LangGraph Checkpointer，并以 `conversation_id` 作为 `thread_id`。当前默认是进程内 `InMemorySaver`，重启后不保留会话。
+- **Framework Boundary**: `runtime/loop.py` 与兼容 `TaskExecutor` 都由 LangGraph StateGraph 驱动；项目不再维护另一套自研循环作为主路径。
 - **Badcase Gate**: CI runs `uv run python -m dataworks_agent.scripts.verify_agent_loop`
   and requires every corpus case to pass with `false_success_rate == 0`.
 - **Safety Boundary**: automatic repair is limited to transient retry and 9222 Cookie
   refresh. Development writes remain bounded and publication still uses Publish Gate.
 
-This is a unified Loop Kernel integrated into the five workflow entry paths. It does
-not claim every self-evolution, long-term-memory, or production-autonomy capability
-from the research literature.
+DataWorks OpenAPI、MaxCompute、Cookie/BFF/CDP、语义层与 Publish Gate 是领域能力层；它们作为 LangGraph 节点被编排，不反过来充当 Agent 框架。项目不宣称已经具备研究论文中的全部自进化、长期记忆或生产自治能力。
+
+### 通用产品与本地私有边界
+
+- **进入线上仓库**：LangGraph Runtime、DataWorks 通用工具、ODS→DWD/DIM→DWS 建模、问数、异常诊断、Cookie 能力路由、确定性护栏、Publish Gate、知识库接口与通用前端。
+- **只留本地/部署环境**：AK/SK、Cookie、项目 ID、公司目录、业务表映射、私有指标口径、真实业务 Badcase 和客户数据。
+- **知识沉淀原则**：通用方法写代码和公共文档；指标、口径和组织专属映射通过本地知识库逐步审批沉淀，不硬编码进线上产品。
+- **仓库策略**：`AGENTS.md`、`CLAUDE.md` 已加入 `.gitignore`，用于本地协作约束，不进入线上仓库。
 
 ## 目录结构
 
@@ -185,12 +190,12 @@ Skeleton modules: `semantic/layer.py`, `semantic/graph.py`, `runtime/service.py`
 
 #### Current capability boundary
 
-The local Agent now has a closed loop for natural-language input -> NLU intent/entity parsing -> task planning -> dry-run/proposal tool execution -> status feedback. It is designed to turn DataWorks modeling, lineage, and status requests into auditable plans and draft artifacts. The chat path must not pretend that online writes or publishes have already happened.
+The Agent workspace uses LangGraph to turn natural-language goals into auditable plans, development execution, verification, clarification checkpoints, and human approval. It must accurately distinguish development drafts from actual publication.
 
 Current execution boundary:
 
 - **Supported**: recognize table creation, lineage query, status check, end-to-end DataWorks workflow, and conversational ODS+DWD modeling intents; extract target table, layer, schedule, source type, datasource, ODS/DWD table, OSS path, and granularity entities; generate task plans, ODS route plans, DWD DDL/SQL previews, dependency drafts, task status, and recommended next actions.
-- **Safety**: `agent/executor/tool_executor.py` only runs in dry-run/proposal mode. Real online writes such as publish, delete, overwrite, or DataWorks node creation must still use the existing modeling flow, destructive-operation guard, and Publish Gate.
+- **Safety**: `plan` only produces plans; `auto` / `dev_execute` may create dev tables and new dev nodes through the existing modeling services. Updating existing nodes and deleting nodes still require confirmation; production publication can only run after the user clicks the Publish Gate approval action.
 - **Capability split**: AK/SK and Cookie BFF fallback coexist according to the Capability Matrix. The chat Agent can suggest the route, but it does not remove or bypass the Cookie fallback path.
 
 #### Supported examples
@@ -200,23 +205,26 @@ Current execution boundary:
 - **Status check**: `check task status`
 - **Complex planning**: `create ods_user table and configure schedule`
 - **ODS+DWD proposal**: `build hourly ODS from mysql datasource jky_singleshop orders, then create dwd_trade_order_detail`
-- **ODS route coverage**: batch DB (`ods_di`), Hologres (`ods_holo`), OSS (`ods_oss`), realtime/CDC (`ods_realtime`), and existing ODS tables all stop at dry-run/proposal plus Publish Gate boundary.
+- **ODS route coverage**: batch DB (`ods_di`), Hologres (`ods_holo`), OSS (`ods_oss`), realtime/CDC (`ods_realtime`), and existing ODS tables support planning plus bounded dev execution; production remains behind Publish Gate.
 
 #### Core modules
 
 | Module | Path | Description |
 |------|------|------|
 | NLU parsing | `agent/nlu/` | Intent recognition, entity extraction, template and fallback matching |
-| Task planning | `agent/planner/` | Task decomposition, dependency ordering, safe dry-run workflow |
-| Tool execution | `agent/executor/` | Draft artifacts, validate guardrails, recommend next actions; no direct online write |
+| Task planning | `agent/planner/` | Domain task decomposition executed by LangGraph |
+| Tool execution | `agent/executor/` | DataWorks domain tools, dev execution, retries, guards and artifacts |
 | Execution monitor | `agent/monitor/execution_monitor.py` | Task and step status tracking |
-| Core orchestration | `agent/core.py` | Chat management, plan execution, response formatting |
+| LangGraph runtime | `runtime/loop.py`, `agent/conversation_graph.py` | Bounded loop, conditional routing and conversation checkpoints |
+| Core orchestration | `agent/core.py` | Chat entry, domain routing and response formatting |
 
 #### API endpoints
 
 - `POST /agent/chat` - chat endpoint that returns Agent plan/draft/status response.
 - `GET /agent/status` - latest Agent task status.
 - `GET /agent/status/{task_id}` - task status by id.
+- `POST /agent/publish-gate/{request_id}/approve` - human approval followed by actual node deployment.
+- `POST /agent/publish-gate/{request_id}/reject` - reject without deployment.
 - `WS /agent/ws` - realtime chat endpoint, returning `response` and available `status` events.
 
 #### Usage examples
