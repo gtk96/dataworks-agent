@@ -121,8 +121,7 @@ def _select_object(
         matching = [
             item
             for item in candidates
-            if not _object_format(str(item.key))
-            or _object_format(str(item.key)) == selected_format
+            if not _object_format(str(item.key)) or _object_format(str(item.key)) == selected_format
         ]
         if matching:
             candidates = matching
@@ -295,9 +294,7 @@ def _discover_sample(
     requested_format: str,
 ) -> dict[str, Any]:
     bucket = _build_bucket(location)
-    selected, selected_format, detected_formats = _select_object(
-        bucket, location, requested_format
-    )
+    selected, selected_format, detected_formats = _select_object(bucket, location, requested_format)
     if selected is None:
         if detected_formats:
             return _failure(

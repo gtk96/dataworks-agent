@@ -1476,6 +1476,7 @@ async def test_oss_modeling_auto_mode_executes_full_dev_chain_when_context_is_co
     service._execute_ods.assert_awaited_once()
     assert service._deploy_warehouse_layer.await_count == 3
 
+
 @pytest.mark.asyncio
 async def test_oss_schema_discovery_blocker_is_context_not_execution_failure() -> None:
     service = AgentWorkflowService()
@@ -1531,12 +1532,17 @@ async def test_oss_schema_discovery_blocker_is_context_not_execution_failure() -
     ]
     assert result.data["source_discovery"]["error_code"] == "accessdenied"
     assert all("non_retryable" not in error for error in result.errors)
-    assert next(
-        step for step in result.steps if step["step"] == "discover_source_schema"
-    )["status"] == "needs_context"
-    assert next(
-        step for step in result.steps if step["step"] == "create_ods_table_and_source_node"
-    )["status"] == "skipped"
+    assert (
+        next(step for step in result.steps if step["step"] == "discover_source_schema")["status"]
+        == "needs_context"
+    )
+    assert (
+        next(step for step in result.steps if step["step"] == "create_ods_table_and_source_node")[
+            "status"
+        ]
+        == "skipped"
+    )
+
 
 @pytest.mark.asyncio
 async def test_oss_explicit_columns_without_format_has_no_write_side_effect() -> None:

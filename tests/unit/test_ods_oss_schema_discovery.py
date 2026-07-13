@@ -75,7 +75,9 @@ def test_discovers_json_lines_and_merges_scalar_types(monkeypatch: pytest.Monkey
 
 
 def test_discovers_json_array(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = json.dumps([{"material_id": 1, "name": "a"}, {"material_id": 2, "name": "b"}]).encode()
+    payload = json.dumps(
+        [{"material_id": 1, "name": "a"}, {"material_id": 2, "name": "b"}]
+    ).encode()
     install_fake_oss(monkeypatch, {"ads/report/data.json": payload})
 
     result = schema_discovery.discover_oss_schema("oss://bucket-name/ads/report/", None)
@@ -131,6 +133,7 @@ def test_endpoint_style_location_is_preserved_as_evidence(monkeypatch: pytest.Mo
     assert result["location"]["endpoint"] == "oss-cn-shenzhen-internal.aliyuncs.com"
     assert result["location"]["bucket"] == "bucket-name"
 
+
 def test_internal_endpoint_network_error_retries_public_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,7 +170,6 @@ def test_internal_endpoint_network_error_retries_public_endpoint(
     ]
     assert result["endpoint_used"] == "oss-cn-shenzhen.aliyuncs.com"
     assert result["attempted_endpoints"] == endpoints
-
 
 
 def test_unreachable_internal_endpoint_skips_sdk_call_and_uses_public(

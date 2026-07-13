@@ -46,6 +46,24 @@ def test_parser_extracts_endpoint_oss_path_and_json_format_from_followup() -> No
     assert intent.params["oss_path"].endswith("/sample_material_report/")
 
 
+def test_parser_extracts_multiple_json_mappings_and_composite_logical_key() -> None:
+    message = (
+        "OSS ODS ods_mc_ads_data__tiktok_smart_plus_material_report_hour，"
+        "DWD dwd_mkt_tiktok_smart_plus_material_report_hour，"
+        "JSON映射：material_id -> material_id, material_name -> material_name，"
+        "逻辑主键：material_id+material_name，DWD粒度：hour"
+    )
+
+    params = IntentParser().parse(message).params
+
+    assert params["json_field_mappings"] == [
+        {"json_key": "material_id", "target_name": "material_id"},
+        {"json_key": "material_name", "target_name": "material_name"},
+    ]
+    assert params["logical_primary_keys"] == ["material_id", "material_name"]
+    assert params["granularity"] == "hour"
+
+
 def test_parser_recognizes_mysql_ods_dwd_entities() -> None:
     intent = IntentParser().parse(MYSQL_ODS_DWD)
 
@@ -76,6 +94,35 @@ def test_planner_adds_ods_dwd_steps() -> None:
     ]
     preview_step = next(step for step in plan.steps if step.tool == "preview_dwd_artifacts")
     assert preview_step.params["datasource_name"] == "jky_singleshop"
+
+
+def test_standard_oss_tools_use_repository_table_naming_without_user_targets() -> None:
+    params = (
+        IntentParser()
+        .parse(
+            "OSS ??? oss://oss-cn-shenzhen-internal.aliyuncs.com/"
+            "giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report ??"
+        )
+        .params
+    )
+    executor = ToolExecutor()
+
+    analysis = executor.execute("analyze_ods_dwd_requirement", params)
+    ods_plan = executor.execute("plan_ods_pipeline", params)
+    dwd_preview = executor.execute("preview_dwd_artifacts", params)
+    dependency_plan = executor.execute("plan_ods_dwd_dependencies", params)
+
+    expected_ods = "ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+    expected_dwd = "dwd_mkt_tiktok_smart_plus_material_report_hour"
+    assert analysis.data["ods_table"] == expected_ods
+    assert analysis.data["dwd_table"] == expected_dwd
+    assert "dwd_table" not in analysis.data["missing_context"]
+    assert ods_plan.data["ods_plan"]["target_table"] == expected_ods
+    assert dwd_preview.data["dwd_table"] == expected_dwd
+    assert dwd_preview.data["missing_context"] == ["json_field_mappings"]
+    assert (
+        dependency_plan.data["dependency_plan"]["target_output"] == f"giikin_develop.{expected_dwd}"
+    )
 
 
 def test_tool_executor_plans_mysql_ods_and_dwd_preview() -> None:
@@ -172,3 +219,132 @@ async def test_chat_agent_ods_dwd_missing_context_asks_clarifying_questions() ->
     assert response.data["intent"]["action"] == "ods_dwd_modeling"
     assert response.data["agent_mode"] == "needs_context"
     assert response.data["clarifying_questions"]
+
+
+STANDARD_MATERIAL_REPORT_MESSAGE = (
+    "OSS ODS ods_mc_ads_data__tiktok_smart_plus_material_report_hour "
+    "\u4e3a\u57fa\u51c6\uff0c\u5f00\u53d1\u5e93 giikin_develop,\u4e0b\u6e38 DWD dwd_mkt_tiktok_smart_plus_material_report_hour,"
+    "\u4efb\u52a1 id:10002152501"
+)
+
+
+def test_parser_extracts_separate_dwd_sql_directory() -> None:
+    intent = IntentParser().parse(
+        STANDARD_MATERIAL_REPORT_MESSAGE
+        + " ODS SQL目录：业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"
+        + " DWD SQL目录：业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
+    )
+
+    assert intent.params["ods_sql_directory"].endswith("00_ODS")
+    assert intent.params["dwd_sql_directory"].endswith("02_DWD")
+
+
+def test_parser_preserves_standard_material_report_ods_and_template_task() -> None:
+    intent = IntentParser().parse(STANDARD_MATERIAL_REPORT_MESSAGE)
+
+    assert intent.action == "ods_dwd_modeling"
+    assert intent.params["ods_table"] == "ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+    assert intent.params["dwd_table"] == "dwd_mkt_tiktok_smart_plus_material_report_hour"
+    assert intent.params["task_id"] == "10002152501"
+    assert intent.params["standard_oss_json"] is True
+    assert intent.params["dev_schema"] == "giikin_develop"
+
+
+def test_standard_material_report_without_mapping_does_not_invent_dwd_fields() -> None:
+    result = ToolExecutor().execute(
+        "preview_dwd_artifacts",
+        {
+            "ods_table": "ods_mc_ads_data__tiktok_smart_plus_material_report_hour",
+            "dwd_table": "dwd_mkt_tiktok_smart_plus_material_report_hour",
+            "task_id": "10002152501",
+        },
+    )
+
+    assert result.success is True
+    assert result.data is not None
+    assert result.data["mode"] == "needs_context"
+    assert result.data["dwd_table"] == "dwd_mkt_tiktok_smart_plus_material_report_hour"
+    assert "json_field_mappings" in result.data["missing_context"]
+    assert "sample_material_report" not in str(result.data)
+
+
+def test_standard_material_report_uses_json_tuple_roots_and_template_schedule() -> None:
+    result = ToolExecutor().execute(
+        "preview_dwd_artifacts",
+        {
+            "ods_table": "ods_mc_ads_data__tiktok_smart_plus_material_report_hour",
+            "dwd_table": "dwd_mkt_tiktok_smart_plus_material_report_hour",
+            "task_id": "10002152501",
+            "dev_schema": "giikin_develop",
+            "json_field_mappings": [
+                {"json_key": "material_id", "target_name": "material_id", "type": "STRING"},
+                {"json_key": "material_name", "target_name": "material_name", "type": "STRING"},
+                {"json_key": "spend", "target_name": "spend_amt", "type": "DECIMAL(18,2)"},
+            ],
+        },
+    )
+
+    assert result.success is True
+    assert result.data is not None
+    assert "LATERAL VIEW OUTER JSON_TUPLE" in result.data["sql"]
+    assert "get_json_object" not in result.data["sql"]
+    assert (
+        "INSERT OVERWRITE TABLE giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour"
+        in result.data["sql"]
+    )
+    assert (
+        "FROM giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+        in result.data["sql"]
+    )
+    assert "${gmtdate}" in result.data["sql"]
+    assert "${hour_last1h}" in result.data["sql"]
+    assert "json_data" not in result.data["ddl"]
+    assert result.data["validation"]["passed"] is True
+    assert result.data["validation"]["root_source"] == "online"
+    assert result.data["schedule"]["cron"] == "00 03 00-23/1 * * ?"
+    assert result.data["schedule"]["template_task_id"] == "10002152501"
+
+
+def test_standard_material_report_invalid_root_blocks_preview() -> None:
+    result = ToolExecutor().execute(
+        "preview_dwd_artifacts",
+        {
+            "ods_table": "ods_mc_ads_data__tiktok_smart_plus_material_report_hour",
+            "dwd_table": "dwd_mkt_tiktok_smart_plus_material_report_hour",
+            "task_id": "10002152501",
+            "dev_schema": "giikin_develop",
+            "json_field_mappings": [
+                {"json_key": "material_id", "target_name": "zzzz_bad_token", "type": "STRING"},
+            ],
+        },
+    )
+
+    assert result.success is False
+    assert result.error == "standard_oss_json_validation_failed"
+    assert result.data is not None
+    assert result.data["validation"]["root_check"]["passed"] is False
+
+
+def test_standard_material_report_dependency_plan_reuses_structure_not_template_business_parents() -> (
+    None
+):
+    result = ToolExecutor().execute(
+        "plan_ods_dwd_dependencies",
+        {
+            "ods_table": "ods_mc_ads_data__tiktok_smart_plus_material_report_hour",
+            "dwd_table": "dwd_mkt_tiktok_smart_plus_material_report_hour",
+            "task_id": "10002152501",
+            "dev_schema": "giikin_develop",
+        },
+    )
+
+    assert result.success is True
+    assert result.data is not None
+    plan = result.data["dependency_plan"]
+    assert plan["dev_schema"] == "giikin_develop"
+    assert plan["upstream_refs"] == [
+        "giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+    ]
+    assert plan["schedule"]["parameters"] == ["gmtdate", "hour_last1h"]
+    assert plan["template_parent_references_are_reference_only"] is True
+    assert plan["template_task_id"] == "10002152501"

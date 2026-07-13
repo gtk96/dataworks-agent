@@ -14,6 +14,7 @@ from dataworks_agent.services.ods_oss.config import (
 from dataworks_agent.services.ods_oss.managed_discovery import (
     discover_managed_oss_schema,
     discover_oss_schema_with_fallback,
+    inspect_oss_directory_with_cookie,
 )
 from dataworks_agent.services.ods_oss.pipeline import OssImportPipeline
 from dataworks_agent.services.ods_oss.schema_discovery import discover_oss_schema
@@ -29,6 +30,7 @@ __all__ = [
     "discover_oss_schema",
     "discover_oss_schema_with_fallback",
     "infer_file_format",
+    "inspect_oss_directory_with_cookie",
     "normalize_file_format",
     "parse_oss_path",
     "validate_oss_config",

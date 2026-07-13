@@ -16,7 +16,16 @@ logger = logging.getLogger(__name__)
 
 _LOCATION_RE = re.compile(r"\bLOCATION\s+['\"]([^'\"]+)['\"]", re.IGNORECASE)
 _SAFE_SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_RAW_JSON_COLUMN_NAMES = {"json", "json_data", "raw", "raw_data", "raw_json", "value", "content", "line"}
+_RAW_JSON_COLUMN_NAMES = {
+    "json",
+    "json_data",
+    "raw",
+    "raw_data",
+    "raw_json",
+    "value",
+    "content",
+    "line",
+}
 
 
 def _nested_exact_value(value: Any, needle: str) -> bool:
@@ -67,12 +76,11 @@ def _ddl_location_matches(ddl: str, expected: dict[str, Any]) -> bool:
         actual = parse_oss_path(match.group(1))
     except ValueError:
         return False
-    return (
-        str(actual.get("bucket") or "").casefold()
-        == str(expected.get("bucket") or "").casefold()
-        and str(actual.get("object_key") or "").strip("/")
-        == str(expected.get("object_key") or "").strip("/")
-    )
+    return str(actual.get("bucket") or "").casefold() == str(
+        expected.get("bucket") or ""
+    ).casefold() and str(actual.get("object_key") or "").strip("/") == str(
+        expected.get("object_key") or ""
+    ).strip("/")
 
 
 def _raw_json_text_mode(ddl: str, columns: list[dict[str, Any]], file_format: str) -> bool:
@@ -84,9 +92,7 @@ def _raw_json_text_mode(ddl: str, columns: list[dict[str, Any]], file_format: st
     return name in _RAW_JSON_COLUMN_NAMES and data_type in {"string", "varchar", "text"}
 
 
-def _managed_failure(
-    location: dict[str, Any], file_format: str, error_code: str
-) -> dict[str, Any]:
+def _managed_failure(location: dict[str, Any], file_format: str, error_code: str) -> dict[str, Any]:
     return {
         "success": False,
         "channel": "dataworks_managed_datasource",
@@ -192,7 +198,47 @@ async def discover_managed_oss_schema(
             "ingestion_mode": ingestion_mode,
         }
 
-    return _managed_failure(location, normalized_format, "registered_table_location_or_schema_mismatch")
+    return _managed_failure(
+        location, normalized_format, "registered_table_location_or_schema_mismatch"
+    )
+
+
+async def inspect_oss_directory_with_cookie(
+    bff_client: Any,
+    oss_path: str,
+    file_format: str | None = None,
+) -> dict[str, Any]:
+    """Check an OSS prefix through the Cookie/BFF metadata channel only.
+
+    The managed external-table lookup is the authoritative directory check for
+    the modeling workflow.  Local OSS SDK sampling remains a separate, optional
+    data-profiling fallback and must not be reported as a Cookie check.
+    """
+    result = await discover_managed_oss_schema(bff_client, oss_path, file_format)
+    location = result.get("location") or {}
+    if not result.get("success"):
+        result = dict(result)
+        result["directory_check"] = {
+            "success": False,
+            "channel": "cookie_bff",
+            "bucket": location.get("bucket"),
+            "prefix": location.get("object_key") or "",
+            "error_code": result.get("error_code"),
+        }
+        return result
+
+    result = dict(result)
+    result["directory_check"] = {
+        "success": True,
+        "channel": "cookie_bff",
+        "bucket": location.get("bucket"),
+        "prefix": location.get("object_key") or "",
+        "is_prefix": bool(location.get("is_prefix")),
+        "datasource_name": result.get("datasource_name"),
+        "matched_external_table": result.get("table_name") or _source_name(location) or "",
+        "entries": [result.get("sample_object")] if result.get("sample_object") else [],
+    }
+    return result
 
 
 async def discover_oss_schema_with_fallback(

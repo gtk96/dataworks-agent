@@ -113,14 +113,30 @@ class EntityExtractor:
 
     def extract_task_id(self, text: str) -> str | None:
         """Extract task ID."""
-        explicit = re.search(
-            r"(?:\u4efb\u52a1|task)\s*(?:id|ID|\u7f16\u53f7|\uff1a|:)?\s*([a-zA-Z0-9][a-zA-Z0-9_-]+)",
-            text,
+        explicit_patterns = (
+            r"(?:\u4efb\u52a1|task)\s*(?:id|\u7f16\u53f7)\s*[:\uff1a]?\s*([a-zA-Z0-9][a-zA-Z0-9_-]+)",
+            r"(?:\u4efb\u52a1|task)\s*[:\uff1a]\s*([a-zA-Z0-9][a-zA-Z0-9_-]+)",
+            r"(?:\u4efb\u52a1|task)\s+(?!id\b|\u7f16\u53f7\b)([a-zA-Z0-9][a-zA-Z0-9_-]+)",
         )
-        if explicit:
-            return explicit.group(1)
+        for pattern in explicit_patterns:
+            explicit = re.search(pattern, text, re.IGNORECASE)
+            if explicit:
+                return explicit.group(1)
         match = re.search(r"(task[_-][a-zA-Z0-9_-]+|run[_-][a-zA-Z0-9_-]+)", text)
         return match.group(1) if match else None
+
+    def extract_dev_schema(self, text: str) -> str | None:
+        """Extract an explicitly named MaxCompute development schema/project."""
+        known = re.search(r"\bgiikin_develop\b", text, re.IGNORECASE)
+        if known:
+            return known.group(0)
+        explicit = re.search(
+            r"(?:\u5f00\u53d1(?:\u5e93|\u9879\u76ee)|\bdev\b(?:\s+(?:schema|project))?)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*"
+            r"([a-zA-Z][a-zA-Z0-9_]*)",
+            text,
+            re.IGNORECASE,
+        )
+        return explicit.group(1) if explicit else None
 
     def extract_domain(self, text: str) -> str | None:
         """Extract business domain."""
@@ -265,9 +281,94 @@ class EntityExtractor:
         }
         lowered = text.lower()
         for keyword, granularity in mapping.items():
-            if keyword in lowered or keyword in text:
+            if keyword in {"hourly", "hour", "daily", "day", "minute", "min", "realtime", "full"}:
+                pattern = rf"(?<![a-zA-Z0-9_]){re.escape(keyword)}(?![a-zA-Z0-9_])"
+                if re.search(pattern, lowered, re.IGNORECASE):
+                    return granularity
+            elif keyword in text:
                 return granularity
         return None
+
+    def extract_ods_sql_directory(self, text: str) -> str | None:
+        """Extract the DataWorks business-process directory for the ODS SQL node."""
+        patterns = (
+            r"(?:ODS\s*SQL|ods\s*sql|SQL)\s*(?:\u76ee\u5f55|\u8def\u5f84|directory|path)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
+            r"(?:\u5efa|\u653e|\u653e\u5230|\u843d\u5728)\s*(?:\u76ee\u5f55|\u8def\u5f84)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip().strip('`"')
+                return value or None
+        return None
+
+    def extract_dwd_sql_directory(self, text: str) -> str | None:
+        """Extract the DataWorks business-process directory for the DWD SQL node."""
+        patterns = (
+            r"(?:DWD\s*SQL|dwd\s*sql|DWD)\s*(?:\u76ee\u5f55|\u8def\u5f84|directory|path)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
+            r"(?:DWD|\u660e\u7ec6)\s*(?:\u8282\u70b9|SQL)?\s*(?:\u5efa\u5728|\u653e\u5728|\u843d\u5728)\s*(?:\u76ee\u5f55|\u8def\u5f84)?\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip().strip('`"')
+                return value or None
+        return None
+
+    def extract_prod_schema(self, text: str) -> str | None:
+        """Extract the explicitly named production MaxCompute project."""
+        known = re.search(r"\bgiikin\b(?!_develop)", text, re.IGNORECASE)
+        return known.group(0) if known else None
+
+    def extract_logical_primary_keys(self, text: str) -> list[str] | None:
+        """Extract user-confirmed logical primary keys; do not infer them here."""
+        match = re.search(
+            r"(?:\u903b\u8f91\u4e3b\u952e|\u4e3b\u952e|primary\s*key|pk)\s*"
+            r"(?:\u662f|\u4e3a|\u4f7f\u7528|[:\uff1a=])?\s*([^\n\u3002\uff1b;]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        raw = re.split(
+            r"[,\uff0c]\s*(?=(?:JSON|\u5b57\u6bb5\u6620\u5c04|\u7c92\u5ea6|DWD|ODS|\u4efb\u52a1)\s*)",
+            match.group(1),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        values = [part.strip().strip('`"') for part in re.split(r"[,\uff0c+\u3001\u548c]", raw)]
+        values = [value for value in values if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value)]
+        return values or None
+
+    def extract_json_field_mappings(self, text: str) -> list[dict[str, str]] | None:
+        """Extract explicit JSON key -> DWD column mappings."""
+        match = re.search(
+            r"(?:JSON\s*(?:\u5b57\u6bb5|\u6620\u5c04|mapping)|\u5b57\u6bb5\u6620\u5c04|\bjson\b)"
+            r"\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff1b;]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        raw = re.split(
+            r"[,\uff0c]\s*(?=(?:\u903b\u8f91\u4e3b\u952e|\u4e3b\u952e|\u7c92\u5ea6|DWD|ODS|\u5f00\u53d1\u5e93|\u751f\u4ea7\u5e93|\u4efb\u52a1)\s*)",
+            match.group(1),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        mappings: list[dict[str, str]] = []
+        for item in re.split(r"[,\uff0c]", raw):
+            pair = re.split(
+                r"\s*(?:->|=>|\u6620\u5c04\u4e3a|\u5bf9\u5e94|:)\s*", item.strip(), maxsplit=1
+            )
+            if len(pair) != 2:
+                continue
+            json_key, target_name = (part.strip().strip('`"') for part in pair)
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", json_key) and re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_]*", target_name
+            ):
+                mappings.append({"json_key": json_key, "target_name": target_name})
+        return mappings or None
 
     def extract_schedule_minute(self, text: str) -> int | None:
         """Extract hourly schedule minute."""
@@ -349,6 +450,12 @@ class EntityExtractor:
             ods_table = self.extract_ods_table(text)
             if ods_table:
                 params["ods_table"] = ods_table
+                if ods_table == "ods_mc_ads_data__tiktok_smart_plus_material_report_hour":
+                    params["standard_oss_json"] = True
+        if "dev_schema" in wanted:
+            dev_schema = self.extract_dev_schema(text)
+            if dev_schema:
+                params["dev_schema"] = dev_schema
         if "dwd_table" in wanted:
             dwd_table = self.extract_dwd_table(text)
             if dwd_table:
@@ -362,6 +469,26 @@ class EntityExtractor:
             schedule_minute = self.extract_schedule_minute(text)
             if schedule_minute is not None:
                 params["schedule_minute"] = schedule_minute
+        if "ods_sql_directory" in wanted:
+            ods_sql_directory = self.extract_ods_sql_directory(text)
+            if ods_sql_directory:
+                params["ods_sql_directory"] = ods_sql_directory
+        if "dwd_sql_directory" in wanted:
+            dwd_sql_directory = self.extract_dwd_sql_directory(text)
+            if dwd_sql_directory:
+                params["dwd_sql_directory"] = dwd_sql_directory
+        if "logical_primary_keys" in wanted:
+            logical_primary_keys = self.extract_logical_primary_keys(text)
+            if logical_primary_keys:
+                params["logical_primary_keys"] = logical_primary_keys
+        if "json_field_mappings" in wanted:
+            json_field_mappings = self.extract_json_field_mappings(text)
+            if json_field_mappings:
+                params["json_field_mappings"] = json_field_mappings
+        if "prod_schema" in wanted:
+            prod_schema = self.extract_prod_schema(text)
+            if prod_schema:
+                params["prod_schema"] = prod_schema
         if "goal" in wanted:
             params["goal"] = text.strip()
         return params

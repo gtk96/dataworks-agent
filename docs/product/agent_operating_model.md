@@ -1,4 +1,4 @@
-# DataWorks Agent 通用化运行模型
+﻿# DataWorks Agent 通用化运行模型
 
 > 目标：基础 Agent 能力做到线上通用，业务私有知识留在线下/本地知识库逐步沉淀。
 
@@ -44,7 +44,23 @@
 - Hologres 节点必须落在真实存在的 Hologres 目录树；目录是否存在应通过配置、OpenAPI/Cookie/DataStudio 树或本地知识库判断。
 - 本地发现的目录样本属于私有知识，应写入 `data/local_knowledge/` 或用户指定知识库，不进入通用前端提示。
 
-## 5. 验收优先级
+## 5. 标准 OSS → ODS → DWD 门禁
+
+当用户声明数据源为 OSS 时，Agent 不直接猜目录、字段或粒度，按以下顺序执行：
+
+1. 先检查是否提供 `oss://bucket/prefix/` 目录；未提供时先索要目录。
+2. 目录存在时，通过 Cookie/BFF 检查 OSS 数据源、外部表与 `LOCATION` 是否匹配；本地 OSS SDK 只能用于后续样本探查，不能冒充目录权限检查。
+3. ODS 使用固定的原始 JSON 结构和已有 ODS 抽取模式；DataWorks SQL 节点必须落到用户指定的业务流程目录，目录未知时先询问。
+   ??????? OSS?? `tiktok_smart_plus_material_report`??ODS/DWD ?????????????????????????????????????????????????????????????????
+4. DWD 建模前必须探查真实 JSON/样本字段，生成字段映射候选，并让用户确认逻辑主键。模板任务只提供调度、依赖和命名参考，不得替代真实字段。
+5. DWD 的 `day`/`hour` 粒度必须由用户确认；不能因为 ODS 是小时表就自动决定 DWD 粒度。
+6. DDL 通过线上词根校验入口 `dmr_pub_column_check`；失败时阻断建表和节点创建。
+7. 开发环境通过 Cookie/BFF 创建表和 ODS SQL 节点；生产环境只生成待审批 DDL/DML/调度/依赖产物，生产发布必须进入 Publish Gate。
+
+该流程的实现入口是 `dataworks_agent/modeling/standard_oss.py` 与
+`AgentWorkflowService` 的标准 OSS 分支，业务目录和真实样本仍由用户或线上权限提供。
+
+## 6. 验收优先级
 
 用户关注的是可视化 Agent 的真实体验，因此每次改造至少要覆盖：
 

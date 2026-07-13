@@ -99,8 +99,7 @@ class TestBuildOssImportSql:
         sql = build_oss_import_sql(
             target_table="ods_oss_test_day",
             oss_path=(
-                "oss://oss-cn-shenzhen-internal.aliyuncs.com/"
-                "example-data-bucket/ads/data/report/"
+                "oss://oss-cn-shenzhen-internal.aliyuncs.com/example-data-bucket/ads/data/report/"
             ),
             file_format="json",
         )

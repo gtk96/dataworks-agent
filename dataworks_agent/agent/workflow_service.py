@@ -25,6 +25,7 @@ from dataworks_agent.governance.closed_loop_verifier import (
 from dataworks_agent.naming import generate_node_path, generate_ods_di_table_name
 from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,
+    DWD_SQL_PARAMETERS,
     HOURLY_SQL_PARAMETERS,
     generate_cron,
 )
@@ -1831,6 +1832,724 @@ class AgentWorkflowService:
                 pass
         return statement.limit(max_rows, copy=True).sql(dialect="hive")
 
+    async def _execute_standard_oss_flow(
+        self,
+        *,
+        message: str,
+        params: dict[str, Any],
+        mode: ExecutionMode,
+        initialize_data: bool,
+        publish: bool,
+        client_ip: str,
+    ) -> WorkflowResult:
+        """Run the guarded standard OSS -> ODS -> DWD path.
+
+        This path intentionally does not fall back to the generic OSS naming or
+        AK/SK table creation: the standard source has a fixed ODS contract and
+        its directory/table inspection must come from the Cookie/BFF channel.
+        """
+        from dataworks_agent.modeling.root_checker import RootChecker
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_DWD_TABLE,
+            MATERIAL_REPORT_ODS_TABLE,
+            MATERIAL_REPORT_TEMPLATE_TASK_ID,
+            ROOT_CHECKER_NAME,
+            build_standard_material_report_artifacts,
+            build_standard_material_report_ods_artifacts,
+        )
+        from dataworks_agent.services.ods_oss import (
+            OssImportPipeline,
+            infer_file_format,
+            inspect_oss_directory_with_cookie,
+            parse_oss_path,
+        )
+
+        # The standard naming contract is repository-owned. Do not ask the
+        # user to repeat a DWD name that is deterministically defined by the
+        # OSS standard; only explicit input may override it.
+        dwd_table = str(
+            params.get("dwd_table") or params.get("table_name") or MATERIAL_REPORT_DWD_TABLE
+        ).strip()
+        dev_schema = str(params.get("dev_schema") or "giikin_develop").strip()
+        prod_schema = str(params.get("prod_schema") or "giikin").strip()
+        oss_path = str(
+            params.get("oss_path") or self._extractor.extract_oss_path(message) or ""
+        ).strip()
+        ods_sql_directory = str(
+            params.get("ods_sql_directory")
+            or self._extractor.extract_ods_sql_directory(message)
+            or ""
+        ).strip()
+        dwd_sql_directory = str(
+            params.get("dwd_sql_directory")
+            or self._extractor.extract_dwd_sql_directory(message)
+            or ""
+        ).strip()
+        explicit_granularity = params.get("granularity") or self._extractor.extract_granularity(
+            message
+        )
+        missing: list[str] = []
+        if not oss_path:
+            question = "Please provide the OSS directory in the form oss://bucket/prefix/."
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "standard_oss_context_gate", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["oss_path"],
+                    "ods_table": MATERIAL_REPORT_ODS_TABLE,
+                    "template_task_id": str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    "publish_gate": "not_requested",
+                },
+            )
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            question = "标准 OSS 流程必须通过 Cookie/BFF 检查 OSS 目录和外部表；请先启动并登录 Cookie 会话。"
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "cookie_bff_preflight", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["cookie_bff"],
+                    "ods_table": MATERIAL_REPORT_ODS_TABLE,
+                    "dwd_table": dwd_table,
+                    "template_task_id": str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        try:
+            location = parse_oss_path(oss_path)
+        except ValueError as exc:
+            question = f"OSS 目录格式无法解析：{exc}。请提供形如 oss://bucket/prefix/ 的目录。"
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "inspect_oss_directory", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["oss_path"],
+                    "ods_table": MATERIAL_REPORT_ODS_TABLE,
+                    "dwd_table": dwd_table,
+                    "template_task_id": str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        requested_format = str(
+            params.get("file_format") or self._extractor.extract_file_format(message) or "json"
+        )
+        file_format = infer_file_format(str(location["canonical_uri"]), requested_format) or "json"
+        directory = await inspect_oss_directory_with_cookie(
+            bff, str(location["canonical_uri"]), file_format
+        )
+        if not directory.get("success") or not (directory.get("directory_check") or {}).get(
+            "success"
+        ):
+            question = "Cookie 检查未确认 OSS 目录、数据源、外部表或 LOCATION；请核对 DataWorks OSS 配置和目录。"
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "inspect_oss_directory", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["managed_oss_directory"],
+                    "ods_table": MATERIAL_REPORT_ODS_TABLE,
+                    "dwd_table": dwd_table,
+                    "template_task_id": str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    "directory_check": directory.get("directory_check") or {},
+                    "source_discovery": directory,
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        if not ods_sql_directory:
+            missing.append("ods_sql_directory")
+        if not dwd_sql_directory:
+            missing.append("dwd_sql_directory")
+        if explicit_granularity not in {"day", "hour"}:
+            missing.append("granularity")
+        if missing:
+            questions = []
+            if "ods_sql_directory" in missing:
+                questions.append("请提供 ODS SQL 节点要落到的 DataWorks 业务流程目录。")
+            if "dwd_sql_directory" in missing:
+                questions.append(
+                    "DWD SQL directory is required; provide the DataWorks directory, separately if it differs from ODS."
+                )
+            if "granularity" in missing:
+                questions.append(
+                    "请确认 DWD 粒度是 day 还是 hour；ODS 虽然是 hour，不替代 DWD 粒度选择。"
+                )
+            return WorkflowResult(
+                True,
+                "标准 OSS 流程还缺少必要上下文：" + " ".join(questions),
+                "forward_modeling",
+                mode,
+                steps=[{"step": "standard_oss_context_gate", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": questions,
+                    "missing_context": missing,
+                    "ods_table": MATERIAL_REPORT_ODS_TABLE,
+                    "dwd_table": dwd_table,
+                    "template_task_id": str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    "dev_schema": dev_schema,
+                    "dwd_sql_directory": dwd_sql_directory,
+                    "prod_schema": prod_schema,
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        profile = dict(params.get("data_profile") or {})
+        if not profile.get("columns") and params.get("columns"):
+            profile["columns"] = list(params["columns"])
+        if not profile.get("columns") or all(
+            str(c.get("name") if isinstance(c, dict) else c).lower() == "json_data"
+            for c in profile["columns"]
+        ):
+            from dataworks_agent.services.ods_oss.schema_discovery import discover_oss_schema
+
+            sampled = await asyncio.to_thread(
+                discover_oss_schema, str(location["canonical_uri"]), file_format
+            )
+            if sampled.get("success") and sampled.get("columns"):
+                profile = dict(sampled)
+            else:
+                question = "无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。"
+                return WorkflowResult(
+                    True,
+                    question,
+                    "forward_modeling",
+                    mode,
+                    steps=[{"step": "profile_json_sample", "status": "needs_context"}],
+                    data={
+                        "standard": "tiktok_smart_plus_material_report",
+                        "needs_clarification": True,
+                        "clarifying_questions": [question],
+                        "missing_context": ["data_profile"],
+                        "directory_check": directory["directory_check"],
+                        "sample_discovery": sampled,
+                        "publish_gate": "not_requested",
+                    },
+                )
+
+        observed_columns = list(profile.get("columns") or [])
+        from dataworks_agent.modeling.standard_oss import (
+            candidate_logical_primary_keys,
+            normalize_json_field_mappings,
+        )
+
+        mappings_raw = params.get("json_field_mappings") or params.get("field_mappings")
+        if not mappings_raw:
+            suggestions = [
+                {
+                    "json_key": str(c.get("name") or c),
+                    "target_name": str(c.get("name") or c),
+                    "type": str(c.get("type") or "STRING"),
+                }
+                for c in observed_columns
+                if str(c.get("name") if isinstance(c, dict) else c).lower()
+                not in {"json_data", "dt", "ht"}
+            ]
+            question = "请确认 JSON 字段到 DWD 字段的映射。"
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "confirm_json_field_mapping", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["json_field_mappings"],
+                    "observed_columns": observed_columns,
+                    "mapping_candidates": suggestions,
+                    "candidate_logical_primary_keys": candidate_logical_primary_keys(
+                        observed_columns, profile
+                    ),
+                    "directory_check": directory["directory_check"],
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        try:
+            mappings = normalize_json_field_mappings(mappings_raw)
+        except (TypeError, ValueError) as exc:
+            return WorkflowResult(
+                False,
+                "JSON 字段映射无法解析为 DWD 字段。",
+                "forward_modeling",
+                mode,
+                errors=[str(exc)],
+            )
+        if not mappings:
+            return WorkflowResult(
+                True,
+                "请提供 JSON 到 DWD 的字段映射。",
+                "forward_modeling",
+                mode,
+                data={"needs_clarification": True, "missing_context": ["json_field_mappings"]},
+            )
+
+        candidates = candidate_logical_primary_keys(observed_columns, profile)
+        logical_keys = params.get("logical_primary_keys")
+        if not logical_keys:
+            question = "请确认 DWD 的逻辑主键；候选：" + (
+                " + ".join("+".join(c) for c in candidates)
+                if candidates
+                else "暂无可靠候选，请根据真实样本确认。"
+            )
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[{"step": "confirm_logical_primary_key", "status": "needs_context"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["logical_primary_keys"],
+                    "candidate_logical_primary_keys": candidates,
+                    "observed_columns": observed_columns,
+                    "directory_check": directory["directory_check"],
+                    "publish_gate": "not_requested",
+                },
+            )
+
+        root_result = await RootChecker().check_fields(
+            [mapping.target_name for mapping in mappings]
+        )
+        if not root_result.passed:
+            return WorkflowResult(
+                False,
+                "DWD 字段未通过线上词根校验，已阻断 DDL/任务创建。",
+                "forward_modeling",
+                mode,
+                steps=[{"step": "dmr_pub_column_check", "status": "failed"}],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "checker": ROOT_CHECKER_NAME,
+                    "root_check": root_result.model_dump(),
+                    "directory_check": directory["directory_check"],
+                    "publish_gate": "not_requested",
+                },
+                errors=[root_result.summary],
+            )
+
+        try:
+            dwd_artifacts = build_standard_material_report_artifacts(
+                dwd_table=dwd_table,
+                field_mappings=mappings_raw,
+                ods_table=MATERIAL_REPORT_ODS_TABLE,
+                template_task_id=str(
+                    params.get("template_task_id")
+                    or params.get("task_id")
+                    or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                ),
+                schedule_minute=int(params.get("schedule_minute") or 3),
+                dev_schema=dev_schema,
+                prod_schema=prod_schema,
+                granularity=str(explicit_granularity),
+                logical_primary_keys=logical_keys,
+                data_profile=profile,
+                ods_sql_directory=ods_sql_directory,
+                dwd_sql_directory=dwd_sql_directory,
+            )
+            ods_artifacts = build_standard_material_report_ods_artifacts(
+                oss_path=str(location["canonical_uri"]),
+                file_format=file_format,
+                dev_schema=dev_schema,
+                prod_schema=prod_schema,
+                ods_sql_directory=ods_sql_directory,
+            )
+        except (TypeError, ValueError) as exc:
+            return WorkflowResult(
+                False,
+                "标准 OSS ODS/DWD 产物生成失败。",
+                "forward_modeling",
+                mode,
+                errors=[str(exc)],
+            )
+
+        dwd_artifacts["validation"]["root_check"] = root_result.model_dump()
+        dwd_artifacts["validation"]["root_source"] = root_result.source
+        dwd_artifacts["validation"]["checker"] = ROOT_CHECKER_NAME
+        dwd_artifacts["validation"]["passed"] = bool(
+            root_result.passed and dwd_artifacts["validation"]["ddl_check"]["passed"]
+        )
+        if not dwd_artifacts["validation"]["passed"]:
+            return WorkflowResult(
+                False,
+                "DWD DDL 校验未通过，已阻断后续执行。",
+                "forward_modeling",
+                mode,
+                data={"standard": dwd_artifacts, "ods": ods_artifacts},
+                errors=["DDL validation failed"],
+            )
+
+        artifacts = {
+            "ods": ods_artifacts,
+            "dwd": dwd_artifacts,
+            "directory_check": directory["directory_check"],
+            "sample_profile": profile,
+        }
+        if mode == "plan":
+            return WorkflowResult(
+                True,
+                "已通过 Cookie 检查并生成 ODS/DWD 产物；计划模式不写入 DataWorks，生产变更仍需 Publish Gate。",
+                "forward_modeling",
+                mode,
+                steps=[
+                    {"step": "inspect_oss_directory", "status": "completed"},
+                    {"step": "profile_json_sample", "status": "completed"},
+                    {"step": "dmr_pub_column_check", "status": "completed"},
+                    {"step": "build_standard_ods_dwd_artifacts", "status": "completed"},
+                ],
+                artifacts=[artifacts],
+                data={
+                    "standard": "tiktok_smart_plus_material_report",
+                    "artifacts": artifacts,
+                    "publish_gate": "required_for_publish",
+                },
+            )
+
+        dev_ods = await self._create_table_cookie(
+            ods_artifacts["environment_artifacts"]["dev"]["ddl"],
+            dev_schema,
+            MATERIAL_REPORT_ODS_TABLE,
+        )
+        dev_dwd = await self._create_table_cookie(
+            dwd_artifacts["environment_artifacts"]["dev"]["ddl"], dev_schema, dwd_table
+        )
+        if dev_ods.get("status") == "failed" or dev_dwd.get("status") == "failed":
+            return WorkflowResult(
+                False,
+                "Cookie 建开发表失败。",
+                "forward_modeling",
+                mode,
+                data={"artifacts": artifacts, "dev_tables": {"ods": dev_ods, "dwd": dev_dwd}},
+                errors=[str(dev_ods.get("error") or dev_dwd.get("error"))],
+            )
+
+        pipeline = await OssImportPipeline(bff).run(
+            oss_path=str(location["canonical_uri"]),
+            target_table=MATERIAL_REPORT_ODS_TABLE,
+            file_format="json",
+            schedule_type="hour",
+            node_path_prefix=ods_sql_directory,
+            schedule_minute=int(params.get("schedule_minute") or 3),
+            publish=False,
+            ingestion_mode="raw_json_text",
+        )
+        if not pipeline.get("success"):
+            return WorkflowResult(
+                False,
+                "ODS SQL 节点创建或调度配置失败",
+                "forward_modeling",
+                mode,
+                data={
+                    "artifacts": artifacts,
+                    "dev_tables": {"ods": dev_ods, "dwd": dev_dwd},
+                    "ods_pipeline": pipeline,
+                },
+                errors=["ODS pipeline failed"],
+            )
+
+        dwd_pipeline = await self._create_standard_dwd_pipeline_cookie(
+            bff=bff,
+            dwd_artifacts=dwd_artifacts,
+            dwd_sql_directory=dwd_sql_directory,
+            dev_schema=dev_schema,
+            ods_table=MATERIAL_REPORT_ODS_TABLE,
+            dwd_table=dwd_table,
+            granularity=str(explicit_granularity),
+            schedule_minute=int(params.get("schedule_minute") or 3),
+        )
+        if not dwd_pipeline.get("success"):
+            return WorkflowResult(
+                False,
+                "DWD SQL 节点创建、调度或 ODS→DWD 依赖配置失败",
+                "forward_modeling",
+                mode,
+                data={
+                    "artifacts": artifacts,
+                    "dev_tables": {"ods": dev_ods, "dwd": dev_dwd},
+                    "ods_pipeline": pipeline,
+                    "dwd_pipeline": dwd_pipeline,
+                },
+                errors=[str(dwd_pipeline.get("error") or "DWD pipeline failed")],
+            )
+
+        result_data: dict[str, Any] = {
+            "standard": "tiktok_smart_plus_material_report",
+            "artifacts": artifacts,
+            "dev_tables": {"ods": dev_ods, "dwd": dev_dwd},
+            "prod_tables": {
+                "ods": {
+                    "status": "approval_required",
+                    "ddl": ods_artifacts["environment_artifacts"]["prod"]["ddl"],
+                },
+                "dwd": {
+                    "status": "approval_required",
+                    "ddl": dwd_artifacts["environment_artifacts"]["prod"]["ddl"],
+                },
+            },
+            "ods_pipeline": pipeline,
+            "dwd_pipeline": dwd_pipeline,
+            "schedule": dwd_artifacts["schedule"],
+            "dependency_plan": dwd_artifacts["dependency_plan"],
+            "template_task_id": dwd_artifacts["template_task_id"],
+            "checker": ROOT_CHECKER_NAME,
+            "publish_gate": "not_requested",
+        }
+        steps = [
+            {"step": "inspect_oss_directory", "status": "completed"},
+            {"step": "profile_json_sample", "status": "completed"},
+            {"step": "dmr_pub_column_check", "status": "completed"},
+            {"step": "create_dev_tables_cookie", "status": "completed"},
+            {"step": "create_ods_sql_node_cookie", "status": "completed"},
+            {"step": "configure_ods_schedule_cookie", "status": "completed"},
+            {"step": "create_dwd_sql_node_cookie", "status": "completed"},
+            {"step": "configure_dwd_schedule_cookie", "status": "completed"},
+            {"step": "configure_ods_to_dwd_dependency_cookie", "status": "completed"},
+            {"step": "create_prod_tables", "status": "approval_required"},
+            {"step": "publish_gate", "status": "skipped"},
+        ]
+        message_text = "Standard OSS -> ODS -> DWD flow completed: Cookie created ODS/DWD tables and SQL nodes in giikin_develop, configured the ODS->DWD dependency, and left production artifacts behind the Publish Gate."
+
+        if publish:
+            from dataworks_agent.runtime.publish_gate import PublishGate
+
+            gate = getattr(app_state, "_publish_gate", None) or PublishGate()
+            app_state._publish_gate = gate
+            request = await gate.interrupt_for_approval(
+                run_id=f"agent_{uuid.uuid4().hex[:12]}",
+                session_id=client_ip,
+                table_name=dwd_table,
+                change_type="create",
+                payload={"standard": "tiktok_smart_plus_material_report", "artifacts": artifacts},
+                context={"mode": mode},
+            )
+            result_data["publish_request"] = request.__dict__
+            result_data["publish_gate"] = "approval_required"
+            steps[-1]["status"] = "approval_required"
+            message_text += f" 已创建发布审批请求 {request.request_id}，审批后才能发布生产。"
+
+        return WorkflowResult(
+            True,
+            message_text,
+            "forward_modeling",
+            mode,
+            steps=steps,
+            artifacts=[artifacts],
+            data=result_data,
+        )
+
+    async def _create_standard_dwd_pipeline_cookie(
+        self,
+        *,
+        bff: Any,
+        dwd_artifacts: dict[str, Any],
+        dwd_sql_directory: str,
+        dev_schema: str,
+        ods_table: str,
+        dwd_table: str,
+        granularity: str,
+        schedule_minute: int,
+    ) -> dict[str, Any]:
+        """Create the standard DWD SQL node, schedule, and ODS dependency via Cookie/BFF."""
+        if not str(dwd_sql_directory or "").strip():
+            return {"success": False, "error": "DWD SQL 节点目录不能为空"}
+        sql = str(dwd_artifacts.get("environment_artifacts", {}).get("dev", {}).get("sql") or "")
+        if not sql:
+            return {"success": False, "error": "DWD SQL 内容不能为空"}
+
+        node_path = generate_node_path(dwd_sql_directory.strip().rstrip("/"), dwd_table)
+        node_uuid = await bff.create_node(dwd_table, node_path, language="odps-sql")
+        if not node_uuid:
+            return {
+                "success": False,
+                "error": getattr(bff, "last_error", None) or "DWD create_node failed",
+                "node_path": node_path,
+            }
+        if not await bff.update_node(node_uuid, sql):
+            return {
+                "success": False,
+                "error": getattr(bff, "last_error", None) or "DWD update_node failed",
+                "node_uuid": node_uuid,
+                "node_path": node_path,
+            }
+
+        is_hour = granularity == "hour"
+        cycle_type = "NotDaily" if is_hour else "Daily"
+        cron = generate_cron(
+            "hour" if is_hour else "day", hour=0 if is_hour else 3, minute=schedule_minute
+        )
+        parameters = DWD_SQL_PARAMETERS if is_hour else DAILY_SQL_PARAMETERS
+        upstream = f"{dev_schema}.{ods_table}"
+        dependencies = [
+            {
+                "type": "Normal",
+                "sourceType": "Manual",
+                "output": upstream,
+                "refTableName": upstream,
+            },
+            {"type": "CrossCycleDependsOnSelf"},
+        ]
+        vertex_config = {
+            "trigger": {
+                "type": "Scheduler",
+                "cron": cron,
+                "cycleType": cycle_type,
+                "startTime": "1970-01-01 00:00:00",
+                "endTime": "9999-01-01 00:00:00",
+                "timezone": "Asia/Shanghai",
+            },
+            "script": {"parameters": parameters},
+            "strategy": {"instanceMode": "Immediately"},
+            "dependencies": dependencies,
+        }
+        scheduled = await bff.update_vertex(node_uuid, vertex_config)
+        if not scheduled:
+            return {
+                "success": False,
+                "error": getattr(bff, "last_error", None) or "DWD update_vertex failed",
+                "node_uuid": node_uuid,
+                "node_path": node_path,
+                "cron": cron,
+            }
+
+        dependency_status = "inline"
+        if hasattr(bff, "_put"):
+            try:
+                dependency_response = await bff._put(
+                    "ide/addNodeDependencies",
+                    {
+                        "projectId": getattr(bff, "project_id", None),
+                        "uuid": node_uuid,
+                        "dependencies": dependencies,
+                    },
+                )
+                if dependency_response.get("code") != 200:
+                    return {
+                        "success": False,
+                        "error": getattr(bff, "last_error", None)
+                        or "DWD dependency configuration failed",
+                        "node_uuid": node_uuid,
+                        "node_path": node_path,
+                        "cron": cron,
+                        "dependencies": dependencies,
+                    }
+                dependency_status = "cookie_bff"
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "error": f"DWD dependency configuration failed: {exc}",
+                    "node_uuid": node_uuid,
+                    "node_path": node_path,
+                    "cron": cron,
+                    "dependencies": dependencies,
+                }
+
+        return {
+            "success": True,
+            "node_uuid": node_uuid,
+            "node_path": node_path,
+            "sql": sql,
+            "cron": cron,
+            "cycle_type": cycle_type,
+            "parameters": parameters,
+            "dependencies": dependencies,
+            "dependency_status": dependency_status,
+            "publish": "saved_not_deployed",
+        }
+
+    async def _create_table_cookie(
+        self, ddl: str, schema: str, target_table: str
+    ) -> dict[str, Any]:
+        """Create one MaxCompute table through the Cookie/BFF IDA SQL channel."""
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            return {"status": "failed", "error": "Cookie/BFF 不可用"}
+        from dataworks_agent.services.ods_di.di_config import (
+            inject_schema_prefix_in_ddl,
+            strip_leading_drop_table,
+        )
+
+        try:
+            existing = await bff.get_creation_ddl(f"odps.{schema}.{target_table}")
+            if existing:
+                return {
+                    "status": "skipped",
+                    "reason": "table_exists",
+                    "schema": schema,
+                    "table": target_table,
+                }
+            ddl_exec = strip_leading_drop_table(inject_schema_prefix_in_ddl(ddl, schema))
+            job_code = await bff.execute_sql_ida(ddl_exec)
+            if not job_code:
+                return {
+                    "status": "failed",
+                    "error": getattr(bff, "last_error", None) or "execute_sql_ida failed",
+                }
+            created = await bff.wait_ida_job(job_code, max_retry=36, interval=5)
+            if not created:
+                return {
+                    "status": "failed",
+                    "error": getattr(bff, "last_error", None) or "wait_ida_job failed",
+                    "job_code": job_code,
+                }
+            return {
+                "status": "created",
+                "schema": schema,
+                "table": target_table,
+                "job_code": job_code,
+            }
+        except Exception as exc:
+            return {"status": "failed", "error": str(exc), "schema": schema, "table": target_table}
+
     async def _forward_model(
         self,
         message: str,
@@ -1848,6 +2567,15 @@ class AgentWorkflowService:
             if layer in by_layer:
                 assert_safe_table_name(table)
                 by_layer[layer].append(table)
+        # Explicit ODS/DWD names are authoritative. In particular, the standard
+        # TikTok material-report ODS must never be replaced by a guessed OSS name.
+        explicit_ods = params.get("ods_table")
+        explicit_dwd = params.get("dwd_table") or params.get("table_name")
+        for layer, table_name in (("ods", explicit_ods), ("dwd", explicit_dwd)):
+            if isinstance(table_name, str) and table_name and table_name not in by_layer[layer]:
+                assert_safe_table_name(table_name)
+                by_layer[layer].append(table_name)
+                tables.append(table_name)
         source_table = params.get("source_table") or self._extractor.extract_source_table(message)
         datasource = params.get("datasource_name") or self._extractor.extract_datasource_name(
             message
@@ -1889,6 +2617,22 @@ class AgentWorkflowService:
                     "publish_gate": "not_requested",
                 },
             )
+        if source_type == "oss":
+            from dataworks_agent.modeling.standard_oss import is_standard_material_report
+
+            standard_params = dict(params)
+            standard_params.setdefault(
+                "ods_table", explicit_ods or (by_layer["ods"][0] if by_layer["ods"] else "")
+            )
+            if is_standard_material_report(standard_params):
+                return await self._execute_standard_oss_flow(
+                    message=message,
+                    params=standard_params,
+                    mode=mode,
+                    initialize_data=initialize_data,
+                    publish=publish,
+                    client_ip=client_ip,
+                )
         if source_type == "oss" and not source_table:
             source_table = datasource or self._oss_source_name(str(oss_path))
         generated_tables: dict[str, str] = {}
@@ -2016,7 +2760,9 @@ class AgentWorkflowService:
                     )
                     return WorkflowResult(
                         True,
-                        str(ods_result.get("message") or "OSS 源已识别，但字段探测需要补充上下文。"),
+                        str(
+                            ods_result.get("message") or "OSS 源已识别，但字段探测需要补充上下文。"
+                        ),
                         "forward_modeling",
                         mode,
                         steps=execution_steps,
@@ -2099,9 +2845,7 @@ class AgentWorkflowService:
             "generated_tables": generated_tables,
         }
         if source_type == "oss" and executed:
-            result_data["source_discovery"] = executed[0]["result"].get(
-                "schema_discovery", {}
-            )
+            result_data["source_discovery"] = executed[0]["result"].get("schema_discovery", {})
         message_text = (
             "开发环境全链路已完成：表已创建，节点与调度已保存；"
             "初始化按请求执行，正式发布仍等待 Publish Gate。"
@@ -2353,9 +3097,7 @@ class AgentWorkflowService:
             for column in columns
         )
         partitions = (
-            "`dt` STRING, `ht` STRING"
-            if granularity in {"hour", "hourly"}
-            else "`dt` STRING"
+            "`dt` STRING, `ht` STRING" if granularity in {"hour", "hourly"} else "`dt` STRING"
         )
         ddl = (
             f"CREATE TABLE IF NOT EXISTS {settings.dataworks_dev_schema}.{target_table} (\n"
@@ -2473,8 +3215,8 @@ class AgentWorkflowService:
                 }
             canonical_path = str(location["canonical_uri"])
             columns = params.get("columns") or self._extract_inline_columns(message)
-            requested_format = (
-                params.get("file_format") or self._extractor.extract_file_format(message)
+            requested_format = params.get("file_format") or self._extractor.extract_file_format(
+                message
             )
             file_format = infer_file_format(canonical_path, str(requested_format or ""))
             if columns and not file_format:

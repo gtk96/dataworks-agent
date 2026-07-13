@@ -47,7 +47,11 @@ class RootChecker:
 
     def _check_local_fallback(self, fields: list[str]) -> RootCheckResult:
         """基于线上同步缓存与内置词根字典校验各段。"""
-        from dataworks_agent.standards.loader import valid_root_tokens, validate_field_roots
+        from dataworks_agent.standards.loader import (
+            valid_root_tokens,
+            validate_field_roots,
+            word_root_source,
+        )
 
         roots = valid_root_tokens()
         field_results = []
@@ -63,12 +67,18 @@ class RootChecker:
             )
 
         all_valid = all(f.valid for f in field_results)
+        source = "online" if word_root_source() == "online" else "local"
+        source_label = (
+            "online synced root dictionary"
+            if source == "online"
+            else "local built-in root dictionary"
+        )
         return RootCheckResult(
             passed=all_valid,
             field_results=field_results,
             summary=(
-                f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} 个字段不合规"
-                "（本地缓存词根字典）"
+                f"{sum(1 for f in field_results if not f.valid)}/{len(fields)} invalid fields "
+                f"({source_label})"
             ),
-            source="local",
+            source=source,
         )

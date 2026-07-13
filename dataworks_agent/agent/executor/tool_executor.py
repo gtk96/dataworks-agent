@@ -106,6 +106,13 @@ class ToolExecutor:
         table_name = params.get("dwd_table") or params.get("table_name")
         if table_name:
             return str(table_name)
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_DWD_TABLE,
+            is_standard_material_report,
+        )
+
+        if is_standard_material_report(params):
+            return MATERIAL_REPORT_DWD_TABLE
         ods_table = params.get("ods_table") or params.get("source_table")
         if isinstance(ods_table, str) and ods_table.lower().startswith("ods_"):
             base = ods_table[4:]
@@ -119,6 +126,13 @@ class ToolExecutor:
         ods_table = params.get("ods_table")
         if ods_table:
             return str(ods_table)
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_ODS_TABLE,
+            is_standard_material_report,
+        )
+
+        if is_standard_material_report(params):
+            return MATERIAL_REPORT_ODS_TABLE
         source_table = params.get("source_table") or params.get("oss_path")
         if isinstance(source_table, str) and source_table.lower().startswith("ods_"):
             return source_table
@@ -380,11 +394,23 @@ class ToolExecutor:
 
     def _execute_analyze_requirement(self, params: dict[str, Any]) -> ToolResult:
         goal = params.get("goal") or ""
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_DWD_TABLE,
+            MATERIAL_REPORT_ODS_TABLE,
+            is_standard_material_report,
+        )
+
+        standard = is_standard_material_report(params)
+        table_name = params.get("table_name") or params.get("dwd_table")
+        source_table = params.get("source_table")
+        if standard:
+            table_name = table_name or MATERIAL_REPORT_DWD_TABLE
+            source_table = source_table or MATERIAL_REPORT_ODS_TABLE
         missing: list[str] = []
-        if not params.get("table_name"):
+        if not table_name:
             missing.append("target table")
-        if not params.get("source_table") and any(
-            word in goal.lower() for word in ("建模", "model", "dwd", "dws", "dim")
+        if not source_table and any(
+            word in goal.lower() for word in ("\u5efa\u6a21", "model", "dwd", "dws", "dim")
         ):
             missing.append("source table")
         return ToolResult(
@@ -394,8 +420,9 @@ class ToolExecutor:
                 "mode": "analysis",
                 "summary": "Analyze the DataWorks request and identify missing context.",
                 "goal": goal,
-                "table_name": params.get("table_name"),
-                "source_table": params.get("source_table"),
+                "table_name": table_name,
+                "source_table": source_table,
+                "standard": "tiktok_smart_plus_material_report" if standard else None,
                 "layer": params.get("layer"),
                 "missing_context": missing,
             },
@@ -570,6 +597,9 @@ class ToolExecutor:
         )
 
     def _execute_analyze_ods_dwd_requirement(self, params: dict[str, Any]) -> ToolResult:
+        from dataworks_agent.modeling.standard_oss import is_standard_material_report
+
+        standard = is_standard_material_report(params)
         ods_table = self._infer_ods_table(params)
         dwd_table = self._infer_dwd_table(params)
         source_type = self._normalize_source_type(params.get("source_type"))
@@ -584,7 +614,7 @@ class ToolExecutor:
             and not str(source_table or "").lower().startswith("ods_")
         ):
             missing.append("source_type")
-        if not dwd_table:
+        if not dwd_table and not standard:
             missing.append("dwd_table")
         if source_type and source_type not in {
             "mysql",
@@ -619,6 +649,7 @@ class ToolExecutor:
                 "ods_table": ods_table,
                 "dwd_table": dwd_table,
                 "table_name": dwd_table,
+                "standard": "tiktok_smart_plus_material_report" if standard else None,
                 "granularity": granularity,
                 "schedule_cycle": params.get("schedule_cycle")
                 or ("hourly" if granularity == "hour" else "daily"),
@@ -721,6 +752,135 @@ class ToolExecutor:
         )
 
     def _execute_preview_dwd_artifacts(self, params: dict[str, Any]) -> ToolResult:
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_DWD_TABLE,
+            MATERIAL_REPORT_ODS_TABLE,
+            MATERIAL_REPORT_TEMPLATE_TASK_ID,
+            STANDARD_DEV_SCHEMA,
+            build_standard_material_report_artifacts,
+            is_standard_material_report,
+        )
+
+        if is_standard_material_report(params):
+            ods_table = str(
+                params.get("ods_table") or params.get("source_table") or MATERIAL_REPORT_ODS_TABLE
+            ).strip()
+            dwd_table = str(
+                params.get("dwd_table") or params.get("table_name") or MATERIAL_REPORT_DWD_TABLE
+            ).strip()
+            missing: list[str] = []
+            if ods_table != MATERIAL_REPORT_ODS_TABLE:
+                missing.append("ods_table")
+            mappings = (
+                params.get("json_field_mappings")
+                or params.get("field_mappings")
+                or params.get("json_fields")
+            )
+            dev_schema = str(
+                params.get("dev_schema") or params.get("mc_project") or STANDARD_DEV_SCHEMA
+            ).strip()
+            if not mappings:
+                missing.append("json_field_mappings")
+            if missing:
+                return ToolResult(
+                    tool="preview_dwd_artifacts",
+                    success=True,
+                    data={
+                        "mode": "needs_context",
+                        "summary": "Standard OSS JSON DWD requires the standard ODS and explicit JSON mappings.",
+                        "artifact_type": "dwd_preview",
+                        "standard": "tiktok_smart_plus_material_report",
+                        "ods_table": ods_table or MATERIAL_REPORT_ODS_TABLE,
+                        "dwd_table": dwd_table or None,
+                        "template_task_id": str(
+                            params.get("template_task_id")
+                            or params.get("task_id")
+                            or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                        ),
+                        "missing_context": missing,
+                        "dwd_preview_capability": True,
+                    },
+                    warnings=[
+                        "Provide the real DWD table and JSON key-to-column mappings; task 10002152501 supplies schedule structure only."
+                    ],
+                )
+            try:
+                artifacts = build_standard_material_report_artifacts(
+                    dwd_table=dwd_table,
+                    field_mappings=mappings,
+                    ods_table=ods_table,
+                    template_task_id=str(
+                        params.get("template_task_id")
+                        or params.get("task_id")
+                        or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                    ),
+                    schedule_minute=int(params.get("schedule_minute") or 3),
+                    dev_schema=dev_schema,
+                    prod_schema=str(params.get("prod_schema") or "giikin"),
+                    granularity=str(params.get("granularity") or "hour"),
+                    logical_primary_keys=params.get("logical_primary_keys"),
+                    data_profile=params.get("data_profile"),
+                    ods_sql_directory=params.get("ods_sql_directory"),
+                    dwd_sql_directory=params.get("dwd_sql_directory"),
+                )
+            except (TypeError, ValueError) as exc:
+                return ToolResult(
+                    tool="preview_dwd_artifacts",
+                    success=False,
+                    error="standard_oss_json_validation_failed",
+                    data={
+                        "mode": "blocked",
+                        "artifact_type": "dwd_preview",
+                        "standard": "tiktok_smart_plus_material_report",
+                        "ods_table": ods_table,
+                        "dwd_table": dwd_table,
+                        "detail": str(exc),
+                    },
+                )
+            validation = artifacts["validation"]
+            if not validation["passed"]:
+                return ToolResult(
+                    tool="preview_dwd_artifacts",
+                    success=False,
+                    error="standard_oss_json_validation_failed",
+                    data={
+                        "mode": "blocked",
+                        "artifact_type": "dwd_preview",
+                        "standard": artifacts["standard"],
+                        "dwd_preview": artifacts,
+                        "ods_table": ods_table,
+                        "dwd_table": dwd_table,
+                        "ddl": artifacts["ddl"],
+                        "sql": artifacts["sql"],
+                        "schedule": artifacts["schedule"],
+                        "validation": validation,
+                        "requires_approval": True,
+                    },
+                    warnings=["DDL or JSON root validation failed; do not publish this DWD."],
+                )
+            return ToolResult(
+                tool="preview_dwd_artifacts",
+                success=True,
+                data={
+                    "mode": "draft",
+                    "summary": "Draft DWD from the standard ODS JSON_TUPLE pattern.",
+                    "artifact_type": "dwd_preview",
+                    "standard": artifacts["standard"],
+                    "dwd_preview": artifacts,
+                    "table_name": dwd_table,
+                    "source_table": ods_table,
+                    "ddl": artifacts["ddl"],
+                    "sql": artifacts["sql"],
+                    "schedule": artifacts["schedule"],
+                    "dependency_plan": artifacts["dependency_plan"],
+                    "validation": validation,
+                    "requires_approval": True,
+                },
+                warnings=[
+                    "Draft only; online create/update and publish require Dev access and the Publish Gate."
+                ],
+            )
+
         dwd_table = self._infer_dwd_table(params)
         ods_table = self._infer_ods_table(params)
         if not dwd_table or not ods_table:
@@ -851,6 +1011,99 @@ class ToolExecutor:
         )
 
     def _execute_plan_ods_dwd_dependencies(self, params: dict[str, Any]) -> ToolResult:
+        from dataworks_agent.modeling.standard_oss import (
+            MATERIAL_REPORT_DWD_TABLE,
+            MATERIAL_REPORT_ODS_TABLE,
+            MATERIAL_REPORT_TEMPLATE_CRON,
+            MATERIAL_REPORT_TEMPLATE_NODE,
+            MATERIAL_REPORT_TEMPLATE_PARENT_REFERENCES,
+            MATERIAL_REPORT_TEMPLATE_TASK_ID,
+            STANDARD_DEV_SCHEMA,
+            is_standard_material_report,
+        )
+
+        if is_standard_material_report(params):
+            ods_table = str(
+                params.get("ods_table") or params.get("source_table") or MATERIAL_REPORT_ODS_TABLE
+            ).strip()
+            dwd_table = str(
+                params.get("dwd_table") or params.get("table_name") or MATERIAL_REPORT_DWD_TABLE
+            ).strip()
+            missing = []
+            if ods_table != MATERIAL_REPORT_ODS_TABLE:
+                missing.append("ods_table")
+            if missing:
+                return ToolResult(
+                    tool="plan_ods_dwd_dependencies",
+                    success=True,
+                    data={
+                        "mode": "needs_context",
+                        "artifact_type": "dependency_plan",
+                        "standard": "tiktok_smart_plus_material_report",
+                        "missing_context": missing,
+                        "template_task_id": str(
+                            params.get("template_task_id")
+                            or params.get("task_id")
+                            or MATERIAL_REPORT_TEMPLATE_TASK_ID
+                        ),
+                    },
+                )
+            template_task_id = str(
+                params.get("template_task_id")
+                or params.get("task_id")
+                or MATERIAL_REPORT_TEMPLATE_TASK_ID
+            )
+            dev_schema = str(
+                params.get("dev_schema") or params.get("mc_project") or STANDARD_DEV_SCHEMA
+            ).strip()
+            from dataworks_agent.schemas import assert_safe_table_name
+
+            assert_safe_table_name(dev_schema)
+            dependency_plan = {
+                "mode": "dry_run_plan",
+                "dev_schema": dev_schema,
+                "upstream_refs": [f"{dev_schema}.{ods_table}"],
+                "target_output": f"{dev_schema}.{dwd_table}",
+                "flow_depends": [
+                    {
+                        "type": "Normal",
+                        "sourceType": "Manual",
+                        "output": f"{dev_schema}.{ods_table}",
+                        "refTableName": f"{dev_schema}.{ods_table}",
+                    }
+                ],
+                "self_dependency": {"type": "CrossCycleDependsOnSelf"},
+                "schedule": {
+                    "cycle": "hourly",
+                    "cron": MATERIAL_REPORT_TEMPLATE_CRON,
+                    "minute": int(params.get("schedule_minute") or 3),
+                    "parameters": ["gmtdate", "hour_last1h"],
+                },
+                "template_task_id": template_task_id,
+                "template_node": MATERIAL_REPORT_TEMPLATE_NODE,
+                "template_parent_references": list(MATERIAL_REPORT_TEMPLATE_PARENT_REFERENCES),
+                "template_parent_references_are_reference_only": True,
+                "publish_gate": "required",
+            }
+            return ToolResult(
+                tool="plan_ods_dwd_dependencies",
+                success=True,
+                data={
+                    "mode": "plan",
+                    "summary": "Reuse task 10002152501 schedule/dependency structure; keep template business parents reference-only.",
+                    "artifact_type": "dependency_plan",
+                    "standard": "tiktok_smart_plus_material_report",
+                    "dependency_plan": dependency_plan,
+                    "lineage": {
+                        "upstream": ods_table,
+                        "downstream": dwd_table,
+                        "status": "planned",
+                    },
+                    "schedule": dependency_plan["schedule"],
+                    "requires_approval": True,
+                },
+            )
+
         ods_table = self._infer_ods_table(params)
         dwd_table = self._infer_dwd_table(params)
         granularity = self._normalize_granularity(params.get("granularity"))
