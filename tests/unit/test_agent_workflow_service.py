@@ -1377,3 +1377,74 @@ async def test_query_success_allows_multirow_certified_trend():
     assert "metric result is not unique" not in result.errors
     assert "2026-07-11" in result.message
     assert result.steps[-1]["step"] == "closed_loop_verification"
+
+
+@pytest.mark.asyncio
+async def test_oss_modeling_auto_mode_requests_real_source_context() -> None:
+    service = AgentWorkflowService()
+
+    result = await service.execute(
+        message="oss 数据源 tiktok_smart_plus_material_report 建模处理",
+        action="agent_workflow",
+        params={
+            "source_type": "oss",
+            "datasource_name": "tiktok_smart_plus_material_report",
+        },
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.mode == "dev_execute"
+    assert result.data["needs_clarification"] is True
+    assert result.data["missing_context"] == ["oss_path", "file_format", "columns"]
+    assert "oss://" in result.data["clarifying_questions"][0]
+    assert result.steps == [
+        {
+            "step": "confirm_oss_path_format_and_schema",
+            "status": "needs_context",
+            "phase": "understand",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_oss_modeling_auto_mode_executes_full_dev_chain_when_context_is_complete() -> None:
+    service = AgentWorkflowService()
+    app_state._maxcompute_client = object()
+    app_state._node_client = object()
+    service._official_datasource_preflight = AsyncMock(return_value={"status": "completed"})
+    service._execute_ods = AsyncMock(return_value={"success": True})
+    service._deploy_warehouse_layer = AsyncMock(
+        side_effect=lambda layer, source, target, granularity, minute: {
+            "success": True,
+            "ddl": f"create {target}",
+            "sql": f"insert {target}",
+            "node_uuid": f"node-{target}",
+        }
+    )
+
+    result = await service.execute(
+        message=(
+            "oss 数据源 tiktok_smart_plus_material_report 建模处理 "
+            "oss://bucket/tiktok/material.csv，CSV，"
+            "字段 material_id bigint, spend decimal(18,2)"
+        ),
+        action="agent_workflow",
+        params={
+            "source_type": "oss",
+            "datasource_name": "tiktok_smart_plus_material_report",
+            "oss_path": "oss://bucket/tiktok/material.csv",
+            "columns": [
+                {"name": "material_id", "type": "bigint"},
+                {"name": "spend", "type": "decimal(18,2)"},
+            ],
+        },
+        execution_mode="auto",
+    )
+
+    assert result.success is True
+    assert result.mode == "dev_execute"
+    assert set(result.data["generated_tables"]) == {"ods", "dwd", "dim", "dws"}
+    assert [item["layer"] for item in result.data["executed"]] == ["ODS", "DWD", "DIM", "DWS"]
+    service._execute_ods.assert_awaited_once()
+    assert service._deploy_warehouse_layer.await_count == 3

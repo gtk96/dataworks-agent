@@ -44,6 +44,7 @@ from dataworks_agent.state import app_state
 logger = logging.getLogger(__name__)
 
 ExecutionMode = Literal["plan", "dev_execute"]
+_MODELING_ACTIONS = {"agent_workflow", "ods_dwd_modeling", "forward_modeling"}
 _FINAL_STATUSES = {"completed", "failed", "cancelled"}
 _WRITE_WORDS = ("创建", "新建", "建好", "执行", "初始化", "生成任务", "落地", "部署开发")
 
@@ -112,6 +113,8 @@ class AgentWorkflowService:
         if any(word in message for word in ("先规划", "只规划", "不要执行")):
             return "plan"
         if action in {"ask_data", "reverse_modeling", "diagnose_issue", "cookie_manage"}:
+            return "dev_execute"
+        if action in _MODELING_ACTIONS:
             return "dev_execute"
         return "dev_execute" if any(word in message for word in _WRITE_WORDS) else "plan"
 
@@ -1845,9 +1848,42 @@ class AgentWorkflowService:
         source_type = (
             params.get("source_type") or self._extractor.extract_source_type(message) or "mysql"
         ).lower()
+        oss_path = params.get("oss_path") or self._extractor.extract_oss_path(message)
         granularity = (
             params.get("granularity") or self._extractor.extract_granularity(message) or "day"
         )
+        if source_type == "oss" and not oss_path:
+            identifier = str(datasource or "").strip()
+            subject = f" `{identifier}`" if identifier else ""
+            question = (
+                f"已识别为 OSS 建模，但{subject} 还不能定位到 OSS 对象。"
+                "请补充完整 oss:// 路径、文件格式和字段定义，"
+                "例如：oss://bucket/path/file.csv，CSV，字段 material_id bigint, spend decimal(18,2)。"
+            )
+            return WorkflowResult(
+                True,
+                question,
+                "forward_modeling",
+                mode,
+                steps=[
+                    {
+                        "step": "confirm_oss_path_format_and_schema",
+                        "status": "needs_context",
+                        "phase": "understand",
+                    }
+                ],
+                data={
+                    "capabilities": self.capability_status(),
+                    "source_type": source_type,
+                    "needs_clarification": True,
+                    "clarifying_questions": [question],
+                    "missing_context": ["oss_path", "file_format", "columns"],
+                    "generated_tables": {},
+                    "publish_gate": "not_requested",
+                },
+            )
+        if source_type == "oss" and not source_table:
+            source_table = datasource or self._oss_source_name(str(oss_path))
         generated_tables: dict[str, str] = {}
         if not any(by_layer.values()) and source_table and self._requests_full_chain(message):
             generated_tables = self._derive_forward_table_names(
@@ -2056,9 +2092,18 @@ class AgentWorkflowService:
     @staticmethod
     def _requests_full_chain(message: str) -> bool:
         lowered = message.lower()
-        return "全链路" in message or all(
-            layer in lowered for layer in ("ods", "dwd", "dim", "dws")
+        return (
+            "全链路" in message
+            or "建模处理" in message
+            or "正向建模" in message
+            or all(layer in lowered for layer in ("ods", "dwd", "dim", "dws"))
         )
+
+    @staticmethod
+    def _oss_source_name(oss_path: str) -> str:
+        path = oss_path.split("?", 1)[0].rstrip("/")
+        name = path.rsplit("/", 1)[-1] or "oss_object"
+        return name.rsplit(".", 1)[0] or "oss_object"
 
     @staticmethod
     def _derive_forward_table_names(

@@ -222,3 +222,36 @@ async def test_chat_agent_keeps_structured_business_query_for_followups():
         agent._workflow_service.execute.await_args_list[1].kwargs["params"]["business_query"]
         == second_frame
     )
+
+
+@pytest.mark.asyncio
+async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() -> None:
+    agent = ChatAgent()
+    conversation_id = "oss-followup"
+    first = await agent.chat(
+        "oss 数据源 tiktok_smart_plus_material_report 建模处理",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+    assert first.data["agent_mode"] == "needs_context"
+
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="continued",
+            workflow_type="forward_modeling",
+            mode="dev_execute",
+        )
+    )
+    followup = "oss://bucket/tiktok/material.csv，CSV，字段 material_id bigint"
+    second = await agent.chat(
+        followup,
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+
+    assert second.success is True
+    sent_message = agent._workflow_service.execute.await_args.kwargs["message"]
+    assert "tiktok_smart_plus_material_report" in sent_message
+    assert followup in sent_message
+    assert conversation_id not in agent._workflow_frames

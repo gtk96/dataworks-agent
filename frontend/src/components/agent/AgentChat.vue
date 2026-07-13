@@ -177,7 +177,7 @@
 
           <div v-if="clarifyingQuestions.length" class="question-card">
             <strong>还需要你确认</strong>
-            <button v-for="question in clarifyingQuestions" :key="question" type="button" @click="appendQuestion(question)">
+            <button v-for="question in clarifyingQuestions" :key="question" type="button" @click="prepareClarification(question)">
               {{ question }}<el-icon><ArrowRight /></el-icon>
             </button>
           </div>
@@ -191,7 +191,7 @@
             v-model="input"
             rows="1"
             :disabled="loading"
-            placeholder="给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化"
+            :placeholder="composerPlaceholder"
             @focus="inputFocused = true"
             @blur="inputFocused = false"
             @keydown.enter.exact.prevent="sendMessage"
@@ -294,6 +294,7 @@ interface AgentPayload {
 
 const input = ref('')
 const inputFocused = ref(false)
+const activeClarifyingQuestion = ref('')
 const loading = ref(false)
 const executionMode = ref<AgentExecutionMode>('auto')
 const initializeData = ref(true)
@@ -344,6 +345,7 @@ const connectionText = computed(() => isRealtime.value ? '实时连接' : 'HTTP 
 const modeDescription = computed(() => modeDescriptions[executionMode.value])
 const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? lastPayload.value?.data?.steps ?? [])
 const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_questions ?? [])
+const composerPlaceholder = computed(() => activeClarifyingQuestion.value || '给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化')
 const nextActions = computed(() => lastPayload.value?.data?.next_actions ?? [])
 const responseErrors = computed(() => {
   const errors = lastPayload.value?.data?.errors ?? []
@@ -447,6 +449,7 @@ function resetConversation() {
   lastPayload.value = null
   currentStatus.value = null
   input.value = ''
+  activeClarifyingQuestion.value = ''
 }
 async function loadCapabilities() {
   try {
@@ -492,13 +495,18 @@ async function sendMessage() {
 function handleAgentResponse(payload: AgentPayload) {
   lastPayload.value = payload
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
+  activeClarifyingQuestion.value = payload.data?.clarifying_questions?.[0] ?? ''
   messages.value.push({ id: idempotencyKey(), text: payload.message, isUser: false, timestamp: new Date() })
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)
 }
 function selectPrompt(text: string) { input.value = text; nextTick(() => composerInput.value?.focus()) }
-function appendQuestion(question: string) { input.value = `${question}：`; nextTick(() => composerInput.value?.focus()) }
+function prepareClarification(question: string) {
+  activeClarifyingQuestion.value = question
+  input.value = ''
+  nextTick(() => composerInput.value?.focus())
+}
 function scrollToBottom() { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight }
 function stepStatus(step: PlanStep, index: number) { return agentStepMarker(step, index) }
 function phaseLabel(phase?: string) { return ({ understand: '理解目标', inspect: '检查环境', plan: '生成计划', design: '设计模型', orchestrate: '编排任务', guardrail: '安全检查', execute: '开发执行' }[phase ?? ''] ?? '执行步骤') }
