@@ -93,3 +93,34 @@ def _seed_semantic_defs():
                 )
             )
             db.commit()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _seed_word_root_cache():
+    """CI 上 SQLite 是空库；预置 word_root_cache 让 word_root_source() 返 'online'。
+
+    本地 data/dw_modeling.db 可能已有同步数据（历史遗留），if-not-exists 守护；
+    seed 词条覆盖测试用例 (test_standard_material_report_*) 的目标字段，
+    让根因校验走 'online' 分支。
+    """
+    from dataworks_agent.db.database import SessionLocal
+    from dataworks_agent.db.models import WordRootCacheModel
+
+    seed_tokens = [
+        "material",
+        "id",
+        "name",
+        "spend",
+        "amt",
+        "order",
+        "count",
+        "amount",
+    ]
+    with SessionLocal() as db:
+        for token in seed_tokens:
+            exists = (
+                db.query(WordRootCacheModel).filter(WordRootCacheModel.column_name == token).first()
+            )
+            if not exists:
+                db.add(WordRootCacheModel(column_name=token, column_desc=token, is_digit=0))
+        db.commit()
