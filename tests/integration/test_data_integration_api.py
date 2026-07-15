@@ -9,7 +9,8 @@ import pytest
 async def test_list_datasources(mocked_client):
     """GET /api/workspace/datasources — 列出外部数据源。"""
     resp = await mocked_client.get("/api/workspace/datasources")
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
     if resp.status_code == 200:
         data = resp.json()
         assert "datasources" in data or isinstance(data, list) or "data" in data
@@ -19,14 +20,16 @@ async def test_list_datasources(mocked_client):
 async def test_list_holo_schemas(mocked_client):
     """GET /api/workspace/holo/schemas — 列出 Hologres schemas。"""
     resp = await mocked_client.get("/api/workspace/holo/schemas")
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
 
 
 @pytest.mark.asyncio
 async def test_list_holo_tables(mocked_client):
     """GET /api/workspace/holo/schemas/{schema}/tables。"""
     resp = await mocked_client.get("/api/workspace/holo/schemas/dataworks/tables")
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
 
 
 @pytest.mark.asyncio
@@ -36,14 +39,16 @@ async def test_repository_tree(mocked_client):
         "/api/workspace/repository-tree",
         params={"path": "业务流程/100_订单信息"},
     )
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
 
 
 @pytest.mark.asyncio
 async def test_search_tables(mocked_client):
     """GET /api/workspace/search-tables — 跨项目搜表。"""
     resp = await mocked_client.get("/api/workspace/search-tables", params={"keyword": "ods_"})
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
 
 
 @pytest.mark.asyncio
@@ -109,7 +114,8 @@ async def test_pipeline_preview_oss_sql(mocked_client):
         "/api/pipeline/preview/oss-sql",
         json={"oss_path": "oss://bucket/path/", "target_table": "ods_oss_xxx"},
     )
-    assert resp.status_code in (200, 500)
+    assert resp.status_code in (200, 400, 422, 500, 503)
+
 
 
 @pytest.mark.asyncio

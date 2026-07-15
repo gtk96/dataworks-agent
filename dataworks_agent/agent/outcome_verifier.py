@@ -194,13 +194,70 @@ class WorkflowOutcomeVerifier:
                 evidence={"failed_steps": failed_steps},
             )
 
-        executed = (result.data or {}).get("executed") or []
+        data = result.data or {}
+        executed = data.get("executed") or []
         failed_layers = [
             item.get("layer")
             for item in executed
             if not isinstance(item.get("result"), dict) or not item["result"].get("success")
         ]
-        publish_gate = (result.data or {}).get("publish_gate")
+        publish_gate = data.get("publish_gate")
+
+        # The standard OSS flow has a richer contract than the generic
+        # layer-by-layer flow: it returns separate ODS/DWD pipelines and
+        # production DDL artifacts rather than an ``executed`` list. Treat
+        # the production approval boundary as a valid terminal state; the
+        # Publish Gate must remain in place and production must not be
+        # published implicitly.
+        if data.get("standard") == "tiktok_smart_plus_material_report":
+            standard_steps = {
+                str(step.get("step")): str(step.get("status")) for step in result.steps
+            }
+            required_steps = (
+                "inspect_oss_directory",
+                "profile_json_sample",
+                "dmr_pub_column_check",
+                "create_dev_tables_cookie",
+                "create_ods_sql_node_cookie",
+                "configure_ods_schedule_cookie",
+                "create_dwd_sql_node_cookie",
+                "configure_dwd_schedule_cookie",
+                "configure_ods_to_dwd_dependency_cookie",
+            )
+            failed_standard_steps = [
+                step for step in required_steps if standard_steps.get(step) != "completed"
+            ]
+            ods_pipeline = data.get("ods_pipeline") or {}
+            dwd_pipeline = data.get("dwd_pipeline") or {}
+            prod_tables = data.get("prod_tables") or {}
+            prod_statuses = {
+                str((prod_tables.get(layer) or {}).get("status"))
+                for layer in ("ods", "dwd")
+            }
+            standard_publish_ok = (
+                standard_steps.get("create_prod_tables") == "approval_required"
+                and standard_steps.get("publish_gate") in {"skipped", "approval_required"}
+                and prod_statuses == {"approval_required"}
+                and ods_pipeline.get("success") is True
+                and dwd_pipeline.get("success") is True
+                and bool(data.get("dev_tables"))
+                and not failed_standard_steps
+                and (not publish_requested or publish_gate == "approval_required")
+            )
+            if result.success and standard_publish_ok and not failed_steps:
+                return LoopDecision(
+                    passed=True,
+                    score=1.0,
+                    summary="Standard OSS development artifacts verified; production remains behind Publish Gate.",
+                    evidence={
+                        "standard": data.get("standard"),
+                        "ods_pipeline": ods_pipeline.get("success"),
+                        "dwd_pipeline": dwd_pipeline.get("success"),
+                        "production_status": sorted(prod_statuses),
+                        "publish_gate": publish_gate,
+                    },
+                )
+
         publish_ok = not publish_requested or publish_gate == "approval_required"
         passed = bool(
             result.success and executed and not failed_layers and not failed_steps and publish_ok

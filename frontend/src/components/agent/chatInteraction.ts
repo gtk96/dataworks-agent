@@ -1,4 +1,5 @@
-﻿export type AgentExecutionMode = 'auto' | 'plan' | 'dev_execute'
+export type AgentExecutionMode = 'auto' | 'plan' | 'dev_execute'
+export type AgentContextUpdates = Record<string, unknown>
 
 export interface AgentChatRequest {
   message: string
@@ -6,6 +7,7 @@ export interface AgentChatRequest {
   initialize_data: boolean
   publish: boolean
   conversation_id?: string
+  context_updates?: AgentContextUpdates
 }
 
 export function buildAgentChatRequest(
@@ -14,6 +16,7 @@ export function buildAgentChatRequest(
   initializeData: boolean,
   publish: boolean,
   conversationId?: string,
+  contextUpdates?: AgentContextUpdates,
 ): AgentChatRequest {
   return {
     message: message.trim(),
@@ -21,6 +24,7 @@ export function buildAgentChatRequest(
     initialize_data: initializeData,
     publish,
     ...(conversationId ? { conversation_id: conversationId } : {}),
+    ...(contextUpdates ? { context_updates: contextUpdates } : {}),
   }
 }
 

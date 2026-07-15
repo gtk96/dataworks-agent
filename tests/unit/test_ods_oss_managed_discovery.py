@@ -54,12 +54,17 @@ async def test_managed_discovery_uses_exact_datasource_table_and_location() -> N
             "object_key": "ads/data/report",
             "is_prefix": True,
             "canonical_uri": "oss://example-data-bucket/ads/data/report/",
+            "location_uri": "oss://oss-cn-shenzhen-internal.aliyuncs.com/example-data-bucket/ads/data/report/",
         },
         "datasource_name": "managed_oss",
         "metadata_source": "registered_external_table",
         "file_format": "json",
         "record_count": 0,
         "columns": [{"name": "json_data", "type": "STRING", "comment": ""}],
+        "partition_columns": [],
+        "table_name": "report",
+        "project": "giikin_develop",
+        "entity_guid": "odps.dev.report",
         "ingestion_mode": "raw_json_text",
     }
     bff.search_tables.assert_awaited_once_with("report", page_size=50)
@@ -116,3 +121,59 @@ async def test_both_channels_fail_return_safe_actionable_result(
     assert "AccessDenied" not in result["error"]
     assert "connectionProperties" not in result
     assert "sample_content" not in result
+
+
+@pytest.mark.asyncio
+async def test_raw_json_sample_uses_cookie_bff_and_not_local_oss_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bff = FakeBff()
+    bff.search_tables.return_value = [
+        {"table_name": "report", "project": "giikin_develop", "entity_guid": "odps.dev.report"}
+    ]
+    bff.execute_sql = AsyncMock(return_value="job-1")
+    bff.wait_job = AsyncMock(return_value=True)
+    bff.get_query_result = AsyncMock(
+        return_value={
+            "headerList": [{"name": "json_data"}],
+            "bodyList": ['{"id": 1, "material_id": "a"}', ['{"id": 2, "material_id": "b"}']],
+        }
+    )
+    local = AsyncMock(side_effect=AssertionError("direct OSS SDK must not be used"))
+    monkeypatch.setattr(managed_discovery, "discover_oss_schema", local)
+
+    result = await managed_discovery.discover_oss_schema_with_fallback(
+        bff,
+        OSS_PATH,
+        "json",
+        sample_managed_json=True,
+    )
+
+    assert result["success"] is True
+    assert result["sample_source"] == "cookie_bff_registered_external_table"
+    assert {column["name"] for column in result["columns"]} == {"id", "material_id"}
+    assert "giikin_develop" in bff.execute_sql.await_args.args[0]
+    local.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_raw_json_sample_failure_is_structured_and_actionable() -> None:
+    bff = FakeBff()
+    bff.search_tables.return_value = [
+        {"table_name": "report", "project": "giikin_develop", "entity_guid": "odps.dev.report"}
+    ]
+    bff.execute_sql = AsyncMock(return_value="job-1")
+    bff.wait_job = AsyncMock(return_value=False)
+    bff.get_query_result = AsyncMock()
+
+    result = await managed_discovery.discover_oss_schema_with_fallback(
+        bff,
+        OSS_PATH,
+        "json",
+        sample_managed_json=True,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "cookie_bff_sample_unavailable"
+    assert result["next_action"]
+    bff.get_query_result.assert_not_awaited()

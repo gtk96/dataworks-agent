@@ -321,8 +321,8 @@
       <el-card header="OSS 数据导入">
         <el-alert type="info" :closable="false" style="margin-bottom:16px">
           <div style="font-size:13px;line-height:1.6">
-            <p style="margin:0 0 6px">从 OSS 文件导入数据到 ODS 表（CSV / Parquet）。</p>
-            <p style="margin:0;color:#909399">三方数据通常先进入 <code>dataworks</code> 的 ODS。</p>
+            <p style="margin:0 0 6px">OSS 外表（giikin_develop）抽取到 giikin ODS（day / hour）。</p>
+            <p style="margin:0;color:#909399">先复用或创建外表，再预创建 ODS 分区并 INSERT OVERWRITE；不使用 LOAD。</p>
           </div>
         </el-alert>
         <el-form label-width="110px" inline>
@@ -335,7 +335,7 @@
               <el-option value="parquet" label="parquet" />
             </el-select>
           </el-form-item>
-          <el-form-item label="通配符"><el-input v-model="ossForm.wildcard" style="width:120px" /></el-form-item>
+          <el-form-item label="外表分区 pt"><el-input v-model="ossForm.source_partition_value" placeholder="例如 2026071412" style="width:140px" /></el-form-item>
           <el-form-item label="调度粒度">
             <el-select v-model="ossForm.schedule_type" style="width:100px">
               <el-option value="day" label="天" />
@@ -869,9 +869,10 @@ function finish() {
 const ossForm = ref({
   oss_path: '',
   target_table: '',
-  file_format: 'csv',
+  file_format: 'json',
   wildcard: '',
   schedule_type: 'day',
+  source_partition_value: '',
   publish: true,
 })
 const ossList = ref<any[]>([])

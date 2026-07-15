@@ -15,6 +15,50 @@ from dataworks_agent.agent.workflow_service import AgentWorkflowService
 
 logger = logging.getLogger(__name__)
 
+_CONTEXT_SUMMARY_MARKERS = (
+    "\u603b\u7ed3",
+    "\u6458\u8981",
+    "\u5f53\u524d\u4f1a\u8bdd",
+    "\u5df2\u5b8c\u6210",
+    "\u5efa\u6a21\u7ed3\u679c",
+    "\u8fdb\u5c55",
+    "\u72b6\u6001",
+    "summary",
+    "summarize",
+)
+_CONTEXT_NO_EXECUTION_MARKERS = (
+    "\u4e0d\u8981\u91cd\u590d\u6267\u884c",
+    "\u4e0d\u8981\u6267\u884c",
+    "\u53ea\u8bf4\u660e",
+    "\u4ec5\u8bf4\u660e",
+    "\u4e0d\u91cd\u590d",
+    "without executing",
+    "do not execute",
+)
+_CONTEXT_READ_ONLY_MARKERS = (
+    "sql",
+    "ddl",
+    "dml",
+    "\u8c03\u5ea6",
+    "schedule",
+    "cron",
+    "publish gate",
+    "\u5ba1\u6279",
+    "\u53d1\u5e03",
+    "\u4ea7\u7269",
+)
+_CONTEXT_WRITE_MARKERS = (
+    "\u5efa\u6a21",
+    "\u521b\u5efa",
+    "\u5efa\u8868",
+    "\u5efa\u8282\u70b9",
+    "\u6267\u884c",
+    "\u91cd\u5efa",
+    "\u4fee\u6539",
+    "create",
+    "execute",
+)
+
 
 @dataclass
 class ChatResponse:
@@ -50,6 +94,7 @@ class ChatAgent:
         publish: bool = False,
         client_ip: str = "127.0.0.1",
         conversation_id: str | None = None,
+        context_updates: dict[str, Any] | None = None,
     ) -> ChatResponse:
         """Process user message."""
         if not message or not message.strip():
@@ -60,8 +105,28 @@ class ChatAgent:
             )
 
         try:
-            message = await self._conversation_graph.resolve(message, conversation_id)
+            incoming_message = message.strip()
+            previous_context = await self._conversation_graph.context(conversation_id)
+            message = await self._conversation_graph.resolve(
+                message,
+                conversation_id,
+                context_updates=context_updates,
+            )
             intent = self._intent_parser.parse(message)
+            intent.params = self._merge_conversation_params(
+                previous_context.get("params") or {},
+                intent.params,
+                (context_updates or {}).get("params") or {},
+            )
+            if self._is_context_summary_request(incoming_message, previous_context):
+                return self._build_context_summary_response(previous_context, incoming_message)
+            if self._is_context_read_only_request(incoming_message, previous_context):
+                return self._build_context_read_only_response(previous_context, incoming_message)
+
+            previous_action = str(previous_context.get("action") or "")
+            if previous_action and intent.action == "unknown":
+                intent.action = previous_action
+                intent.confidence = max(intent.confidence, 0.75)
             business_query = self._resolve_business_query(message, conversation_id)
             if business_query is not None and (not request_type or request_type == "auto"):
                 intent.action = "ask_data"
@@ -121,6 +186,15 @@ class ChatAgent:
                     conversation_id,
                     message,
                     needs_clarification=bool(data.get("needs_clarification")),
+                    action=intent.action,
+                    params=intent.params,
+                    workflow_state={
+                        "current_step": data.get("next_step"),
+                        "missing_context": data.get("missing_context") or [],
+                        "completed_steps": data.get("completed_steps") or [],
+                        "result_data": self._conversation_result_snapshot(data),
+                        "message": workflow.message,
+                    },
                 )
                 return response
 
@@ -136,6 +210,206 @@ class ChatAgent:
         except Exception as e:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
+
+    @staticmethod
+    def _is_context_summary_request(message: str, context: dict[str, Any]) -> bool:
+        """Handle read-only follow-ups without re-running the previous workflow."""
+        if not message or not context.get("workflow_state"):
+            return False
+        text = message.lower()
+        has_summary_marker = any(marker in text for marker in _CONTEXT_SUMMARY_MARKERS)
+        explicitly_no_execution = any(marker in text for marker in _CONTEXT_NO_EXECUTION_MARKERS)
+        return has_summary_marker or explicitly_no_execution
+
+    @staticmethod
+    def _is_context_read_only_request(message: str, context: dict[str, Any]) -> bool:
+        """Answer artifact/schedule/review follow-ups without rerunning writes."""
+        if not message or not context.get("workflow_state"):
+            return False
+        text = message.lower()
+        if any(marker in text for marker in _CONTEXT_WRITE_MARKERS):
+            return False
+        return any(marker in text for marker in _CONTEXT_READ_ONLY_MARKERS)
+
+    @classmethod
+    def _build_context_read_only_response(
+        cls, context: dict[str, Any], incoming_message: str
+    ) -> ChatResponse:
+        """Expose persisted workflow evidence for a conversational read-only follow-up."""
+        state = dict(context.get("workflow_state") or {})
+        snapshot = dict(state.get("result_data") or {})
+        text = incoming_message.lower()
+        artifacts = snapshot.get("artifacts") or {}
+        ods = artifacts.get("ods") if isinstance(artifacts, dict) else {}
+        dwd = artifacts.get("dwd") if isinstance(artifacts, dict) else {}
+        read_only_artifacts: dict[str, Any] = {}
+        if any(marker in text for marker in ("sql", "ddl", "dml", "\u4ea7\u7269")):
+            read_only_artifacts = {
+                "ods_sql": ods.get("sql") if isinstance(ods, dict) else None,
+                "dwd_sql": dwd.get("sql") if isinstance(dwd, dict) else None,
+                "ods_ddl": ods.get("ddl") if isinstance(ods, dict) else None,
+                "dwd_ddl": dwd.get("ddl") if isinstance(dwd, dict) else None,
+            }
+            message = (
+                "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD SQL \u4ea7\u7269\uff0c\u672a\u91cd\u590d\u5efa\u6a21\u6216\u5199\u5165 DataWorks\u3002"
+            )
+        elif any(marker in text for marker in ("\u8c03\u5ea6", "schedule", "cron")):
+            schedule = snapshot.get("schedule") or {}
+            read_only_artifacts = {
+                "schedule": schedule,
+                "ods_schedule": (snapshot.get("ods_pipeline") or {}).get("cron"),
+                "dwd_schedule": (snapshot.get("dwd_pipeline") or {}).get("cron"),
+            }
+            message = (
+                "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD \u8c03\u5ea6\u4fe1\u606f\uff0c\u672a\u91cd\u590d\u914d\u7f6e\u8c03\u5ea6\u6216\u5199\u5165 DataWorks\u3002"
+            )
+        elif any(marker in text for marker in ("publish gate", "\u5ba1\u6279", "\u53d1\u5e03")):
+            read_only_artifacts = {
+                "prod_tables": snapshot.get("prod_tables") or {},
+                "publish_gate": snapshot.get("publish_gate") or "not_requested",
+            }
+            message = (
+                "\u5df2\u8bfb\u53d6\u751f\u4ea7 DDL \u4e0e Publish Gate \u72b6\u6001\uff0c\u672a\u91cd\u590d\u53d1\u5e03\u6216\u63d0\u4ea4\u5ba1\u6279\u3002"
+            )
+        else:
+            message = "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684\u5de5\u4f5c\u6d41\u4ea7\u7269\uff0c\u672a\u91cd\u590d\u6267\u884c\u5199\u64cd\u4f5c\u3002"
+
+        data = {
+            **snapshot,
+            "read_only_follow_up": True,
+            "conversation_follow_up": True,
+            "read_only_artifacts": read_only_artifacts,
+            "next_actions": snapshot.get("next_actions") or [],
+            "allow_custom_input": True,
+            "custom_input_hint": snapshot.get("custom_input_hint")
+            or "\u53ef\u4ee5\u8f93\u5165 SQL\u3001\u8c03\u5ea6\u3001Publish Gate \u5ba1\u67e5\u6216\u5176\u4ed6\u540e\u7eed\u8981\u6c42\u3002",
+            "agent_mode": "read_only",
+            "plan": {"summary": message, "steps": snapshot.get("steps") or []},
+            "conversation_context": {
+                "objective": context.get("objective") or "",
+                "action": context.get("action") or "",
+                "last_request": incoming_message,
+                "publish_gate": snapshot.get("publish_gate") or "not_requested",
+            },
+        }
+        return ChatResponse(message=message, success=True, data=data)
+
+    @staticmethod
+    def _conversation_result_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+        """Keep enough result evidence for deterministic conversational summaries."""
+        keys = (
+            "standard",
+            "workflow_type",
+            "execution_mode",
+            "steps",
+            "artifacts",
+            "dev_tables",
+            "prod_tables",
+            "ods_pipeline",
+            "dwd_pipeline",
+            "schedule",
+            "dependency_plan",
+            "template_task_id",
+            "checker",
+            "publish_gate",
+            "next_actions",
+            "allow_custom_input",
+            "custom_input_hint",
+        )
+        return {key: data[key] for key in keys if key in data}
+
+    @classmethod
+    def _build_context_summary_response(
+        cls, context: dict[str, Any], incoming_message: str
+    ) -> ChatResponse:
+        """Return the current workflow state and candidates without another write."""
+        state = dict(context.get("workflow_state") or {})
+        snapshot = dict(state.get("result_data") or {})
+        completed_steps = [
+            item.get("step")
+            for item in (snapshot.get("steps") or state.get("completed_steps") or [])
+            if isinstance(item, dict) and item.get("status") == "completed" and item.get("step")
+        ]
+        dev_tables = snapshot.get("dev_tables") or {}
+        table_names: list[str] = []
+        if isinstance(dev_tables, dict):
+            for value in dev_tables.values():
+                if isinstance(value, dict):
+                    table = value.get("table") or value.get("table_name")
+                    schema = value.get("schema")
+                    if table:
+                        table_names.append(f"{schema}.{table}" if schema else str(table))
+                elif value:
+                    table_names.append(str(value))
+        if not table_names:
+            for pipeline_key in ("ods_pipeline", "dwd_pipeline"):
+                pipeline = snapshot.get(pipeline_key) or {}
+                if isinstance(pipeline, dict) and pipeline.get("node_path"):
+                    table_names.append(str(pipeline["node_path"]))
+
+        standard = snapshot.get("standard") or "\u6807\u51c6 OSS \u5efa\u6a21"
+        publish_gate = snapshot.get("publish_gate") or "not_requested"
+        production_pending = any(
+            isinstance(value, dict) and value.get("status") == "approval_required"
+            for value in (snapshot.get("prod_tables") or {}).values()
+        )
+        if production_pending:
+            production_text = "\u751f\u4ea7 DDL \u5df2\u751f\u6210\uff0c\u7b49\u5f85 Publish Gate \u5ba1\u6279"
+        else:
+            production_text = "\u751f\u4ea7\u4ea7\u7269\u5df2\u51c6\u5907"
+        completed_text = f"\u5df2\u5b8c\u6210 {len(completed_steps)} \u4e2a\u6b65\u9aa4" if completed_steps else "\u5c1a\u672a\u5b8c\u6210\u6b65\u9aa4"
+        tables_text = "\u3001".join(table_names[:6]) or "\u6682\u65e0\u5f00\u53d1\u8868\u6216\u8282\u70b9\u4fe1\u606f"
+        message = (
+            f"\u5f53\u524d\u4f1a\u8bdd\u4e0a\u4e0b\u6587\uff1a{standard}\uff1b{completed_text}\uff1b"
+            f"\u5f00\u53d1\u8868\u6216\u8282\u70b9\uff1a{tables_text}\uff1b{production_text}"
+        )
+        next_actions = snapshot.get("next_actions") or [
+            {
+                "id": "inspect_current_model",
+                "label": "\u68c0\u67e5 ODS/DWD SQL \u4ea7\u7269",
+            },
+            {
+                "id": "check_current_schedule",
+                "label": "\u67e5\u770b\u5f53\u524d ODS/DWD \u8c03\u5ea6",
+            },
+            {
+                "id": "prepare_publish_review",
+                "label": "\u51c6\u5907 Publish Gate \u5ba1\u67e5",
+            },
+        ]
+        data = {
+            **snapshot,
+            "conversation_follow_up": True,
+            "conversation_context": {
+                "objective": context.get("objective") or "",
+                "action": context.get("action") or "",
+                "last_request": incoming_message,
+                "publish_gate": publish_gate,
+            },
+            "next_actions": next_actions,
+            "allow_custom_input": True,
+            "custom_input_hint": "\u53ef\u4ee5\u8f93\u5165\u81ea\u5b9a\u4e49\u540e\u7eed\u8981\u6c42\uff0c\u4f8b\u5982\uff1a\u67e5\u770b SQL\u3001\u67e5\u770b\u8c03\u5ea6\u3001\u51c6\u5907 Publish Gate \u5ba1\u67e5\u3002",
+            "agent_mode": "executed",
+            "plan": {"summary": message, "steps": snapshot.get("steps") or []},
+        }
+        return ChatResponse(message=message, success=True, data=data)
+
+    @staticmethod
+    def _merge_conversation_params(
+        previous: dict[str, Any],
+        current: dict[str, Any],
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge structured follow-up answers without losing the original goal."""
+        merged = dict(previous)
+        for source in (current, updates):
+            for key, value in source.items():
+                if value is None or value == "" or value == []:
+                    continue
+                if key == "goal" and merged.get("goal"):
+                    continue
+                merged[key] = value
+        return merged
 
     def _resolve_business_query(
         self, message: str, conversation_id: str | None

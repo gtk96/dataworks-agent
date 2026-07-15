@@ -50,6 +50,7 @@ class ChatRequest(BaseModel):
     initialize_data: bool = True
     publish: bool = False
     conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    context_updates: dict[str, Any] | None = Field(default=None, description="Structured answer from a clarification action")
 
 
 class ChatResponse(BaseModel):
@@ -113,15 +114,16 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
                 conversation_id=payload.conversation_id,
             )
     else:
-        response = await _agent.chat(
-            payload.message,
-            payload.request_type,
-            execution_mode=payload.execution_mode,
-            initialize_data=payload.initialize_data,
-            publish=payload.publish,
-            client_ip=client_ip,
-            conversation_id=payload.conversation_id,
-        )
+        kwargs: dict[str, Any] = {
+            "execution_mode": payload.execution_mode,
+            "initialize_data": payload.initialize_data,
+            "publish": payload.publish,
+            "client_ip": client_ip,
+            "conversation_id": payload.conversation_id,
+        }
+        if payload.context_updates is not None:
+            kwargs["context_updates"] = payload.context_updates
+        response = await _agent.chat(payload.message, payload.request_type, **kwargs)
     logger.info("Chat response: success=%s", response.success)
     return ChatResponse(
         message=response.message,
@@ -244,15 +246,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if not workflow_options_explicit and request_type is None:
                 response = await _agent.chat(message, conversation_id=conversation_id)
             else:
-                response = await _agent.chat(
-                    message,
-                    request_type,
-                    execution_mode=execution_mode,
-                    initialize_data=initialize_data,
-                    publish=publish,
-                    client_ip=websocket.client.host if websocket.client else "127.0.0.1",
-                    conversation_id=conversation_id,
-                )
+                kwargs: dict[str, Any] = {
+                    "execution_mode": execution_mode,
+                    "initialize_data": initialize_data,
+                    "publish": publish,
+                    "client_ip": websocket.client.host if websocket.client else "127.0.0.1",
+                    "conversation_id": conversation_id,
+                }
+                if data.get("context_updates") is not None:
+                    kwargs["context_updates"] = data["context_updates"]
+                response = await _agent.chat(message, request_type, **kwargs)
             payload = {
                 "message": response.message,
                 "success": response.success,

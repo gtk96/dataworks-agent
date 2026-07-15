@@ -1854,6 +1854,8 @@ class AgentWorkflowService:
             MATERIAL_REPORT_ODS_TABLE,
             MATERIAL_REPORT_TEMPLATE_TASK_ID,
             ROOT_CHECKER_NAME,
+            STANDARD_DWD_SQL_DIRECTORY,
+            STANDARD_ODS_SQL_DIRECTORY,
             build_standard_material_report_artifacts,
             build_standard_material_report_ods_artifacts,
         )
@@ -1867,27 +1869,38 @@ class AgentWorkflowService:
         # The standard naming contract is repository-owned. Do not ask the
         # user to repeat a DWD name that is deterministically defined by the
         # OSS standard; only explicit input may override it.
-        dwd_table = str(
-            params.get("dwd_table") or params.get("table_name") or MATERIAL_REPORT_DWD_TABLE
-        ).strip()
-        dev_schema = str(params.get("dev_schema") or "giikin_develop").strip()
+        requested_dwd_table = params.get("dwd_table")
+        if not requested_dwd_table:
+            candidate_table = str(params.get("table_name") or "").strip()
+            # The NLU commonly extracts the ODS target as table_name. It must
+            # not silently rename the deterministic standard DWD target.
+            if candidate_table and not candidate_table.lower().startswith("ods_"):
+                requested_dwd_table = candidate_table
+        dwd_table = str(requested_dwd_table or MATERIAL_REPORT_DWD_TABLE).strip()
+        dev_schema = "giikin"
         prod_schema = str(params.get("prod_schema") or "giikin").strip()
         oss_path = str(
             params.get("oss_path") or self._extractor.extract_oss_path(message) or ""
         ).strip()
+        # Use the repository-owned standard directories by default; explicit
+        # user values still override them.
         ods_sql_directory = str(
             params.get("ods_sql_directory")
             or self._extractor.extract_ods_sql_directory(message)
-            or ""
+            or STANDARD_ODS_SQL_DIRECTORY
         ).strip()
         dwd_sql_directory = str(
             params.get("dwd_sql_directory")
             or self._extractor.extract_dwd_sql_directory(message)
-            or ""
+            or STANDARD_DWD_SQL_DIRECTORY
         ).strip()
         explicit_granularity = params.get("granularity") or self._extractor.extract_granularity(
             message
         )
+        if not explicit_granularity and (
+            MATERIAL_REPORT_ODS_TABLE.endswith("_hour") or dwd_table.endswith("_hour")
+        ):
+            explicit_granularity = "hour"
         missing: list[str] = []
         if not oss_path:
             question = "Please provide the OSS directory in the form oss://bucket/prefix/."
@@ -2006,18 +2019,32 @@ class AgentWorkflowService:
         if missing:
             questions = []
             if "ods_sql_directory" in missing:
-                questions.append("请提供 ODS SQL 节点要落到的 DataWorks 业务流程目录。")
+                questions.append("Provide the DataWorks ODS SQL directory.")
             if "dwd_sql_directory" in missing:
-                questions.append(
-                    "DWD SQL directory is required; provide the DataWorks directory, separately if it differs from ODS."
-                )
+                questions.append("Provide the DataWorks DWD SQL directory.")
             if "granularity" in missing:
-                questions.append(
-                    "请确认 DWD 粒度是 day 还是 hour；ODS 虽然是 hour，不替代 DWD 粒度选择。"
+                questions.append("Confirm whether the DWD table is day or hour granularity.")
+            actions: list[dict[str, Any]] = []
+            if "granularity" in missing:
+                actions.extend(
+                    [
+                        {
+                            "id": "granularity_hour",
+                            "label": "hour table",
+                            "value": "hour",
+                            "payload": {"params": {"granularity": "hour"}},
+                        },
+                        {
+                            "id": "granularity_day",
+                            "label": "day table",
+                            "value": "day",
+                            "payload": {"params": {"granularity": "day"}},
+                        },
+                    ]
                 )
             return WorkflowResult(
                 True,
-                "标准 OSS 流程还缺少必要上下文：" + " ".join(questions),
+                "Standard OSS modeling is waiting for the missing context: " + " ".join(questions),
                 "forward_modeling",
                 mode,
                 steps=[{"step": "standard_oss_context_gate", "status": "needs_context"}],
@@ -2026,6 +2053,10 @@ class AgentWorkflowService:
                     "needs_clarification": True,
                     "clarifying_questions": questions,
                     "missing_context": missing,
+                    "next_step": "confirm_sql_directories_and_granularity",
+                    "next_actions": actions,
+                    "allow_custom_input": True,
+                    "custom_input_hint": "Enter ODS SQL directory, DWD SQL directory, and day/hour in one message.",
                     "ods_table": MATERIAL_REPORT_ODS_TABLE,
                     "dwd_table": dwd_table,
                     "template_task_id": str(
@@ -2034,6 +2065,7 @@ class AgentWorkflowService:
                         or MATERIAL_REPORT_TEMPLATE_TASK_ID
                     ),
                     "dev_schema": dev_schema,
+                    "ods_sql_directory": ods_sql_directory,
                     "dwd_sql_directory": dwd_sql_directory,
                     "prod_schema": prod_schema,
                     "publish_gate": "not_requested",
@@ -2043,14 +2075,27 @@ class AgentWorkflowService:
         profile = dict(params.get("data_profile") or {})
         if not profile.get("columns") and params.get("columns"):
             profile["columns"] = list(params["columns"])
+        if not profile.get("columns") and profile.get("records"):
+            from dataworks_agent.services.ods_oss.schema_discovery import infer_json_columns
+
+            try:
+                profile["columns"] = infer_json_columns(
+                    [record for record in profile["records"] if isinstance(record, dict)]
+                )
+            except (TypeError, ValueError):
+                profile["columns"] = []
         if not profile.get("columns") or all(
             str(c.get("name") if isinstance(c, dict) else c).lower() == "json_data"
             for c in profile["columns"]
         ):
-            from dataworks_agent.services.ods_oss.schema_discovery import discover_oss_schema
+            from dataworks_agent.services.ods_oss import discover_oss_schema_with_fallback
 
-            sampled = await asyncio.to_thread(
-                discover_oss_schema, str(location["canonical_uri"]), file_format
+            sampled = await discover_oss_schema_with_fallback(
+                bff,
+                str(location["canonical_uri"]),
+                file_format,
+                sample_managed_json=True,
+                managed_result=directory,
             )
             if sampled.get("success") and sampled.get("columns"):
                 profile = dict(sampled)
@@ -2067,6 +2112,23 @@ class AgentWorkflowService:
                         "needs_clarification": True,
                         "clarifying_questions": [question],
                         "missing_context": ["data_profile"],
+                        "next_step": "provide_data_profile",
+                        "next_actions": [
+                            {
+                                "id": "provide_data_profile",
+                                "label": "\u7c98\u8d34 JSON \u6837\u672c",
+                                "value": "data_profile",
+                                "requires_custom_input": True,
+                            },
+                            {
+                                "id": "provide_data_profile_columns",
+                                "label": "\u8f93\u5165 data_profile.columns",
+                                "value": "data_profile_columns",
+                                "requires_custom_input": True,
+                            },
+                        ],
+                        "allow_custom_input": True,
+                        "custom_input_hint": "\u8bf7\u5728\u4e0b\u65b9\u8f93\u5165\u6846\u7c98\u8d34\u771f\u5b9e JSON \u6837\u672c\uff08\u5bf9\u8c61\u6216\u6570\u7ec4\uff09\uff0c\u6216\u8f93\u5165 data_profile\uff0c\u4f8b\u5982\uff1a{\"columns\":[{\"name\":\"material_id\",\"type\":\"STRING\"}]}\uff0c\u7136\u540e\u53d1\u9001\u3002",
                         "directory_check": directory["directory_check"],
                         "sample_discovery": sampled,
                         "publish_gate": "not_requested",
@@ -2105,6 +2167,17 @@ class AgentWorkflowService:
                     "missing_context": ["json_field_mappings"],
                     "observed_columns": observed_columns,
                     "mapping_candidates": suggestions,
+                    "next_step": "confirm_json_field_mapping",
+                    "next_actions": [
+                        {
+                            "id": "use_observed_json_fields",
+                            "label": "Use all observed fields",
+                            "value": "use_observed_json_fields",
+                            "payload": {"params": {"json_field_mappings": suggestions}},
+                        }
+                    ],
+                    "allow_custom_input": True,
+                    "custom_input_hint": "Enter JSON field mapping as json_key:target_name:type, separated by commas.",
                     "candidate_logical_primary_keys": candidate_logical_primary_keys(
                         observed_columns, profile
                     ),
@@ -2129,7 +2202,14 @@ class AgentWorkflowService:
                 "请提供 JSON 到 DWD 的字段映射。",
                 "forward_modeling",
                 mode,
-                data={"needs_clarification": True, "missing_context": ["json_field_mappings"]},
+                data={
+                    "needs_clarification": True,
+                    "missing_context": ["json_field_mappings"],
+                    "next_step": "confirm_json_field_mapping",
+                    "next_actions": [],
+                    "allow_custom_input": True,
+                    "custom_input_hint": "Provide JSON field mappings explicitly.",
+                },
             )
 
         candidates = candidate_logical_primary_keys(observed_columns, profile)
@@ -2152,6 +2232,18 @@ class AgentWorkflowService:
                     "clarifying_questions": [question],
                     "missing_context": ["logical_primary_keys"],
                     "candidate_logical_primary_keys": candidates,
+                    "next_step": "confirm_logical_primary_key",
+                    "next_actions": [
+                        {
+                            "id": "logical_key_" + "_".join(candidate),
+                            "label": " + ".join(candidate),
+                            "value": " + ".join(candidate),
+                            "payload": {"params": {"logical_primary_keys": candidate}},
+                        }
+                        for candidate in candidates[:5]
+                    ],
+                    "allow_custom_input": True,
+                    "custom_input_hint": "Enter one or more logical primary key columns, separated by commas.",
                     "observed_columns": observed_columns,
                     "directory_check": directory["directory_check"],
                     "publish_gate": "not_requested",
@@ -2198,11 +2290,14 @@ class AgentWorkflowService:
                 dwd_sql_directory=dwd_sql_directory,
             )
             ods_artifacts = build_standard_material_report_ods_artifacts(
-                oss_path=str(location["canonical_uri"]),
+                oss_path=str(location["location_uri"]),
                 file_format=file_format,
-                dev_schema=dev_schema,
+                dev_schema="giikin",
                 prod_schema=prod_schema,
                 ods_sql_directory=ods_sql_directory,
+                external_table=str(directory.get("table_name") or "tiktok_smart_plus_material_report"),
+                external_project="giikin_develop",
+                source_partition_value=str(params.get("source_partition_value") or "${gmtdate}"),
             )
         except (TypeError, ValueError) as exc:
             return WorkflowResult(
@@ -2274,7 +2369,7 @@ class AgentWorkflowService:
             )
 
         pipeline = await OssImportPipeline(bff).run(
-            oss_path=str(location["canonical_uri"]),
+            oss_path=str(location.get("location_uri") or location["canonical_uri"]),
             target_table=MATERIAL_REPORT_ODS_TABLE,
             file_format="json",
             schedule_type="hour",
@@ -2282,6 +2377,13 @@ class AgentWorkflowService:
             schedule_minute=int(params.get("schedule_minute") or 3),
             publish=False,
             ingestion_mode="raw_json_text",
+            root_node_uuid=str(
+                params.get("root_node_uuid")
+                or settings.dataworks_default_root_node_uuid
+                or settings.root_check_node_uuid
+                or ""
+            ),
+            output_ref=f"{dev_schema}.{MATERIAL_REPORT_ODS_TABLE}",
         )
         if not pipeline.get("success"):
             return WorkflowResult(
@@ -2294,7 +2396,14 @@ class AgentWorkflowService:
                     "dev_tables": {"ods": dev_ods, "dwd": dev_dwd},
                     "ods_pipeline": pipeline,
                 },
-                errors=["ODS pipeline failed"],
+                errors=[
+                    str(
+                        (pipeline.get("steps") or {}).get("configure_schedule", {}).get("error")
+                        or (pipeline.get("steps") or {}).get("create_node", {}).get("error")
+                        or pipeline.get("error")
+                        or "ODS pipeline failed"
+                    )
+                ],
             )
 
         dwd_pipeline = await self._create_standard_dwd_pipeline_cookie(
@@ -2343,6 +2452,22 @@ class AgentWorkflowService:
             "template_task_id": dwd_artifacts["template_task_id"],
             "checker": ROOT_CHECKER_NAME,
             "publish_gate": "not_requested",
+            "next_actions": [
+                {
+                    "id": "inspect_current_model",
+                    "label": "\u68c0\u67e5 ODS/DWD SQL \u4ea7\u7269",
+                },
+                {
+                    "id": "check_current_schedule",
+                    "label": "\u67e5\u770b\u5f53\u524d ODS/DWD \u8c03\u5ea6",
+                },
+                {
+                    "id": "prepare_publish_review",
+                    "label": "\u51c6\u5907 Publish Gate \u5ba1\u67e5",
+                },
+            ],
+            "allow_custom_input": True,
+            "custom_input_hint": "\u53ef\u4ee5\u8f93\u5165 SQL\u3001\u8c03\u5ea6\u3001\u53d1\u5e03\u5ba1\u6279\u6216\u5176\u4ed6\u540e\u7eed\u8981\u6c42\u3002",
         }
         steps = [
             {"step": "inspect_oss_directory", "status": "completed"},
@@ -2428,7 +2553,7 @@ class AgentWorkflowService:
             "hour" if is_hour else "day", hour=0 if is_hour else 3, minute=schedule_minute
         )
         parameters = DWD_SQL_PARAMETERS if is_hour else DAILY_SQL_PARAMETERS
-        upstream = f"{dev_schema}.{ods_table}"
+        upstream = f"giikin.{ods_table}"
         dependencies = [
             {
                 "type": "Normal",
@@ -2529,23 +2654,67 @@ class AgentWorkflowService:
                 }
             ddl_exec = strip_leading_drop_table(inject_schema_prefix_in_ddl(ddl, schema))
             job_code = await bff.execute_sql_ida(ddl_exec)
-            if not job_code:
-                return {
-                    "status": "failed",
-                    "error": getattr(bff, "last_error", None) or "execute_sql_ida failed",
-                }
-            created = await bff.wait_ida_job(job_code, max_retry=36, interval=5)
-            if not created:
-                return {
-                    "status": "failed",
-                    "error": getattr(bff, "last_error", None) or "wait_ida_job failed",
-                    "job_code": job_code,
-                }
+            cookie_error = getattr(bff, "last_error", None) or "execute_sql_ida failed"
+            if job_code:
+                created = await bff.wait_ida_job(job_code, max_retry=36, interval=5)
+                if created:
+                    return {
+                        "status": "created",
+                        "schema": schema,
+                        "table": target_table,
+                        "job_code": job_code,
+                        "auth": "cookie_bff_ida",
+                    }
+                cookie_error = getattr(bff, "last_error", None) or "wait_ida_job failed"
+
+            # IDA can reject DATASOURCE_CONFIG even when the regular IDE SQL
+            # executor is allowed for the same signed-in user. Try that Cookie
+            # route before falling back to the separately authorized dev client.
+            v3_job_code = await bff.execute_sql(ddl_exec)
+            if v3_job_code:
+                created = await bff.wait_job(v3_job_code, max_retry=36, interval=5)
+                if created:
+                    return {
+                        "status": "created",
+                        "schema": schema,
+                        "table": target_table,
+                        "job_code": v3_job_code,
+                        "auth": "cookie_bff_v3",
+                    }
+                cookie_error = getattr(bff, "last_error", None) or "wait_job failed"
+            else:
+                cookie_error = (
+                    f"{cookie_error}; execute_sql failed: "
+                    f"{getattr(bff, 'last_error', None) or 'no job code'}"
+                )
+
+            # Some Cookie sessions can inspect DataWorks but are not allowed to
+            # execute SQL through DATASOURCE_CONFIG. The workspace's documented
+            # capability matrix allows AK/SK MaxCompute DDL in dev, so use it as
+            # a bounded fallback instead of reporting a false hard failure.
+            mc = getattr(app_state, "_maxcompute_client", None)
+            if mc is not None:
+                try:
+                    ddl_result = await mc.execute_ddl(ddl_exec)
+                except Exception as exc:
+                    ddl_result = None
+                    fallback_error = str(exc)
+                else:
+                    fallback_error = getattr(ddl_result, "error", None) or "AK/SK execute_ddl failed"
+                if ddl_result is not None and getattr(ddl_result, "success", False):
+                    return {
+                        "status": "created",
+                        "schema": schema,
+                        "table": target_table,
+                        "instance_id": getattr(ddl_result, "instance_id", ""),
+                        "auth": "maxcompute_ak_sk_fallback",
+                        "fallback_reason": str(cookie_error),
+                    }
+                cookie_error = f"{cookie_error}; AK/SK fallback: {fallback_error}"
             return {
-                "status": "created",
-                "schema": schema,
-                "table": target_table,
-                "job_code": job_code,
+                "status": "failed",
+                "error": str(cookie_error),
+                "job_code": job_code or None,
             }
         except Exception as exc:
             return {"status": "failed", "error": str(exc), "schema": schema, "table": target_table}
@@ -3213,7 +3382,7 @@ class AgentWorkflowService:
                         "error": str(exc),
                     },
                 }
-            canonical_path = str(location["canonical_uri"])
+            canonical_path = str(location.get("location_uri") or location["canonical_uri"])
             columns = params.get("columns") or self._extract_inline_columns(message)
             requested_format = params.get("file_format") or self._extractor.extract_file_format(
                 message
@@ -3284,6 +3453,13 @@ class AgentWorkflowService:
                 schedule_minute=schedule_minute,
                 publish=False,
                 ingestion_mode=str(schema_discovery.get("ingestion_mode") or "structured"),
+                root_node_uuid=str(
+                    params.get("root_node_uuid")
+                    or settings.dataworks_default_root_node_uuid
+                    or settings.root_check_node_uuid
+                    or ""
+                ),
+                output_ref=f"{settings.dataworks_dev_schema}.{target_table}",
             )
             result.setdefault("steps", {})["ensure_table"] = ensure_result
             result["schema_discovery"] = schema_discovery

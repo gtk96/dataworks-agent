@@ -1177,6 +1177,66 @@ async def test_loop_retries_transient_failure_until_verified():
 
 
 @pytest.mark.asyncio
+async def test_standard_oss_flow_stops_after_verified_publish_gate_boundary():
+    service = AgentWorkflowService()
+    service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")
+    standard_steps = [
+        {"step": step, "status": "completed"}
+        for step in (
+            "inspect_oss_directory",
+            "profile_json_sample",
+            "dmr_pub_column_check",
+            "create_dev_tables_cookie",
+            "create_ods_sql_node_cookie",
+            "configure_ods_schedule_cookie",
+            "create_dwd_sql_node_cookie",
+            "configure_dwd_schedule_cookie",
+            "configure_ods_to_dwd_dependency_cookie",
+        )
+    ] + [
+        {"step": "create_prod_tables", "status": "approval_required"},
+        {"step": "publish_gate", "status": "skipped"},
+    ]
+    service._execute_once = AsyncMock(
+        return_value=WorkflowResult(
+            True,
+            "standard OSS flow completed",
+            "forward_modeling",
+            "dev_execute",
+            steps=standard_steps,
+            data={
+                "standard": "tiktok_smart_plus_material_report",
+                "dev_tables": {
+                    "ods": "giikin_develop.ods_report",
+                    "dwd": "giikin_develop.dwd_report",
+                },
+                "prod_tables": {
+                    "ods": {"status": "approval_required"},
+                    "dwd": {"status": "approval_required"},
+                },
+                "ods_pipeline": {"success": True},
+                "dwd_pipeline": {"success": True},
+                "publish_gate": "not_requested",
+            },
+        )
+    )
+
+    result = await service.execute(
+        message="???? TikTok Smart Plus material report OSS",
+        action="forward_modeling",
+        params={"source_type": "oss"},
+        execution_mode="dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["loop"]["stop_reason"] == "verified_success"
+    assert result.data["loop"]["iteration_count"] == 1
+    assert result.data["evaluation"]["verified_success"] is True
+    service._execute_once.assert_awaited_once()
+
+
+
+@pytest.mark.asyncio
 async def test_loop_prevents_raw_success_without_outcome_evidence():
     service = AgentWorkflowService()
     service._start_loop_event_log = lambda client_ip, workflow_type: (None, "")

@@ -8,6 +8,7 @@ from typing import Any
 from dataworks_agent.governance.ddl_checker import check_ddl
 from dataworks_agent.modeling.dwd.ddl_generator import DwdDDLGenerator
 from dataworks_agent.modeling.root_checker import RootChecker
+from dataworks_agent.naming.schedule import generate_cron
 from dataworks_agent.schemas import assert_safe_table_name
 
 MATERIAL_REPORT_ODS_TABLE = "ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
@@ -22,6 +23,8 @@ MATERIAL_REPORT_TEMPLATE_PARENT_REFERENCES = (
 )
 ROOT_CHECKER_NAME = "dmr_pub_column_check"
 STANDARD_DEV_SCHEMA = "giikin_develop"
+STANDARD_ODS_SQL_DIRECTORY = "\u4e1a\u52a1\u6d41\u7a0b/106_\u5e7f\u544a\u62a5\u544a/MaxCompute/\u6570\u636e\u5f00\u53d1/00_ODS"
+STANDARD_DWD_SQL_DIRECTORY = "\u4e1a\u52a1\u6d41\u7a0b/106_\u5e7f\u544a\u62a5\u544a/MaxCompute/\u6570\u636e\u5f00\u53d1/02_DWD"
 
 
 def build_standard_material_report_ods_artifacts(
@@ -32,9 +35,12 @@ def build_standard_material_report_ods_artifacts(
     dev_schema: str | None = None,
     prod_schema: str = "giikin",
     ods_sql_directory: str,
+    external_table: str = "tiktok_smart_plus_material_report",
+    external_project: str = "giikin_develop",
+    source_partition_value: str = "${gmtdate}",
 ) -> dict[str, Any]:
-    """Build the fixed raw-JSON ODS DDL and import SQL for the standard source."""
-    from dataworks_agent.services.ods_oss.config import build_oss_import_sql, normalize_file_format
+    """Build the standard external-table-to-ODS hourly artifacts."""
+    from dataworks_agent.services.ods_oss.config import build_ods_extract_sql, normalize_file_format
 
     if ods_table != MATERIAL_REPORT_ODS_TABLE:
         raise ValueError(
@@ -43,51 +49,47 @@ def build_standard_material_report_ods_artifacts(
     if not str(ods_sql_directory or "").strip():
         raise ValueError("Standard OSS path requires ods_sql_directory")
     assert_safe_table_name(ods_table)
-    dev_schema = str(dev_schema or STANDARD_DEV_SCHEMA).strip()
+    assert_safe_table_name(external_table)
+    dev_schema = "giikin"
     prod_schema = str(prod_schema or "giikin").strip()
-    assert_safe_table_name(dev_schema)
     assert_safe_table_name(prod_schema)
     normalized_format = normalize_file_format(file_format) or "json"
     if normalized_format != "json":
         raise ValueError("Standard TikTok material report ODS only supports JSON")
-
     ddl_body = (
         f"CREATE TABLE IF NOT EXISTS {{schema}}.{ods_table} (\n"
         "  `json_data` STRING COMMENT 'OSS JSON raw record'\n"
         ") COMMENT 'TikTok Smart Plus material report raw JSON ODS'\n"
-        "PARTITIONED BY (`dt` STRING, `ht` STRING);"
+        "PARTITIONED BY (`dt` STRING, `ht` STRING) STORED AS aliorc;"
     )
-    sql = build_oss_import_sql(
+    sql = build_ods_extract_sql(
+        source_table=external_table,
         target_table=ods_table,
-        oss_path=oss_path,
-        file_format=normalized_format,
-        schedule_type="hour",
-        raw_json_text=True,
+        granularity="hour",
+        source_partition_value=source_partition_value,
+        source_project=external_project,
+        target_project="giikin",
+    )
+    partition_precreate_sql = (
+        f"ALTER TABLE giikin.{ods_table}\n"
+        "ADD IF NOT EXISTS PARTITION (dt='${gmtdate}', ht='${hour_last1h}');"
     )
     return {
         "ods_table": ods_table,
+        "external_table": external_table,
+        "external_project": external_project,
         "file_format": normalized_format,
         "oss_path": oss_path,
         "ods_sql_directory": ods_sql_directory,
         "environment_artifacts": {
-            "dev": {
-                "schema": dev_schema,
-                "ddl": ddl_body.replace("{schema}", dev_schema),
-                "status": "draft",
-            },
-            "prod": {
-                "schema": prod_schema,
-                "ddl": ddl_body.replace("{schema}", prod_schema),
-                "status": "approval_required",
-            },
+            "dev": {"schema": dev_schema, "ddl": ddl_body.replace("{schema}", dev_schema), "status": "draft"},
+            "prod": {"schema": prod_schema, "ddl": ddl_body.replace("{schema}", prod_schema), "status": "approval_required"},
         },
         "ddl": ddl_body.replace("{schema}", dev_schema),
         "sql": sql,
+        "partition_precreate_sql": partition_precreate_sql,
         "ingestion_mode": "raw_json_text",
-        "schedule": {
-            "cycle": "hourly",
-            "parameters": list(MATERIAL_REPORT_SCHEDULE_PARAMETERS),
-        },
+        "schedule": {"cycle": "hourly", "parameters": list(MATERIAL_REPORT_SCHEDULE_PARAMETERS)},
     }
 
 
@@ -231,8 +233,8 @@ def build_standard_material_report_artifacts(
     assert_safe_table_name(dev_schema)
     assert_safe_table_name(prod_schema)
     granularity = str(granularity or "hour").lower()
-    if granularity not in {"hour", "day"}:
-        raise ValueError("granularity must be hour or day")
+    if granularity != "hour":
+        raise ValueError("Standard TikTok material report only supports hourly granularity")
 
     mappings = normalize_json_field_mappings(field_mappings)
     if not mappings:
@@ -243,10 +245,14 @@ def build_standard_material_report_artifacts(
     ]
     candidates = candidate_logical_primary_keys(observed_columns, profile)
     logical_keys = _normalize_keys(logical_primary_keys)
-    partition_fields = ["dt", "ht"] if granularity == "hour" else ["dt"]
-    partition_parameters = list(
-        MATERIAL_REPORT_SCHEDULE_PARAMETERS if granularity == "hour" else ("gmtdate",)
-    )
+    target_field_names = {mapping.target_name for mapping in mappings}
+    unknown_keys = [key for key in logical_keys if key not in target_field_names]
+    if unknown_keys:
+        raise ValueError(
+            "logical primary keys must exist in mapped DWD fields: " + ", ".join(unknown_keys)
+        )
+    partition_fields = ["dt", "ht"]
+    partition_parameters = list(MATERIAL_REPORT_SCHEDULE_PARAMETERS)
 
     target_fields = [
         {
@@ -293,14 +299,8 @@ def build_standard_material_report_artifacts(
     select_fields = ",\n    ".join(
         f"t2.j{index} AS {mapping.target_name}" for index, mapping in enumerate(mappings, start=1)
     )
-    partition_expr = ", ".join(
-        f"{name} = '${{{'gmtdate' if name == 'dt' else 'hour_last1h'}}}'"
-        for name in partition_fields
-    )
-    where_expr = " AND ".join(
-        f"t1.{name} = '${{{'gmtdate' if name == 'dt' else 'hour_last1h'}}}'"
-        for name in partition_fields
-    )
+    partition_expr = "dt = '${gmtdate}', ht = '${hour_last1h}'"
+    where_expr = "t1.dt = '${gmtdate}' AND t1.ht = '${hour_last1h}'"
     sql_body = (
         f"INSERT OVERWRITE TABLE {{schema}}.{dwd_table} PARTITION ({partition_expr})\n"
         f"SELECT\n    {select_fields}\n"
@@ -327,7 +327,7 @@ def build_standard_material_report_artifacts(
     if root_result.source != "online":
         validation["warning"] = "online root dictionary is unavailable"
 
-    cron = MATERIAL_REPORT_TEMPLATE_CRON if granularity == "hour" else "00 03 03 * * ?"
+    cron = generate_cron("hour", hour=3, minute=schedule_minute)
     schedule = {
         "cycle": "hourly" if granularity == "hour" else "daily",
         "cron": cron,

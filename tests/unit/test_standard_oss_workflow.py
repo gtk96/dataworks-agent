@@ -45,7 +45,27 @@ STANDARD_PARAMS = {
 }
 
 
-def test_path_only_tiktok_material_report_selects_standard_oss_flow():
+def test_standard_oss_builder_rejects_daily_granularity() -> None:
+    with pytest.raises(ValueError, match="hourly"):
+        from dataworks_agent.modeling.standard_oss import build_standard_material_report_artifacts
+
+        build_standard_material_report_artifacts(
+            field_mappings=[{"json_key": "id", "target_name": "id"}],
+            logical_primary_keys=["id"],
+            granularity="day",
+        )
+
+
+def test_standard_oss_builder_rejects_unknown_logical_key() -> None:
+    from dataworks_agent.modeling.standard_oss import build_standard_material_report_artifacts
+
+    with pytest.raises(ValueError, match="not_a_field"):
+        build_standard_material_report_artifacts(
+            field_mappings=[{"json_key": "id", "target_name": "id"}],
+            logical_primary_keys=["not_a_field"],
+        )
+
+
     oss_path = (
         "oss://oss-cn-shenzhen-internal.aliyuncs.com/"
         "giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report"
@@ -94,8 +114,50 @@ def test_standard_oss_builder_defaults_to_giikin_develop():
         ods_sql_directory="濞戞挻鑹炬慨鐔访规担琛℃煠/106_妤犵偛鐏濋幉锟犲箮閵夈儲鍟?MaxCompute/闁轰胶澧楀畵浣割嚕閳ь剟宕?00_ODS",
     )
 
-    assert artifacts["environment_artifacts"]["dev"]["schema"] == "giikin_develop"
+    assert artifacts["environment_artifacts"]["dev"]["schema"] == "giikin"
     assert artifacts["environment_artifacts"]["prod"]["schema"] == "giikin"
+    assert artifacts["partition_precreate_sql"] == (
+        "ALTER TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\n"
+        "ADD IF NOT EXISTS PARTITION (dt='${gmtdate}', ht='${hour_last1h}');"
+    )
+    assert "INSERT OVERWRITE TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour" in artifacts["sql"]
+    assert "FROM giikin_develop.tiktok_smart_plus_material_report" in artifacts["sql"]
+    assert "LOAD " + "OVERWRITE" not in artifacts["sql"]
+
+
+def test_standard_oss_builder_preserves_endpoint_in_location():
+    artifacts = build_standard_material_report_ods_artifacts(
+        oss_path=(
+            "oss://oss-cn-shenzhen-internal.aliyuncs.com/"
+            "giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report"
+        ),
+        ods_sql_directory="ods/00_ODS",
+    )
+
+    assert "FROM giikin_develop.tiktok_smart_plus_material_report" in artifacts["sql"]
+    assert "FROM " + "LOCATION" not in artifacts["sql"]
+    assert artifacts["sql"].index("ALTER TABLE") < artifacts["sql"].index("INSERT OVERWRITE")
+
+
+@pytest.mark.asyncio
+async def test_standard_oss_table_name_from_ods_request_does_not_override_dwd_default():
+    service = AgentWorkflowService()
+    result = await service._execute_standard_oss_flow(
+        message="standard OSS material report",
+        params={
+            "source_type": "oss",
+            "oss_path": "oss://bucket/ads/tiktok/material_report/",
+            "table_name": "ods_mc_ads_data__tiktok_smart_plus_material_report_hour",
+        },
+        mode="dev_execute",
+        initialize_data=True,
+        publish=False,
+        client_ip="127.0.0.1",
+    )
+
+    assert result.success is True
+    assert result.data["dwd_table"] == "dwd_mkt_tiktok_smart_plus_material_report_hour"
+    assert result.data["missing_context"] == ["cookie_bff"]
 
 
 @pytest.mark.asyncio
@@ -118,6 +180,53 @@ async def test_standard_oss_requires_dwd_directory_and_granularity():
     assert result.data["needs_clarification"] is True
     assert result.data["dwd_table"] == "dwd_mkt_tiktok_smart_plus_material_report_hour"
     assert result.data["missing_context"] == ["cookie_bff"]
+
+
+@pytest.mark.asyncio
+async def test_standard_oss_missing_profile_offers_custom_input_actions_without_fake_columns():
+    service = AgentWorkflowService()
+    app_state._bff_client = object()
+    directory = {
+        "success": True,
+        "ingestion_mode": "raw_json_text",
+        "project": "dev",
+        "table_name": "material_report",
+        "columns": [{"name": "json_data", "type": "STRING"}],
+        "directory_check": {"success": True, "channel": "cookie_bff"},
+    }
+
+    with (
+        patch(
+            "dataworks_agent.services.ods_oss.inspect_oss_directory_with_cookie",
+            new=AsyncMock(return_value=directory),
+        ),
+        patch(
+            "dataworks_agent.services.ods_oss.discover_oss_schema_with_fallback",
+            new=AsyncMock(return_value={"success": False, "columns": []}),
+        ),
+    ):
+        result = await service._execute_standard_oss_flow(
+            message="OSS tiktok smart plus material report",
+            params={
+                "source_type": "oss",
+                "oss_path": "oss://bucket/ads/tiktok/material_report/",
+                "granularity": "hour",
+            },
+            mode="dev_execute",
+            initialize_data=True,
+            publish=False,
+            client_ip="127.0.0.1",
+        )
+
+    assert result.success is True
+    assert result.data["missing_context"] == ["data_profile"]
+    actions = result.data["next_actions"]
+    assert [action["id"] for action in actions] == [
+        "provide_data_profile",
+        "provide_data_profile_columns",
+    ]
+    assert all(action["requires_custom_input"] for action in actions)
+    assert all("payload" not in action for action in actions)
 
 
 @pytest.mark.asyncio
@@ -153,6 +262,10 @@ async def test_standard_oss_full_flow_uses_cookie_for_dev_and_requested_node_dir
     )
     directory = {
         "success": True,
+        "ingestion_mode": "raw_json_text",
+        "project": "dev",
+        "table_name": "material_report",
+        "columns": [{"name": "json_data", "type": "STRING"}],
         "directory_check": {
             "success": True,
             "channel": "cookie_bff",
@@ -194,8 +307,8 @@ async def test_standard_oss_full_flow_uses_cookie_for_dev_and_requested_node_dir
             new=AsyncMock(return_value=directory),
         ),
         patch(
-            "dataworks_agent.services.ods_oss.schema_discovery.discover_oss_schema",
-            return_value=profile,
+            "dataworks_agent.services.ods_oss.discover_oss_schema_with_fallback",
+            new=AsyncMock(return_value=profile),
         ),
         patch(
             "dataworks_agent.modeling.root_checker.RootChecker.check_fields",
@@ -215,8 +328,8 @@ async def test_standard_oss_full_flow_uses_cookie_for_dev_and_requested_node_dir
 
     assert result.success is True
     assert [item[:2] for item in created_tables] == [
-        ("giikin_develop", "ods_mc_ads_data__tiktok_smart_plus_material_report_hour"),
-        ("giikin_develop", "dwd_mkt_tiktok_smart_plus_material_report_hour"),
+        ("giikin", "ods_mc_ads_data__tiktok_smart_plus_material_report_hour"),
+        ("giikin", "dwd_mkt_tiktok_smart_plus_material_report_hour"),
     ]
     assert result.data["prod_tables"]["ods"]["status"] == "approval_required"
     assert result.data["prod_tables"]["dwd"]["status"] == "approval_required"
@@ -230,7 +343,7 @@ async def test_standard_oss_full_flow_uses_cookie_for_dev_and_requested_node_dir
     assert result.data["dwd_pipeline"]["dependency_status"] == "cookie_bff"
     assert (
         result.data["dwd_pipeline"]["dependencies"][0]["output"]
-        == "giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+        == "giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
     )
 
 
@@ -250,11 +363,20 @@ async def test_standard_oss_root_failure_blocks_table_creation():
     with (
         patch(
             "dataworks_agent.services.ods_oss.inspect_oss_directory_with_cookie",
-            new=AsyncMock(return_value={"success": True, "directory_check": {"success": True}}),
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "ingestion_mode": "raw_json_text",
+                    "project": "dev",
+                    "table_name": "material_report",
+                    "columns": [{"name": "json_data", "type": "STRING"}],
+                    "directory_check": {"success": True},
+                }
+            ),
         ),
         patch(
-            "dataworks_agent.services.ods_oss.schema_discovery.discover_oss_schema",
-            return_value={"success": True, "columns": [{"name": "bad_token"}]},
+            "dataworks_agent.services.ods_oss.discover_oss_schema_with_fallback",
+            new=AsyncMock(return_value={"success": True, "columns": [{"name": "bad_token"}]}),
         ),
         patch(
             "dataworks_agent.modeling.root_checker.RootChecker.check_fields",

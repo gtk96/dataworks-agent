@@ -21,6 +21,93 @@ def test_ask_data_success_flag_without_verification_is_rejected():
     assert decision.evidence["verification_status"] == "missing"
 
 
+def test_standard_oss_approval_boundary_is_a_verified_terminal_state():
+    result = WorkflowResult(
+        True,
+        "standard OSS flow completed",
+        "forward_modeling",
+        "dev_execute",
+        steps=[
+            {"step": step, "status": "completed"}
+            for step in (
+                "inspect_oss_directory",
+                "profile_json_sample",
+                "dmr_pub_column_check",
+                "create_dev_tables_cookie",
+                "create_ods_sql_node_cookie",
+                "configure_ods_schedule_cookie",
+                "create_dwd_sql_node_cookie",
+                "configure_dwd_schedule_cookie",
+                "configure_ods_to_dwd_dependency_cookie",
+            )
+        ]
+        + [
+            {"step": "create_prod_tables", "status": "approval_required"},
+            {"step": "publish_gate", "status": "skipped"},
+        ],
+        data={
+            "standard": "tiktok_smart_plus_material_report",
+            "dev_tables": {"ods": "giikin_develop.ods_report", "dwd": "giikin_develop.dwd_report"},
+            "prod_tables": {
+                "ods": {"status": "approval_required"},
+                "dwd": {"status": "approval_required"},
+            },
+            "ods_pipeline": {"success": True},
+            "dwd_pipeline": {"success": True},
+            "publish_gate": "not_requested",
+        },
+    )
+
+    decision = WorkflowOutcomeVerifier().verify(
+        result, workflow_type="forward_modeling", mode="dev_execute"
+    )
+
+    assert decision.passed is True
+    assert decision.retryable is False
+    assert decision.evidence["production_status"] == ["approval_required"]
+
+
+def test_standard_oss_does_not_verify_when_dwd_pipeline_failed():
+    result = WorkflowResult(
+        True,
+        "standard OSS flow incomplete",
+        "forward_modeling",
+        "dev_execute",
+        steps=[
+            {"step": "inspect_oss_directory", "status": "completed"},
+            {"step": "profile_json_sample", "status": "completed"},
+            {"step": "dmr_pub_column_check", "status": "completed"},
+            {"step": "create_dev_tables_cookie", "status": "completed"},
+            {"step": "create_ods_sql_node_cookie", "status": "completed"},
+            {"step": "configure_ods_schedule_cookie", "status": "completed"},
+            {"step": "create_dwd_sql_node_cookie", "status": "failed"},
+            {"step": "configure_dwd_schedule_cookie", "status": "completed"},
+            {"step": "configure_ods_to_dwd_dependency_cookie", "status": "completed"},
+            {"step": "create_prod_tables", "status": "approval_required"},
+            {"step": "publish_gate", "status": "skipped"},
+        ],
+        data={
+            "standard": "tiktok_smart_plus_material_report",
+            "dev_tables": {"ods": "giikin_develop.ods_report", "dwd": "giikin_develop.dwd_report"},
+            "prod_tables": {
+                "ods": {"status": "approval_required"},
+                "dwd": {"status": "approval_required"},
+            },
+            "ods_pipeline": {"success": True},
+            "dwd_pipeline": {"success": False},
+            "publish_gate": "not_requested",
+        },
+    )
+
+    decision = WorkflowOutcomeVerifier().verify(
+        result, workflow_type="forward_modeling", mode="dev_execute"
+    )
+
+    assert decision.passed is False
+    assert decision.retryable is False
+
+
+
 def test_forward_success_flag_with_failed_layer_is_rejected():
     result = WorkflowResult(
         True,

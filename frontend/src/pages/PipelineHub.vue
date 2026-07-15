@@ -13,7 +13,7 @@
                 <el-option value="parquet" label="parquet" />
               </el-select>
             </el-form-item>
-            <el-form-item label="通配符"><el-input v-model="ossForm.wildcard" style="width:120px" /></el-form-item>
+            <el-form-item label="外表分区 pt"><el-input v-model="ossForm.source_partition_value" placeholder="例如 2026071412" style="width:140px" /></el-form-item>
             <el-form-item label="调度粒度">
               <el-select v-model="ossForm.schedule_type" style="width:100px">
                 <el-option value="day" label="天" />
@@ -99,9 +99,10 @@ const activeTab = ref('oss')
 const ossForm = reactive({
   oss_path: '',
   target_table: '',
-  file_format: 'csv',
+  file_format: 'json',
   wildcard: '',
   schedule_type: 'day',
+  source_partition_value: '',
   publish: true,
 })
 const ossList = ref<typeof ossForm[]>([])

@@ -21,6 +21,14 @@ import httpx
 from dataworks_agent.config import settings
 from dataworks_agent.cookie.crypto import decrypt_cookie
 from dataworks_agent.middleware.circuit_breaker import bff_breaker
+from dataworks_agent.services.ods_oss.directory_guard import (
+    ExistingDirectoryEvidence,
+    find_node_by_path,
+    infer_existing_directory,
+    node_record_uuid,
+    normalize_node_path,
+    parent_node_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,22 +309,46 @@ class _NodeLifecycleMixin:
     """节点生命周期:创建 / 列表(带缓存) / 更新脚本 / 读取 VFS / UUID 解析。"""
 
     async def create_node(self, name: str, path: str, language: str = "odps-sql") -> str | None:
-        """在 IDE 创建节点文件。返回节点 UUID。
+        """Create or reuse a node under an existing DataWorks directory.
 
-        language: odps-sql (MaxCompute) | holo (Hologres) | di (Data Integration)
+        Node creation is allowed. Folder creation is not: an exact existing
+        node is reused, otherwise the parent directory must be positively
+        confirmed before createPackage is called.
         """
+        normalized_path = normalize_node_path(path)
+        try:
+            existing_uuid = await self.get_node_uuid_by_path(normalized_path)
+        except Exception as exc:
+            self.last_error = f"existing node lookup failed: {exc}"
+            return None
+        if existing_uuid:
+            return existing_uuid
+
+        parent_path = parent_node_path(normalized_path)
+        evidence = await self.check_existing_directory(parent_path)
+        if not evidence.confirmed:
+            self.last_error = (
+                f"parent directory not confirmed: {parent_path}; "
+                "createPackage skipped to prevent folder creation"
+            )
+            return None
+
         runtime_cmd = "HOLOGRES_SQL" if language == "holo" else "ODPS_SQL"
-        resp = await self._post(
-            "ide/createPackage",
-            {
-                "projectId": self.project_id,
-                "kind": "Node",
-                "scene": "DATAWORKS_PROJECT",
-                "name": name,
-                "language": language,
-                "script": {"path": path, "runtime": {"command": runtime_cmd}},
-            },
-        )
+        try:
+            resp = await self._post(
+                "ide/createPackage",
+                {
+                    "projectId": self.project_id,
+                    "kind": "Node",
+                    "scene": "DATAWORKS_PROJECT",
+                    "name": name,
+                    "language": language,
+                    "script": {"path": normalized_path, "runtime": {"command": runtime_cmd}},
+                },
+            )
+        except Exception as exc:
+            self.last_error = f"createPackage: {exc}"
+            return None
 
         data = resp.get("data")
         if isinstance(data, dict):
@@ -324,17 +356,16 @@ class _NodeLifecycleMixin:
             if uuid:
                 return str(uuid)
 
-        # data 为 null 但有 code=200——节点已存在或正在创建
         if resp.get("code") == 200:
-            import asyncio
-
             await asyncio.sleep(2)
-            nodes = await self.get_node_list(search=name, force_refresh=True)
-            for n in nodes:
-                node_name = n.get("name") or n.get("nodeName", "")
-                if name in node_name.lower():
-                    return str(n.get("uuid") or n.get("nodeUuid", ""))
+            existing_uuid = await self.get_node_uuid_by_path(normalized_path)
+            if existing_uuid:
+                return existing_uuid
 
+        self.last_error = (
+            f"createPackage: code={resp.get('code')}, "
+            f"message={resp.get('message') or 'uuid not returned'}"
+        )
         return None
 
     async def get_node_list(
@@ -383,16 +414,26 @@ class _NodeLifecycleMixin:
         return all_nodes
 
     async def update_node(self, uuid: str, content: str) -> bool:
-        """写入节点脚本（ide/updateNode — PUT 方法，嵌套 script.content）。"""
-        resp = await self._put(
-            "ide/updateNode",
-            {
-                "projectId": self.project_id,
-                "uuid": str(uuid),
-                "script": {"content": content},
-            },
-        )
-        return resp.get("code") == 200
+        """Write node script content through ide/updateNode."""
+        try:
+            resp = await self._put(
+                "ide/updateNode",
+                {
+                    "projectId": self.project_id,
+                    "uuid": str(uuid),
+                    "script": {"content": content},
+                },
+            )
+        except Exception as exc:
+            self.last_error = f"updateNode: {exc}"
+            return False
+        if resp.get("code") != 200:
+            self.last_error = (
+                f"updateNode: code={resp.get('code')}, "
+                f"message={resp.get('message') or 'request failed'}"
+            )
+            return False
+        return True
 
     async def get_file(self, file_path: str) -> dict:
         """读取 VFS 文件内容（ide/getFile, scheme=vfs_file）。"""
@@ -407,8 +448,16 @@ class _NodeLifecycleMixin:
         )
 
     async def get_node_uuid_by_path(self, node_dir: str) -> str | None:
-        """从节点目录的 metadata.json 中解析 package UUID。"""
-        resp = await self.get_file(f"{node_dir.rstrip('/')}/.dataworks/metadata.json")
+        """Resolve a node UUID by exact DataWorks script path, read-only."""
+        target = normalize_node_path(node_dir)
+        records = await self.get_node_list(force_refresh=True)
+        match = find_node_by_path(records, target)
+        if match:
+            return node_record_uuid(match) or None
+
+        # Some BFF deployments do not expose Script.Path in getNodeList.
+        # Keep metadata.json as a read-only fallback, never fuzzy name matching.
+        resp = await self.get_file(f"{target}/.dataworks/metadata.json")
         data = resp.get("data", {}) if isinstance(resp, dict) else {}
         content_str = data.get("content", "") if isinstance(data, dict) else ""
         if not content_str:
@@ -416,9 +465,35 @@ class _NodeLifecycleMixin:
         try:
             import json
 
-            return str(json.loads(content_str).get("uuid", ""))
+            uuid = json.loads(content_str).get("uuid", "")
+            return str(uuid) if uuid else None
         except Exception:
             return None
+
+    async def check_existing_directory(self, directory_path: str) -> ExistingDirectoryEvidence:
+        """Confirm an existing parent directory without creating or deleting it."""
+        target = normalize_node_path(directory_path)
+        if not target:
+            return ExistingDirectoryEvidence.from_check(target, "invalid_path", False)
+
+        try:
+            records = await self.get_node_list(force_refresh=True)
+            if infer_existing_directory(records, target):
+                return ExistingDirectoryEvidence.from_check(target, "node_path", True)
+        except Exception as exc:
+            logger.debug("directory node evidence lookup failed: %s", exc)
+
+        try:
+            resp = await self.get_file(f"{target}/.dataworks/metadata.json")
+            data = resp.get("data", {}) if isinstance(resp, dict) else {}
+            if isinstance(data, dict) and (
+                data.get("content") or data.get("uuid") or data.get("kind")
+            ):
+                return ExistingDirectoryEvidence.from_check(target, "vfs_metadata", True)
+        except Exception as exc:
+            logger.debug("directory metadata lookup failed: %s", exc)
+
+        return ExistingDirectoryEvidence.from_check(target, "no_positive_evidence", False)
 
     async def get_node_code(self, node_id: int, *, env: str = "prod") -> dict | None:
         """获取节点代码（workbench/getNodeCode）。"""
@@ -468,7 +543,7 @@ class _ScheduleMixin:
     async def update_vertex(
         self, uuid: str, config: dict | None = None, instance_mode: str = "Immediately"
     ) -> bool:
-        """修改调度配置（ide/updateVertex — POST, instanceMode 在顶层）。"""
+        """Update scheduling, dependency, and output configuration."""
         if config is None:
             config = {}
         payload = {
@@ -476,12 +551,21 @@ class _ScheduleMixin:
             "uuid": str(uuid),
             "instanceMode": instance_mode,
         }
-        # 调度触发/参数嵌套在 config 里
         for key in ("trigger", "script", "strategy", "dependencies", "resourceGroup", "outputs"):
             if key in config:
                 payload[key] = config[key]
-        resp = await self._post("ide/updateVertex", payload)
-        return resp.get("code") == 200
+        try:
+            resp = await self._post("ide/updateVertex", payload)
+        except Exception as exc:
+            self.last_error = f"updateVertex: {exc}"
+            return False
+        if resp.get("code") != 200:
+            self.last_error = (
+                f"updateVertex: code={resp.get('code')}, "
+                f"message={resp.get('message') or 'request failed'}"
+            )
+            return False
+        return True
 
     async def get_vertex(self, uuid: str) -> dict:
         """获取节点详情。"""

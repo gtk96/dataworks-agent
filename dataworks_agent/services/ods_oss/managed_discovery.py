@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import PurePosixPath
 from typing import Any
 
+from dataworks_agent.config import settings
 from dataworks_agent.governance.sql_lineage import parse_ddl_structure
 from dataworks_agent.services.ods_oss.config import infer_file_format, parse_oss_path
-from dataworks_agent.services.ods_oss.schema_discovery import discover_oss_schema
+from dataworks_agent.services.ods_oss.schema_discovery import (
+    discover_oss_schema,
+    infer_json_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,8 @@ async def discover_managed_oss_schema(
     bff_client: Any,
     oss_path: str,
     file_format: str | None = None,
+    *,
+    include_registration: bool = False,
 ) -> dict[str, Any]:
     """Resolve schema from a DataWorks managed OSS datasource and exact external table."""
     try:
@@ -164,6 +171,11 @@ async def discover_managed_oss_schema(
         if not ddl or not _ddl_location_matches(ddl, location):
             continue
         parsed = parse_ddl_structure(ddl)
+        partition_names = [
+            str(partition.get("name") or "").strip()
+            for partition in parsed.get("partitions") or []
+            if str(partition.get("name") or "").strip()
+        ]
         columns = [
             {
                 "name": str(column.get("name") or "").strip(),
@@ -185,7 +197,7 @@ async def discover_managed_oss_schema(
             if _raw_json_text_mode(ddl, columns, normalized_format)
             else "structured"
         )
-        return {
+        result = {
             "success": True,
             "channel": "dataworks_managed_datasource",
             "source": "dataworks_managed_datasource",
@@ -195,12 +207,184 @@ async def discover_managed_oss_schema(
             "file_format": normalized_format,
             "record_count": 0,
             "columns": columns,
+            "partition_columns": partition_names,
+            "table_name": str(table.get("table_name") or source_name).strip(),
+            "project": str(table.get("project") or "giikin_develop").strip(),
+            "entity_guid": str(table.get("entity_guid") or "").strip(),
             "ingestion_mode": ingestion_mode,
         }
+        if include_registration:
+            result.update(
+                {
+                    "project": str(table.get("project") or "giikin_develop").strip(),
+                    "table_name": str(table.get("table_name") or source_name).strip(),
+                    "entity_guid": str(table.get("entity_guid") or "").strip(),
+                    "source_table": (
+                        f"{table.get('project')}.{table.get('table_name')}"
+                        if table.get("project") and table.get("table_name")
+                        else str(table.get("table_name") or source_name).strip()
+                    ),
+                }
+            )
+        return result
 
     return _managed_failure(
         location, normalized_format, "registered_table_location_or_schema_mismatch"
     )
+
+
+_SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_identifier(value: Any) -> str:
+    candidate = str(value or "").strip()
+    return candidate if _SAFE_IDENTIFIER.fullmatch(candidate) else ""
+
+
+def _json_records_from_value(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, bytes):
+        value = value.decode("utf-8-sig")
+    if not isinstance(value, str) or not value.strip():
+        return []
+    text = value.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        records: list[dict[str, Any]] = []
+        for line in text.splitlines():
+            line = line.strip().rstrip(",")
+            if not line or line in {"[", "]"}:
+                continue
+            try:
+                parsed_line = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed_line, dict):
+                records.append(parsed_line)
+        return records
+    return _json_records_from_value(parsed)
+
+
+def _row_value(row: Any, column_name: str, column_index: int = 0) -> Any:
+    if isinstance(row, dict):
+        if column_name in row:
+            return row[column_name]
+        lowered = column_name.casefold()
+        for key, value in row.items():
+            if str(key).casefold() == lowered:
+                return value
+        values = list(row.values())
+        return values[column_index] if len(values) > column_index else None
+    if isinstance(row, (list, tuple)):
+        return row[column_index] if len(row) > column_index else None
+    return row
+
+
+async def _query_cookie_bff_rows(bff_client: Any, sql: str) -> tuple[list[str], list[Any]]:
+    job_code = await asyncio.wait_for(
+        bff_client.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
+    )
+    if not job_code:
+        raise RuntimeError(getattr(bff_client, "last_error", None) or "BFF did not return a query job")
+    completed = await asyncio.wait_for(
+        bff_client.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
+    )
+    if not completed:
+        raise RuntimeError(getattr(bff_client, "last_error", None) or "BFF query did not complete")
+    result = await asyncio.wait_for(
+        bff_client.get_query_result(job_code), timeout=settings.ask_data_timeout_seconds
+    )
+    if not isinstance(result, dict):
+        raise RuntimeError("BFF did not return a query result")
+    headers = result.get("headerList") or []
+    columns = [
+        str(item.get("name", "")) if isinstance(item, dict) else str(item)
+        for item in headers
+    ]
+    rows = list((result.get("bodyList") or [])[:100])
+    return columns, rows
+
+
+async def discover_managed_oss_sample(
+    bff_client: Any,
+    managed_result: dict[str, Any],
+    *,
+    max_records: int = 100,
+) -> dict[str, Any]:
+    """Infer raw JSON fields by querying the registered external table via Cookie/BFF."""
+    if not managed_result.get("success"):
+        return {
+            **managed_result,
+            "success": False,
+            "error_code": "cookie_bff_sample_unavailable",
+            "next_action": "Provide a real JSON sample or data_profile; direct OSS SDK access is not used here.",
+        }
+    if managed_result.get("ingestion_mode") != "raw_json_text":
+        return managed_result
+    if bff_client is None:
+        return {
+            **managed_result,
+            "success": False,
+            "error_code": "cookie_bff_sample_unavailable",
+            "next_action": "Provide a real JSON sample or data_profile; Cookie/BFF is unavailable.",
+        }
+
+    project = _safe_identifier(managed_result.get("project"))
+    table_name = _safe_identifier(managed_result.get("table_name"))
+    raw_columns = managed_result.get("columns") or []
+    raw_column = (
+        _safe_identifier(raw_columns[0].get("name") if isinstance(raw_columns[0], dict) else "")
+        if raw_columns
+        else ""
+    )
+    if not project or not table_name or not raw_column:
+        return {
+            **managed_result,
+            "success": False,
+            "error_code": "cookie_bff_sample_unavailable",
+            "next_action": "Provide a real JSON sample or data_profile because the registered table identifier is incomplete.",
+        }
+
+    sql = f"SELECT `{raw_column}` FROM `{project}`.`{table_name}` LIMIT {max(1, min(max_records, 100))}"
+    try:
+        headers, rows = await _query_cookie_bff_rows(bff_client, sql)
+        column_index = next(
+            (index for index, value in enumerate(headers) if value.casefold() == raw_column.casefold()),
+            0,
+        )
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            records.extend(_json_records_from_value(_row_value(row, raw_column, column_index)))
+            if len(records) >= max_records:
+                break
+        records = records[:max_records]
+        if not records:
+            raise ValueError("registered external table returned no JSON object sample")
+        columns = infer_json_columns(records)
+        return {
+            **managed_result,
+            "success": True,
+            "columns": columns,
+            "record_count": len(records),
+            "sample_records": records,
+            "sample_source": "cookie_bff_registered_external_table",
+            "sample_query": sql,
+            "raw_columns": raw_columns,
+        }
+    except Exception as exc:
+        logger.warning("Cookie/BFF OSS sample query failed: %s", type(exc).__name__)
+        return {
+            **managed_result,
+            "success": False,
+            "error_code": "cookie_bff_sample_unavailable",
+            "error": "Cookie/BFF could not return a JSON sample from the registered external table.",
+            "next_action": "Provide a real JSON sample or data_profile; direct OSS SDK access is not used here.",
+            "sample_query": sql,
+        }
 
 
 async def inspect_oss_directory_with_cookie(
@@ -214,7 +398,9 @@ async def inspect_oss_directory_with_cookie(
     the modeling workflow.  Local OSS SDK sampling remains a separate, optional
     data-profiling fallback and must not be reported as a Cookie check.
     """
-    result = await discover_managed_oss_schema(bff_client, oss_path, file_format)
+    result = await discover_managed_oss_schema(
+        bff_client, oss_path, file_format, include_registration=True
+    )
     location = result.get("location") or {}
     if not result.get("success"):
         result = dict(result)
@@ -245,10 +431,20 @@ async def discover_oss_schema_with_fallback(
     bff_client: Any,
     oss_path: str,
     file_format: str | None = None,
+    *,
+    sample_managed_json: bool = False,
+    managed_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Prefer managed metadata, then use bounded local OSS SDK sampling."""
-    managed = await discover_managed_oss_schema(bff_client, oss_path, file_format)
+    """Prefer DataWorks managed metadata and optionally sample raw JSON through Cookie/BFF."""
+    managed = managed_result or await discover_managed_oss_schema(
+        bff_client,
+        oss_path,
+        file_format,
+        include_registration=sample_managed_json,
+    )
     if managed.get("success"):
+        if sample_managed_json and managed.get("ingestion_mode") == "raw_json_text":
+            return await discover_managed_oss_sample(bff_client, managed)
         return managed
 
     local = await asyncio.to_thread(discover_oss_schema, oss_path, file_format)

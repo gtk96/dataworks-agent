@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from dataworks_agent.api_clients.bff_client import DataWorksClient
+from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
 
 
 class FakeAsyncClient:
@@ -288,3 +289,54 @@ def test_reset_auth_cache_discards_cached_credentials(client: DataWorksClient):
     assert client._csrf_token == ""
     assert client._csrf_time == 0
     assert client.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_create_node_reuses_exact_existing_path_without_create_package(client: DataWorksClient):
+    client.get_node_uuid_by_path = AsyncMock(return_value="existing-uuid")
+    client._post = AsyncMock()
+
+    result = await client.create_node("node", "????/00_ODS/node")
+
+    assert result == "existing-uuid"
+    client._post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_node_refuses_missing_parent_without_create_package(client: DataWorksClient):
+    client.get_node_uuid_by_path = AsyncMock(return_value=None)
+    client.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(
+            "????/00_ODS", "no_positive_evidence", False
+        )
+    )
+    client._post = AsyncMock()
+
+    result = await client.create_node("node", "????/00_ODS/node")
+
+    assert result is None
+    assert "??" in client.last_error
+    client._post.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_create_node_creates_node_when_parent_is_confirmed_without_folder_creation(
+    client: DataWorksClient,
+):
+    client.get_node_uuid_by_path = AsyncMock(return_value=None)
+    client.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(
+            "business/00_ODS", "node_path_prefix", True
+        )
+    )
+    client._post = AsyncMock(return_value={"code": 200, "data": {"uuid": "new-uuid"}})
+
+    result = await client.create_node("node", "business/00_ODS/node")
+
+    assert result == "new-uuid"
+    client.check_existing_directory.assert_awaited_once_with("business/00_ODS")
+    client._post.assert_awaited_once()
+    endpoint, payload = client._post.await_args.args
+    assert endpoint == "ide/createPackage"
+    assert payload["kind"] == "Node"
+    assert payload["name"] == "node"
+    assert payload["script"]["path"] == "business/00_ODS/node"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -289,31 +290,34 @@ class EntityExtractor:
                 return granularity
         return None
 
+    @staticmethod
+    def _extract_named_directory(text: str, label: str) -> str | None:
+        """Extract a directory even when multiple answers share one message."""
+        directory_words = r"(?:\u76ee\u5f55|\u8def\u5f84|directory|path)"
+        granularity_words = r"(?:\u7c92\u5ea6|granularity)"
+        if label == "ods":
+            prefix = rf"(?:ODS\s*SQL|ODS)\s*{directory_words}"
+            stop = rf"(?:DWD\s*SQL|DWD)\s*{directory_words}|(?:DWD\s*)?{granularity_words}"
+        else:
+            prefix = rf"(?:DWD\s*SQL|DWD)\s*{directory_words}"
+            stop = rf"(?:ODS\s*SQL|ODS)\s*{directory_words}|(?:DWD\s*)?{granularity_words}"
+        pattern = (
+            rf"{prefix}\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*"
+            rf"(?P<value>.+?)(?=\s*(?:[,\uff0c;\uff1b\u3002\n]|$)|\s+(?:{stop}))"
+        )
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            return None
+        value = re.sub(r"\s+", " ", match.group("value")).strip().strip('`"')
+        return value or None
+
     def extract_ods_sql_directory(self, text: str) -> str | None:
         """Extract the DataWorks business-process directory for the ODS SQL node."""
-        patterns = (
-            r"(?:ODS\s*SQL|ods\s*sql|SQL)\s*(?:\u76ee\u5f55|\u8def\u5f84|directory|path)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
-            r"(?:\u5efa|\u653e|\u653e\u5230|\u843d\u5728)\s*(?:\u76ee\u5f55|\u8def\u5f84)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
-        )
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                value = match.group(1).strip().strip('`"')
-                return value or None
-        return None
+        return self._extract_named_directory(text, "ods")
 
     def extract_dwd_sql_directory(self, text: str) -> str | None:
         """Extract the DataWorks business-process directory for the DWD SQL node."""
-        patterns = (
-            r"(?:DWD\s*SQL|dwd\s*sql|DWD)\s*(?:\u76ee\u5f55|\u8def\u5f84|directory|path)\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
-            r"(?:DWD|\u660e\u7ec6)\s*(?:\u8282\u70b9|SQL)?\s*(?:\u5efa\u5728|\u653e\u5728|\u843d\u5728)\s*(?:\u76ee\u5f55|\u8def\u5f84)?\s*(?:\u662f|\u4e3a|[:\uff1a])?\s*([^\n\u3002\uff0c,;\uff1b]+?)(?=\s+(?:DWD\s*SQL|ODS\s*SQL)|$)",
-        )
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                value = match.group(1).strip().strip('`"')
-                return value or None
-        return None
+        return self._extract_named_directory(text, "dwd")
 
     def extract_prod_schema(self, text: str) -> str | None:
         """Extract the explicitly named production MaxCompute project."""
@@ -369,6 +373,33 @@ class EntityExtractor:
             ):
                 mappings.append({"json_key": json_key, "target_name": target_name})
         return mappings or None
+
+    @staticmethod
+    def extract_data_profile(text: str) -> dict[str, Any] | None:
+        """Extract a bounded JSON sample or explicit data_profile from chat text."""
+        decoder = json.JSONDecoder()
+        candidates: list[Any] = []
+        limit = min(len(text), 200_000)
+        for index, char in enumerate(text[:limit]):
+            if char not in "[{":
+                continue
+            try:
+                value, _ = decoder.raw_decode(text, index)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict) and isinstance(value.get("columns"), list):
+                return {"columns": value["columns"]}
+            if isinstance(value, dict) and isinstance(value.get("records"), list):
+                records = [record for record in value["records"] if isinstance(record, dict)]
+                if records:
+                    return {"records": records}
+            if isinstance(value, dict):
+                candidates.append({"records": [value]})
+            elif isinstance(value, list):
+                records = [record for record in value if isinstance(record, dict)]
+                if records:
+                    candidates.append({"records": records})
+        return candidates[0] if candidates else None
 
     def extract_schedule_minute(self, text: str) -> int | None:
         """Extract hourly schedule minute."""
@@ -481,6 +512,10 @@ class EntityExtractor:
             logical_primary_keys = self.extract_logical_primary_keys(text)
             if logical_primary_keys:
                 params["logical_primary_keys"] = logical_primary_keys
+        if "data_profile" in wanted:
+            data_profile = self.extract_data_profile(text)
+            if data_profile:
+                params["data_profile"] = data_profile
         if "json_field_mappings" in wanted:
             json_field_mappings = self.extract_json_field_mappings(text)
             if json_field_mappings:

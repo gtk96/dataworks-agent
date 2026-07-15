@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="agent-workspace">
     <aside class="conversation-rail">
       <button class="new-chat" type="button" @click="resetConversation">
@@ -210,9 +210,18 @@
               <p v-for="error in responseErrors" :key="error">{{ error }}</p>
             </div>
 
-            <div v-if="nextActions.length" class="next-actions">
+            <div v-if="nextActions.length || customInputHint" class="next-actions">
               <strong>建议下一步</strong>
-              <button v-for="action in nextActions" :key="action" type="button" @click="selectPrompt(action)">{{ action }}</button>
+              <button
+                v-for="action in nextActions"
+                :key="nextActionKey(action)"
+                type="button"
+                :disabled="loading"
+                @click="chooseNextAction(action)"
+              >
+                {{ nextActionLabel(action) }}
+              </button>
+              <small v-if="customInputHint" class="custom-input-hint">{{ customInputHint }}</small>
             </div>
 
             <el-collapse v-if="artifactCards.length || technicalDetails" class="technical-collapse">
@@ -248,7 +257,7 @@
             :placeholder="composerPlaceholder"
             @focus="inputFocused = true"
             @blur="inputFocused = false"
-            @keydown.enter.exact.prevent="sendMessage"
+            @keydown.enter.exact.prevent="() => void sendMessage()"
           />
           <div class="composer-toolbar">
             <div class="mode-control">
@@ -267,7 +276,7 @@
               </div>
             </el-popover>
             <span class="guard-hint"><el-icon><Lock /></el-icon>{{ modeDescription }}</span>
-            <button class="send-button" type="button" :disabled="!input.trim() || loading" @click="sendMessage">
+            <button class="send-button" type="button" :disabled="!input.trim() || loading" @click="() => void sendMessage()">
               <el-icon v-if="!loading"><Promotion /></el-icon><span v-else class="send-spinner" />
             </button>
           </div>
@@ -297,7 +306,8 @@ import ChatMessage from './ChatMessage.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 import { buildSourceDiscoveryView } from './sourceDiscovery'
-import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentExecutionMode } from './chatInteraction'
+import { buildExecutionResources } from './executionResources'
+import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentContextUpdates, type AgentExecutionMode } from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
 
 interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
@@ -315,6 +325,15 @@ interface SemanticPlan {
   metadata_validation?: { status?: string; channel?: string }
   album_validation?: { status?: string; certified_table_present?: boolean }
 }
+interface NextAction {
+  id: string
+  label: string
+  value?: string
+  payload?: AgentContextUpdates
+  requires_custom_input?: boolean
+}
+type NextActionValue = string | NextAction
+
 interface AgentPayload {
   message: string
   success: boolean
@@ -331,7 +350,9 @@ interface AgentPayload {
     publish_gate?: string
     publish_request?: Record<string, unknown>
     clarifying_questions?: string[]
-    next_actions?: string[]
+    next_actions?: NextActionValue[]
+    allow_custom_input?: boolean
+    custom_input_hint?: string
     agent_mode?: string
     semantic_plan?: SemanticPlan
     source_discovery?: Record<string, unknown>
@@ -404,7 +425,8 @@ const modeDescription = computed(() => modeDescriptions[executionMode.value])
 const planSteps = computed(() => lastPayload.value?.data?.plan?.steps ?? lastPayload.value?.data?.steps ?? [])
 const clarifyingQuestions = computed(() => lastPayload.value?.data?.clarifying_questions ?? [])
 const composerPlaceholder = computed(() => activeClarifyingQuestion.value || '给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化')
-const nextActions = computed(() => lastPayload.value?.data?.next_actions ?? [])
+const nextActions = computed<NextActionValue[]>(() => lastPayload.value?.data?.next_actions ?? [])
+const customInputHint = computed(() => lastPayload.value?.data?.allow_custom_input ? (lastPayload.value?.data?.custom_input_hint || '也可以直接在下方输入你的自定义答案。') : '')
 const responseErrors = computed(() => {
   const errors = lastPayload.value?.data?.errors ?? []
   const primary = lastPayload.value?.error
@@ -437,10 +459,7 @@ const publishGateText = computed(() => {
   return lastPayload.value?.data?.publish_gate === 'approval_required' ? '待审批' : '未发布'
 })
 const sourceDiscovery = computed(() => buildSourceDiscoveryView(lastPayload.value?.data?.source_discovery))
-const executionTables = computed(() => {
-  const rows = lastPayload.value?.data?.executed ?? []
-  return rows.map((row) => String(row.table ?? row.node_name ?? '')).filter(Boolean)
-})
+const executionTables = computed(() => buildExecutionResources(lastPayload.value?.data))
 const capabilityBadges = computed(() => buildCapabilityBadges(capabilities.value))
 const healthyCapabilityCount = computed(() => capabilityBadges.value.filter((item) => item.online).length)
 const queryResult = computed(() => lastPayload.value?.data?.query)
@@ -549,8 +568,8 @@ function connectWebSocket() {
   socket.onclose = () => { if (ws.value === socket) ws.value = null }
   socket.onerror = () => socket.close()
 }
-async function sendMessage() {
-  const text = input.value.trim()
+async function sendMessage(overrideText?: string, contextUpdates?: AgentContextUpdates) {
+  const text = (overrideText ?? input.value).trim()
   if (!text || loading.value) return
   input.value = ''
   messages.value.push({ id: idempotencyKey(), text, isUser: true, timestamp: new Date() })
@@ -563,6 +582,7 @@ async function sendMessage() {
       initializeData.value,
       requestPublish.value,
       conversationId.value,
+      contextUpdates,
     )
     handleAgentResponse(await requestAgentChat<AgentPayload>(payload))
   } catch (error) {
@@ -603,6 +623,20 @@ async function reviewPublish(decision: 'approve' | 'reject') {
   }
 }
 function selectPrompt(text: string) { input.value = text; nextTick(() => composerInput.value?.focus()) }
+function nextActionLabel(action: NextActionValue) { return typeof action === 'string' ? action : action.label }
+function nextActionKey(action: NextActionValue) { return typeof action === 'string' ? action : action.id }
+function chooseNextAction(action: NextActionValue) {
+  if (typeof action === 'string') {
+    return selectPrompt(action)
+  }
+  if (action.requires_custom_input) {
+    activeClarifyingQuestion.value = customInputHint.value || action.label
+    input.value = ''
+    nextTick(() => composerInput.value?.focus())
+    return
+  }
+  void sendMessage(action.label, action.payload)
+}
 function prepareClarification(question: string) {
   activeClarifyingQuestion.value = question
   input.value = ''
@@ -665,6 +699,7 @@ function artifactLabel(key: string) { return ({ ddl: 'DDL', sql: 'DML / SQL', qu
 .next-actions strong { width: 100%; color: #55555d; }
 .next-actions button { padding: 6px 9px; border: 1px solid #dedee6; border-radius: 7px; background: #fff; color: #5c45c7; font-size: 11px; cursor: pointer; }
 .next-actions button:hover { border-color: #8a72f8; background: #f8f6ff; }
+.custom-input-hint { width: 100%; color: #777780; font-size: 11px; line-height: 1.4; }
 
 .publish-approval { margin-top: 14px; padding: 14px; border: 1px solid #ead9a6; border-radius: 10px; background: #fffaf0; }
 .publish-approval-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -63,9 +63,10 @@ def _record_pipeline_modeling_task(
 class OssSubmission(BaseModel):
     oss_path: str
     target_table: str
-    file_format: str = "csv"
+    file_format: str = "json"
     wildcard: str = ""
     schedule_type: str = "day"
+    source_partition_value: str | None = None
     publish: bool = True
 
 
@@ -134,6 +135,7 @@ async def create_oss_batch(req: Request, body: OssBatchRequest):
                     task_index=idx,
                     total_tasks=total,
                     publish=submission.publish,
+                    source_partition_value=submission.source_partition_value,
                 )
                 if run_result.get("success"):
                     queue.complete_task(
@@ -299,20 +301,34 @@ async def get_batch(batch_id: str):
 
 @router.post("/preview/oss-sql")
 async def preview_oss_sql(body: OssSubmission):
-    """Preview OSS import SQL without creating nodes."""
-    from dataworks_agent.services.ods_oss import build_oss_import_sql, validate_oss_config
+    """Preview external-table-to-ODS SQL without creating nodes."""
+    from dataworks_agent.services.ods_oss import (
+        build_ods_extract_sql,
+        ods_table_name,
+        parse_oss_path,
+        validate_oss_config,
+    )
 
     errors = validate_oss_config(body.oss_path, body.target_table, body.file_format)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
-    sql = build_oss_import_sql(
-        target_table=body.target_table,
-        oss_path=body.oss_path,
-        file_format=body.file_format,
-        wildcard=body.wildcard,
-        schedule_type=body.schedule_type,
-    )
-    return {"status": "ok", "sql": sql}
+    location = parse_oss_path(body.oss_path)
+    source_name = str(location["object_key"] or "").rstrip("/").rsplit("/", 1)[-1]
+    if "." in source_name and not location.get("is_prefix"):
+        source_name = source_name.rsplit(".", 1)[0]
+    try:
+        expected_table = ods_table_name(source_name, body.schedule_type if body.schedule_type in {"day", "hour"} else "day")
+        if body.target_table != expected_table:
+            raise ValueError(f"target_table must be {expected_table}")
+        sql = build_ods_extract_sql(
+            source_table=source_name,
+            target_table=body.target_table,
+            granularity=body.schedule_type,
+            source_partition_value=body.source_partition_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": str(exc)}) from exc
+    return {"status": "ok", "sql": sql, "source_table": source_name, "target_table": body.target_table}
 
 
 @router.post("/preview/realtime")

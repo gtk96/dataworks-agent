@@ -21,6 +21,12 @@ from typing import Any
 
 from dataworks_agent.api_clients.flowspec import build_node_flowspec
 from dataworks_agent.api_clients.openapi_client import DataWorksOpenAPIClient, OpenAPIError
+from dataworks_agent.services.ods_oss.directory_guard import (
+    ExistingDirectoryEvidence,
+    infer_existing_directory,
+    normalize_node_path,
+    parent_node_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +76,32 @@ class OpenAPINodeAdapter:
     # ── 建节点 ───────────────────────────────────────────────
 
     async def create_node(self, name: str, path: str, language: str = "odps-sql") -> str | None:
-        """建草稿节点（占位内容 + 默认日调度，后续 update_node/update_vertex 覆盖）。"""
-        # Holo 节点数据源名与 MaxCompute 不同（真机为 dataworks_holo）；DI 无顶层数据源
+        """Create or reuse a node under an already existing DataWorks directory."""
+        normalized_path = normalize_node_path(path)
+        try:
+            existing_uuid = await self.get_node_uuid_by_path(normalized_path)
+            if existing_uuid:
+                return existing_uuid
+        except Exception as exc:
+            self.last_error = f"existing node lookup failed: {exc}"
+            return None
+
+        parent_path = parent_node_path(normalized_path)
+        evidence = await self.check_existing_directory(parent_path)
+        if not evidence.confirmed:
+            self.last_error = (
+                f"parent directory not confirmed: {parent_path}; "
+                "OpenAPI directory evidence is required; node creation skipped"
+            )
+            return None
+
+        # Hologres uses a different datasource; MaxCompute and DI use project/default settings.
         datasource_name = self._holo_datasource if language == "holo" else self._project
         try:
             spec = build_node_flowspec(
                 name=name,
                 script_content=f"-- {name}\n",
-                script_path=path,
+                script_path=normalized_path,
                 output_ref=f"{self._project}.{name}",
                 language=language,
                 datasource_name=datasource_name,
@@ -96,7 +120,7 @@ class OpenAPINodeAdapter:
             return None
         node_id = _to_map(body).get("Id")
         if not node_id:
-            self.last_error = "create_node 未返回 Id"
+            self.last_error = "create_node did not return Id"
             return None
         return str(node_id)
 
@@ -232,6 +256,29 @@ class OpenAPINodeAdapter:
         return _to_map(body).get("Id") is not None
 
     # ── 按路径反查节点 uuid（list_nodes 扫描匹配 Script.Path）──
+
+    async def check_existing_directory(self, directory_path: str) -> ExistingDirectoryEvidence:
+        """Confirm a parent directory from read-only ListNodes evidence."""
+        target = normalize_node_path(directory_path)
+        if not target:
+            return ExistingDirectoryEvidence.from_check(target, "invalid_path", False)
+        records: list[dict[str, Any]] = []
+        for page in range(1, self._max_scan_pages + 1):
+            try:
+                body = await self._api.list_nodes(
+                    page_number=page, page_size=100, scene=self._scene
+                )
+            except OpenAPIError as e:
+                self.last_error = f"{e.code}: {e.message}"
+                return ExistingDirectoryEvidence.from_check(target, "list_nodes_error", False)
+            paging = _to_map(body).get("PagingInfo") or {}
+            nodes = paging.get("Nodes") or []
+            records.extend(n for n in nodes if isinstance(n, dict))
+            if not nodes or page * 100 >= (paging.get("TotalCount") or 0):
+                break
+        if infer_existing_directory(records, target):
+            return ExistingDirectoryEvidence.from_check(target, "node_path", True)
+        return ExistingDirectoryEvidence.from_check(target, "no_positive_evidence", False)
 
     async def get_node_uuid_by_path(self, node_dir: str) -> str | None:
         target = node_dir.rstrip("/")

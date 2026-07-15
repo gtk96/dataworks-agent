@@ -261,3 +261,126 @@ async def test_chat_agent_keeps_pending_workflow_context_for_short_followup() ->
     assert sent["params"]["file_format"] == "json"
     assert sent["params"]["oss_path"] == followup.removesuffix(" 字段是 json")
     assert await agent._conversation_graph.pending_objective(conversation_id) == ""
+
+
+@pytest.mark.asyncio
+async def test_chat_agent_summarizes_completed_workflow_without_reexecution():
+    agent = ChatAgent()
+    conversation_id = "completed-workflow-summary"
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="model completed",
+            workflow_type="forward_modeling",
+            mode="dev_execute",
+            steps=[
+                {"step": "create_dev_tables_cookie", "status": "completed"},
+                {"step": "create_dwd_sql_node_cookie", "status": "completed"},
+                {"step": "create_prod_tables", "status": "approval_required"},
+            ],
+            data={
+                "standard": "tiktok_smart_plus_material_report",
+                "dev_tables": {
+                    "ods": {"schema": "giikin_develop", "table": "ods_demo"},
+                    "dwd": {"schema": "giikin_develop", "table": "dwd_demo"},
+                },
+                "prod_tables": {
+                    "ods": {"status": "approval_required"},
+                    "dwd": {"status": "approval_required"},
+                },
+                "publish_gate": "not_requested",
+            },
+        )
+    )
+
+    first = await agent.chat(
+        "\u4e3a tiktok_smart_plus_material_report \u5efa\u6a21",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+    second = await agent.chat(
+        "\u8bf7\u603b\u7ed3\u5f53\u524d\u4f1a\u8bdd\u7684\u5efa\u6a21\u7ed3\u679c\uff0c\u4e0d\u8981\u91cd\u590d\u6267\u884c",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+
+    assert first.success is True
+    assert second.success is True
+    assert agent._workflow_service.execute.await_count == 1
+    assert second.data["conversation_follow_up"] is True
+    assert "giikin_develop.ods_demo" in second.message
+    assert "Publish Gate" in second.message
+    assert second.data["next_actions"]
+
+@pytest.mark.asyncio
+async def test_chat_agent_read_only_artifact_followup_without_reexecution():
+    agent = ChatAgent()
+    conversation_id = "completed-workflow-read-only"
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="model completed",
+            workflow_type="forward_modeling",
+            mode="dev_execute",
+            steps=[
+                {"step": "create_dev_tables_cookie", "status": "completed"},
+                {"step": "create_ods_sql_node_cookie", "status": "completed"},
+                {"step": "create_dwd_sql_node_cookie", "status": "completed"},
+                {"step": "create_prod_tables", "status": "approval_required"},
+            ],
+            data={
+                "standard": "tiktok_smart_plus_material_report",
+                "artifacts": {
+                    "ods": {"sql": "ODS SQL BODY", "ddl": "ODS DDL BODY"},
+                    "dwd": {"sql": "DWD SQL BODY", "ddl": "DWD DDL BODY"},
+                },
+                "dev_tables": {
+                    "ods": {"schema": "giikin_develop", "table": "ods_demo"},
+                    "dwd": {"schema": "giikin_develop", "table": "dwd_demo"},
+                },
+                "prod_tables": {
+                    "ods": {"status": "approval_required"},
+                    "dwd": {"status": "approval_required"},
+                },
+                "ods_pipeline": {"cron": "00 03 00-23/1 * * ?"},
+                "dwd_pipeline": {"cron": "00 03 00-23/1 * * ?"},
+                "schedule": {"cycle": "hourly"},
+                "publish_gate": "not_requested",
+            },
+        )
+    )
+
+    first = await agent.chat(
+        "\u4e3a tiktok_smart_plus_material_report \u5efa\u6a21",
+        request_type="ods_dwd_modeling",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+    second = await agent.chat(
+        "\u67e5\u770b\u5f53\u524d ODS/DWD SQL \u4ea7\u7269",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+    third = await agent.chat(
+        "\u67e5\u770b\u5f53\u524d ODS/DWD \u8c03\u5ea6",
+        execution_mode="auto",
+        conversation_id=conversation_id,
+    )
+
+    assert first.success is True
+    assert second.success is True
+    assert third.success is True
+    assert agent._workflow_service.execute.await_count == 1
+    assert second.data["read_only_follow_up"] is True
+    assert second.data["agent_mode"] == "read_only"
+    assert second.data["read_only_artifacts"] == {
+        "ods_sql": "ODS SQL BODY",
+        "dwd_sql": "DWD SQL BODY",
+        "ods_ddl": "ODS DDL BODY",
+        "dwd_ddl": "DWD DDL BODY",
+    }
+    assert "\u672a\u91cd\u590d\u5efa\u6a21" in second.message
+    assert third.data["read_only_artifacts"]["schedule"] == {"cycle": "hourly"}
+    assert third.data["read_only_artifacts"]["ods_schedule"] == "00 03 00-23/1 * * ?"
+    assert third.data["read_only_artifacts"]["dwd_schedule"] == "00 03 00-23/1 * * ?"
+    assert "\u672a\u91cd\u590d\u914d\u7f6e\u8c03\u5ea6" in third.message

@@ -1,9 +1,9 @@
 """Coordinator — 多专业 agent 协调器。
 
-实现 Requirement 20：
+实现 Requirement 20 + Harness Engineering Identity 支柱：
 - 编排需求理解/架构/建模/治理/诊断/查询专业 agent
-- 任务分解分派汇总
-- 跨域架构/成本优化经审批
+- 每个 agent 有明确的身份声明（能力边界 + 行为约束 + IO 契约）
+- 超级红线强制校验：违反即阻断
 - 子任务失败阻断下游
 """
 
@@ -14,6 +14,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+
+from dataworks_agent.runtime.identity import (
+    AgentConstraint,
+    AgentIdentity,
+    AgentRegistry,
+    ConstraintLevel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,7 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     BLOCKED = "blocked"
+    CONSTRAINT_VIOLATED = "constraint_violated"  # 新：红线违反
 
 
 @dataclass
@@ -52,6 +60,8 @@ class SubTask:
     error: str = ""
     depends_on: list[str] = field(default_factory=list)
     created_at: str = ""
+    constraints_checked: bool = False
+    constraint_violations: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.created_at:
@@ -67,28 +77,40 @@ class CoordinationResult:
     sub_tasks: list[SubTask] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    constraint_violations: list[str] = field(default_factory=list)  # 新：红线违反记录
 
 
 class Coordinator:
     """多专业 agent 协调器。
 
-    编排需求理解/架构/建模/治理/诊断/查询专业 agent。
+    Harness Identity 支柱实现：
+    - 每个 agent 有明确的身份声明（能力说明书 + 行为约束体系）
+    - 三层金字塔约束：超级红线 / 错误记录 / 操作规则
+    - 约束在子任务执行前强制校验
     """
 
     def __init__(self) -> None:
-        from dataworks_agent.runtime.agent import Agent
-
+        self._registry = AgentRegistry()
         self._agents: dict[AgentType, Agent] = {}
         self._register_agents()
 
     def _register_agents(self) -> None:
-        """注册专业 agent。"""
+        """注册专业 agent（每个类型绑定对应身份）。"""
         from dataworks_agent.runtime.agent import Agent
 
-        # 注册通用 agent
+        # 注册通用 agent（向后兼容）
         agent = Agent()
         for agent_type in AgentType:
             self._agents[agent_type] = agent
+
+    @property
+    def registry(self) -> AgentRegistry:
+        """暴露身份注册表供外部查询。"""
+        return self._registry
+
+    def get_agent_identity(self, agent_type: AgentType) -> AgentIdentity | None:
+        """获取指定 agent 类型的身份声明。"""
+        return self._registry.get_identity(agent_type.value)
 
     async def coordinate(
         self,
@@ -111,16 +133,19 @@ class Coordinator:
             sub_tasks = self._decompose_task(goal, context)
             result.sub_tasks = sub_tasks
 
-            # 2. 执行子任务（按依赖顺序）
-            await self._execute_sub_tasks(sub_tasks)
+            # 2. 执行子任务（按依赖顺序，带约束检查）
+            await self._execute_sub_tasks(sub_tasks, result)
 
             # 3. 汇总结果
             completed = [t for t in sub_tasks if t.status == TaskStatus.COMPLETED]
-            failed = [t for t in sub_tasks if t.status == TaskStatus.FAILED]
+            failed = [t for t in sub_tasks if t.status in {TaskStatus.FAILED, TaskStatus.CONSTRAINT_VIOLATED}]
 
             if failed:
                 result.status = TaskStatus.FAILED
                 result.errors = [f"子任务 {t.task_id} 失败: {t.error}" for t in failed]
+                # 收集红线违反记录
+                for t in failed:
+                    result.constraint_violations.extend(t.constraint_violations)
             else:
                 result.status = TaskStatus.COMPLETED
                 result.summary = self._merge_results(completed)
@@ -206,8 +231,10 @@ class Coordinator:
 
         return sub_tasks
 
-    async def _execute_sub_tasks(self, sub_tasks: list[SubTask]) -> None:
-        """执行子任务。"""
+    async def _execute_sub_tasks(
+        self, sub_tasks: list[SubTask], result: CoordinationResult
+    ) -> None:
+        """执行子任务（带约束检查）。"""
         # 按依赖顺序执行
         executed = set()
 
@@ -216,6 +243,17 @@ class Coordinator:
             if sub_task.depends_on and not all(dep in executed for dep in sub_task.depends_on):
                 sub_task.status = TaskStatus.BLOCKED
                 sub_task.error = "依赖任务未完成"
+                continue
+
+            # 执行前：约束检查（Harness Identity 支柱）
+            violations = self._enforce_constraints(sub_task)
+            if violations:
+                sub_task.status = TaskStatus.CONSTRAINT_VIOLATED
+                sub_task.error = "红线约束违反"
+                sub_task.constraint_violations = violations
+                logger.warning(
+                    "子任务 %s 违反红线: %s", sub_task.task_id, violations
+                )
                 continue
 
             # 执行子任务
@@ -246,6 +284,15 @@ class Coordinator:
                 sub_task.error = f"未找到 agent: {sub_task.agent_type}"
 
             executed.add(sub_task.task_id)
+
+    def _enforce_constraints(self, sub_task: SubTask) -> list[str]:
+        """强制执行约束检查。返回红线违反列表。"""
+        identity = self._registry.get_identity(sub_task.agent_type.value)
+        if not identity:
+            return []
+
+        violations = identity.validate_constraints(sub_task.description, sub_task.input_data)
+        return violations
 
     def _merge_results(self, completed_tasks: list[SubTask]) -> dict[str, Any]:
         """汇总子任务结果。"""
