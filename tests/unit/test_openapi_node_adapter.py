@@ -26,6 +26,12 @@ class FakeAPI:
         self._list_pages: list[list[dict]] = []
         self._list_total = 0
 
+    def seed_directory(self, directory_path: str) -> None:
+        """Sentinel record so check_existing_directory(parent) sees a child path."""
+        sentinel = {"Id": "0", "Script": {"Path": f"{directory_path}/_seed"}}
+        self._list_pages = [[sentinel]]
+        self._list_total = 1
+
     async def create_node(self, *, spec, container_id, scene):
         if self._create_error:
             raise self._create_error
@@ -63,6 +69,7 @@ def adapter(api):
 
 class TestCreateNode:
     async def test_create_returns_id_and_builds_flowspec(self, adapter, api):
+        api.seed_directory("业务流程/DWD")
         uuid = await adapter.create_node("dwd_x", "业务流程/DWD/dwd_x", language="odps-sql")
         assert uuid == "NODE_NEW"
         spec = json.loads(api.created_specs[0])
@@ -71,12 +78,14 @@ class TestCreateNode:
         assert node["outputs"]["nodeOutputs"][0]["data"] == "dataworks.dwd_x"
 
     async def test_create_error_sets_last_error(self, adapter, api):
+        api.seed_directory("p")
         api._create_error = OpenAPIError("Forbidden", "no perm")
         uuid = await adapter.create_node("x", "p/x")
         assert uuid is None
         assert "Forbidden" in adapter.last_error
 
     async def test_create_bad_language(self, adapter):
+        adapter._api.seed_directory("p")  # type: ignore[attr-defined]
         assert await adapter.create_node("x", "p/x", language="weird") is None
         assert "language" in adapter.last_error
 
