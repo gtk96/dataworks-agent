@@ -231,8 +231,7 @@ class WorkflowOutcomeVerifier:
             dwd_pipeline = data.get("dwd_pipeline") or {}
             prod_tables = data.get("prod_tables") or {}
             prod_statuses = {
-                str((prod_tables.get(layer) or {}).get("status"))
-                for layer in ("ods", "dwd")
+                str((prod_tables.get(layer) or {}).get("status")) for layer in ("ods", "dwd")
             }
             standard_publish_ok = (
                 standard_steps.get("create_prod_tables") == "approval_required"

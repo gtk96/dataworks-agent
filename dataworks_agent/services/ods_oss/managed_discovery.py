@@ -289,7 +289,9 @@ async def _query_cookie_bff_rows(bff_client: Any, sql: str) -> tuple[list[str], 
         bff_client.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
     )
     if not job_code:
-        raise RuntimeError(getattr(bff_client, "last_error", None) or "BFF did not return a query job")
+        raise RuntimeError(
+            getattr(bff_client, "last_error", None) or "BFF did not return a query job"
+        )
     completed = await asyncio.wait_for(
         bff_client.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
     )
@@ -302,8 +304,7 @@ async def _query_cookie_bff_rows(bff_client: Any, sql: str) -> tuple[list[str], 
         raise RuntimeError("BFF did not return a query result")
     headers = result.get("headerList") or []
     columns = [
-        str(item.get("name", "")) if isinstance(item, dict) else str(item)
-        for item in headers
+        str(item.get("name", "")) if isinstance(item, dict) else str(item) for item in headers
     ]
     rows = list((result.get("bodyList") or [])[:100])
     return columns, rows
@@ -353,7 +354,11 @@ async def discover_managed_oss_sample(
     try:
         headers, rows = await _query_cookie_bff_rows(bff_client, sql)
         column_index = next(
-            (index for index, value in enumerate(headers) if value.casefold() == raw_column.casefold()),
+            (
+                index
+                for index, value in enumerate(headers)
+                if value.casefold() == raw_column.casefold()
+            ),
             0,
         )
         records: list[dict[str, Any]] = []

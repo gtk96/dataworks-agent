@@ -107,7 +107,6 @@ def test_standard_oss_does_not_verify_when_dwd_pipeline_failed():
     assert decision.retryable is False
 
 
-
 def test_forward_success_flag_with_failed_layer_is_rejected():
     result = WorkflowResult(
         True,

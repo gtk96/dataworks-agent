@@ -65,7 +65,6 @@ def test_standard_oss_builder_rejects_unknown_logical_key() -> None:
             logical_primary_keys=["not_a_field"],
         )
 
-
     oss_path = (
         "oss://oss-cn-shenzhen-internal.aliyuncs.com/"
         "giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report"
@@ -120,7 +119,10 @@ def test_standard_oss_builder_defaults_to_giikin_develop():
         "ALTER TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\n"
         "ADD IF NOT EXISTS PARTITION (dt='${gmtdate}', ht='${hour_last1h}');"
     )
-    assert "INSERT OVERWRITE TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour" in artifacts["sql"]
+    assert (
+        "INSERT OVERWRITE TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+        in artifacts["sql"]
+    )
     assert "FROM giikin_develop.tiktok_smart_plus_material_report" in artifacts["sql"]
     assert "LOAD " + "OVERWRITE" not in artifacts["sql"]
 

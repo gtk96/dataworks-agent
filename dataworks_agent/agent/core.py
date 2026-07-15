@@ -250,9 +250,7 @@ class ChatAgent:
                 "ods_ddl": ods.get("ddl") if isinstance(ods, dict) else None,
                 "dwd_ddl": dwd.get("ddl") if isinstance(dwd, dict) else None,
             }
-            message = (
-                "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD SQL \u4ea7\u7269\uff0c\u672a\u91cd\u590d\u5efa\u6a21\u6216\u5199\u5165 DataWorks\u3002"
-            )
+            message = "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD SQL \u4ea7\u7269\uff0c\u672a\u91cd\u590d\u5efa\u6a21\u6216\u5199\u5165 DataWorks\u3002"
         elif any(marker in text for marker in ("\u8c03\u5ea6", "schedule", "cron")):
             schedule = snapshot.get("schedule") or {}
             read_only_artifacts = {
@@ -260,17 +258,13 @@ class ChatAgent:
                 "ods_schedule": (snapshot.get("ods_pipeline") or {}).get("cron"),
                 "dwd_schedule": (snapshot.get("dwd_pipeline") or {}).get("cron"),
             }
-            message = (
-                "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD \u8c03\u5ea6\u4fe1\u606f\uff0c\u672a\u91cd\u590d\u914d\u7f6e\u8c03\u5ea6\u6216\u5199\u5165 DataWorks\u3002"
-            )
+            message = "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684 ODS/DWD \u8c03\u5ea6\u4fe1\u606f\uff0c\u672a\u91cd\u590d\u914d\u7f6e\u8c03\u5ea6\u6216\u5199\u5165 DataWorks\u3002"
         elif any(marker in text for marker in ("publish gate", "\u5ba1\u6279", "\u53d1\u5e03")):
             read_only_artifacts = {
                 "prod_tables": snapshot.get("prod_tables") or {},
                 "publish_gate": snapshot.get("publish_gate") or "not_requested",
             }
-            message = (
-                "\u5df2\u8bfb\u53d6\u751f\u4ea7 DDL \u4e0e Publish Gate \u72b6\u6001\uff0c\u672a\u91cd\u590d\u53d1\u5e03\u6216\u63d0\u4ea4\u5ba1\u6279\u3002"
-            )
+            message = "\u5df2\u8bfb\u53d6\u751f\u4ea7 DDL \u4e0e Publish Gate \u72b6\u6001\uff0c\u672a\u91cd\u590d\u53d1\u5e03\u6216\u63d0\u4ea4\u5ba1\u6279\u3002"
         else:
             message = "\u5df2\u8bfb\u53d6\u5f53\u524d\u4f1a\u8bdd\u7684\u5de5\u4f5c\u6d41\u4ea7\u7269\uff0c\u672a\u91cd\u590d\u6267\u884c\u5199\u64cd\u4f5c\u3002"
 
@@ -354,11 +348,20 @@ class ChatAgent:
             for value in (snapshot.get("prod_tables") or {}).values()
         )
         if production_pending:
-            production_text = "\u751f\u4ea7 DDL \u5df2\u751f\u6210\uff0c\u7b49\u5f85 Publish Gate \u5ba1\u6279"
+            production_text = (
+                "\u751f\u4ea7 DDL \u5df2\u751f\u6210\uff0c\u7b49\u5f85 Publish Gate \u5ba1\u6279"
+            )
         else:
             production_text = "\u751f\u4ea7\u4ea7\u7269\u5df2\u51c6\u5907"
-        completed_text = f"\u5df2\u5b8c\u6210 {len(completed_steps)} \u4e2a\u6b65\u9aa4" if completed_steps else "\u5c1a\u672a\u5b8c\u6210\u6b65\u9aa4"
-        tables_text = "\u3001".join(table_names[:6]) or "\u6682\u65e0\u5f00\u53d1\u8868\u6216\u8282\u70b9\u4fe1\u606f"
+        completed_text = (
+            f"\u5df2\u5b8c\u6210 {len(completed_steps)} \u4e2a\u6b65\u9aa4"
+            if completed_steps
+            else "\u5c1a\u672a\u5b8c\u6210\u6b65\u9aa4"
+        )
+        tables_text = (
+            "\u3001".join(table_names[:6])
+            or "\u6682\u65e0\u5f00\u53d1\u8868\u6216\u8282\u70b9\u4fe1\u606f"
+        )
         message = (
             f"\u5f53\u524d\u4f1a\u8bdd\u4e0a\u4e0b\u6587\uff1a{standard}\uff1b{completed_text}\uff1b"
             f"\u5f00\u53d1\u8868\u6216\u8282\u70b9\uff1a{tables_text}\uff1b{production_text}"

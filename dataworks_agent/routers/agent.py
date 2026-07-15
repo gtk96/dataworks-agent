@@ -50,7 +50,9 @@ class ChatRequest(BaseModel):
     initialize_data: bool = True
     publish: bool = False
     conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
-    context_updates: dict[str, Any] | None = Field(default=None, description="Structured answer from a clarification action")
+    context_updates: dict[str, Any] | None = Field(
+        default=None, description="Structured answer from a clarification action"
+    )
 
 
 class ChatResponse(BaseModel):

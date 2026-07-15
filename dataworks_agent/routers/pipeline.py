@@ -317,7 +317,9 @@ async def preview_oss_sql(body: OssSubmission):
     if "." in source_name and not location.get("is_prefix"):
         source_name = source_name.rsplit(".", 1)[0]
     try:
-        expected_table = ods_table_name(source_name, body.schedule_type if body.schedule_type in {"day", "hour"} else "day")
+        expected_table = ods_table_name(
+            source_name, body.schedule_type if body.schedule_type in {"day", "hour"} else "day"
+        )
         if body.target_table != expected_table:
             raise ValueError(f"target_table must be {expected_table}")
         sql = build_ods_extract_sql(
@@ -328,7 +330,12 @@ async def preview_oss_sql(body: OssSubmission):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"error": str(exc)}) from exc
-    return {"status": "ok", "sql": sql, "source_table": source_name, "target_table": body.target_table}
+    return {
+        "status": "ok",
+        "sql": sql,
+        "source_table": source_name,
+        "target_table": body.target_table,
+    }
 
 
 @router.post("/preview/realtime")

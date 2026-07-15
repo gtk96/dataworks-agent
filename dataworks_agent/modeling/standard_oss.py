@@ -82,8 +82,16 @@ def build_standard_material_report_ods_artifacts(
         "oss_path": oss_path,
         "ods_sql_directory": ods_sql_directory,
         "environment_artifacts": {
-            "dev": {"schema": dev_schema, "ddl": ddl_body.replace("{schema}", dev_schema), "status": "draft"},
-            "prod": {"schema": prod_schema, "ddl": ddl_body.replace("{schema}", prod_schema), "status": "approval_required"},
+            "dev": {
+                "schema": dev_schema,
+                "ddl": ddl_body.replace("{schema}", dev_schema),
+                "status": "draft",
+            },
+            "prod": {
+                "schema": prod_schema,
+                "ddl": ddl_body.replace("{schema}", prod_schema),
+                "status": "approval_required",
+            },
         },
         "ddl": ddl_body.replace("{schema}", dev_schema),
         "sql": sql,

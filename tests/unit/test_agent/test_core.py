@@ -312,6 +312,7 @@ async def test_chat_agent_summarizes_completed_workflow_without_reexecution():
     assert "Publish Gate" in second.message
     assert second.data["next_actions"]
 
+
 @pytest.mark.asyncio
 async def test_chat_agent_read_only_artifact_followup_without_reexecution():
     agent = ChatAgent()

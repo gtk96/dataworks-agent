@@ -54,10 +54,14 @@ def build_external_table_ddl(spec: ExternalTableSpec) -> str:
     )
     partitions = ""
     if spec.partition_columns:
-        partitions = "\nPARTITIONED BY (" + ", ".join(
-            f"`{_identifier(name, 'partition column')}` STRING"
-            for name in spec.partition_columns
-        ) + ")"
+        partitions = (
+            "\nPARTITIONED BY ("
+            + ", ".join(
+                f"`{_identifier(name, 'partition column')}` STRING"
+                for name in spec.partition_columns
+            )
+            + ")"
+        )
     fmt = str(spec.file_format or "json").strip().lower()
     storage = "TEXTFILE" if fmt == "json" else fmt.upper()
     location = _sql_literal(str(spec.location).strip().rstrip("/"))
@@ -73,7 +77,10 @@ def validate_external_table_compatibility(
     errors: list[str] = []
     if str(observed.get("project") or spec.project).casefold() != spec.project.casefold():
         errors.append("external table project mismatch")
-    if str(observed.get("table_name") or observed.get("table") or "").casefold() != spec.table.casefold():
+    if (
+        str(observed.get("table_name") or observed.get("table") or "").casefold()
+        != spec.table.casefold()
+    ):
         errors.append("external table name mismatch")
     expected_location = str(spec.location).rstrip("/").casefold()
     actual_location = str(observed.get("location") or "").rstrip("/").casefold()
@@ -88,6 +95,8 @@ def validate_external_table_compatibility(
         if actual_columns and actual_columns.get(name.casefold()) != data_type.upper():
             errors.append(f"external column mismatch: {name}")
     actual_partitions = [str(value).casefold() for value in observed.get("partition_columns") or []]
-    if actual_partitions and actual_partitions != [value.casefold() for value in spec.partition_columns]:
+    if actual_partitions and actual_partitions != [
+        value.casefold() for value in spec.partition_columns
+    ]:
         errors.append("external table partition mismatch")
     return errors

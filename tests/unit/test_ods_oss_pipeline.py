@@ -39,8 +39,14 @@ async def test_oss_pipeline_writes_partition_root_dependency_and_single_output()
     )
 
     assert result["success"] is True
-    assert "ALTER TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour" in result["sql"]
-    assert "INSERT OVERWRITE TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour" in result["sql"]
+    assert (
+        "ALTER TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+        in result["sql"]
+    )
+    assert (
+        "INSERT OVERWRITE TABLE giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+        in result["sql"]
+    )
     assert "FROM giikin_develop.tiktok_smart_plus_material_report" in result["sql"]
     assert "LOAD " + "OVERWRITE" not in result["sql"]
     assert result["dependencies"][0] == {
@@ -68,8 +74,12 @@ async def test_oss_pipeline_writes_partition_root_dependency_and_single_output()
 
 @pytest.mark.asyncio
 async def test_oss_pipeline_refuses_to_create_without_root_context(monkeypatch):
-    monkeypatch.setattr("dataworks_agent.services.ods_oss.pipeline.settings.dataworks_default_root_node_uuid", "")
-    monkeypatch.setattr("dataworks_agent.services.ods_oss.pipeline.settings.root_check_node_uuid", "")
+    monkeypatch.setattr(
+        "dataworks_agent.services.ods_oss.pipeline.settings.dataworks_default_root_node_uuid", ""
+    )
+    monkeypatch.setattr(
+        "dataworks_agent.services.ods_oss.pipeline.settings.root_check_node_uuid", ""
+    )
     client = FakeNodeClient()
     result = await OssImportPipeline(client).run(
         oss_path="oss://bucket/data/",

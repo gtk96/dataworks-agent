@@ -1235,7 +1235,6 @@ async def test_standard_oss_flow_stops_after_verified_publish_gate_boundary():
     service._execute_once.assert_awaited_once()
 
 
-
 @pytest.mark.asyncio
 async def test_loop_prevents_raw_success_without_outcome_evidence():
     service = AgentWorkflowService()

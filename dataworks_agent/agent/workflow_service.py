@@ -2128,7 +2128,7 @@ class AgentWorkflowService:
                             },
                         ],
                         "allow_custom_input": True,
-                        "custom_input_hint": "\u8bf7\u5728\u4e0b\u65b9\u8f93\u5165\u6846\u7c98\u8d34\u771f\u5b9e JSON \u6837\u672c\uff08\u5bf9\u8c61\u6216\u6570\u7ec4\uff09\uff0c\u6216\u8f93\u5165 data_profile\uff0c\u4f8b\u5982\uff1a{\"columns\":[{\"name\":\"material_id\",\"type\":\"STRING\"}]}\uff0c\u7136\u540e\u53d1\u9001\u3002",
+                        "custom_input_hint": '\u8bf7\u5728\u4e0b\u65b9\u8f93\u5165\u6846\u7c98\u8d34\u771f\u5b9e JSON \u6837\u672c\uff08\u5bf9\u8c61\u6216\u6570\u7ec4\uff09\uff0c\u6216\u8f93\u5165 data_profile\uff0c\u4f8b\u5982\uff1a{"columns":[{"name":"material_id","type":"STRING"}]}\uff0c\u7136\u540e\u53d1\u9001\u3002',
                         "directory_check": directory["directory_check"],
                         "sample_discovery": sampled,
                         "publish_gate": "not_requested",
@@ -2295,7 +2295,9 @@ class AgentWorkflowService:
                 dev_schema="giikin",
                 prod_schema=prod_schema,
                 ods_sql_directory=ods_sql_directory,
-                external_table=str(directory.get("table_name") or "tiktok_smart_plus_material_report"),
+                external_table=str(
+                    directory.get("table_name") or "tiktok_smart_plus_material_report"
+                ),
                 external_project="giikin_develop",
                 source_partition_value=str(params.get("source_partition_value") or "${gmtdate}"),
             )
@@ -2700,7 +2702,9 @@ class AgentWorkflowService:
                     ddl_result = None
                     fallback_error = str(exc)
                 else:
-                    fallback_error = getattr(ddl_result, "error", None) or "AK/SK execute_ddl failed"
+                    fallback_error = (
+                        getattr(ddl_result, "error", None) or "AK/SK execute_ddl failed"
+                    )
                 if ddl_result is not None and getattr(ddl_result, "success", False):
                     return {
                         "status": "created",

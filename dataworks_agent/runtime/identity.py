@@ -350,9 +350,7 @@ class AgentRegistry:
         """获取所有注册的 agent 类型。"""
         return list(self._identities.keys())
 
-    def check_constraints(
-        self, agent_type: str, action: str, context: dict[str, Any]
-    ) -> list[str]:
+    def check_constraints(self, agent_type: str, action: str, context: dict[str, Any]) -> list[str]:
         """检查某 agent 执行某操作的约束。返回红线违反列表。"""
         identity = self._identities.get(agent_type)
         if not identity:

@@ -136,7 +136,11 @@ class Coordinator:
 
             # 3. 汇总结果
             completed = [t for t in sub_tasks if t.status == TaskStatus.COMPLETED]
-            failed = [t for t in sub_tasks if t.status in {TaskStatus.FAILED, TaskStatus.CONSTRAINT_VIOLATED}]
+            failed = [
+                t
+                for t in sub_tasks
+                if t.status in {TaskStatus.FAILED, TaskStatus.CONSTRAINT_VIOLATED}
+            ]
 
             if failed:
                 result.status = TaskStatus.FAILED
@@ -249,9 +253,7 @@ class Coordinator:
                 sub_task.status = TaskStatus.CONSTRAINT_VIOLATED
                 sub_task.error = "红线约束违反"
                 sub_task.constraint_violations = violations
-                logger.warning(
-                    "子任务 %s 违反红线: %s", sub_task.task_id, violations
-                )
+                logger.warning("子任务 %s 违反红线: %s", sub_task.task_id, violations)
                 continue
 
             # 执行子任务

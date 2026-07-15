@@ -69,9 +69,7 @@ class OssImportPipeline:
         if isinstance(managed, dict) and managed.get("success"):
             source_table = str(managed.get("table_name") or source_name).strip()
             source_project = str(managed.get("project") or source_project).strip()
-            source_partition = str(
-                (managed.get("partition_columns") or ["pt"])[0]
-            ).strip()
+            source_partition = str((managed.get("partition_columns") or ["pt"])[0]).strip()
             if not source_partition_value and managed.get("source_partition_value"):
                 source_partition_value = str(managed["source_partition_value"])
             return {
@@ -209,7 +207,11 @@ class OssImportPipeline:
                 "output": resolved_root_uuid,
                 "refTableName": resolved_root_uuid,
             },
-            {"type": "CrossCycleDependsOnSelf", "output": resolved_output_ref, "refTableName": resolved_output_ref},
+            {
+                "type": "CrossCycleDependsOnSelf",
+                "output": resolved_output_ref,
+                "refTableName": resolved_output_ref,
+            },
         ]
         outputs = {
             "nodeOutputs": [
@@ -226,11 +228,19 @@ class OssImportPipeline:
         node_uuid = await self.bff.create_node(target_table, node_path, language="odps-sql")
         if not node_uuid:
             result["success"] = False
-            result["steps"]["create_node"] = {"status": "failed", "error": self.bff.last_error or "create_node failed"}
+            result["steps"]["create_node"] = {
+                "status": "failed",
+                "error": self.bff.last_error or "create_node failed",
+            }
             return result
         if not await self.bff.update_node(node_uuid, sql):
             result["success"] = False
-            result["steps"]["create_node"] = {"status": "failed", "error": getattr(self.bff, "last_error", None) or "update_node failed", "uuid": node_uuid, "path": node_path}
+            result["steps"]["create_node"] = {
+                "status": "failed",
+                "error": getattr(self.bff, "last_error", None) or "update_node failed",
+                "uuid": node_uuid,
+                "path": node_path,
+            }
             return result
         result["steps"]["create_node"] = {"status": "ok", "uuid": node_uuid, "path": node_path}
 
@@ -241,39 +251,80 @@ class OssImportPipeline:
         else:
             minute, hour = schedule_minute, 0 if normalized_schedule == "hour" else 3
         cron = generate_cron(normalized_schedule, hour=hour, minute=minute)  # type: ignore[arg-type]
-        parameters = HOURLY_SQL_PARAMETERS if normalized_schedule == "hour" else DAILY_SQL_PARAMETERS
+        parameters = (
+            HOURLY_SQL_PARAMETERS if normalized_schedule == "hour" else DAILY_SQL_PARAMETERS
+        )
         scheduled = await self.bff.update_vertex(
             node_uuid,
             {
-                "trigger": {"type": "Scheduler", "cron": cron, "cycleType": cycle_type, "startTime": "1970-01-01 00:00:00", "endTime": "9999-01-01 00:00:00", "timezone": "Asia/Shanghai"},
+                "trigger": {
+                    "type": "Scheduler",
+                    "cron": cron,
+                    "cycleType": cycle_type,
+                    "startTime": "1970-01-01 00:00:00",
+                    "endTime": "9999-01-01 00:00:00",
+                    "timezone": "Asia/Shanghai",
+                },
                 "script": {"parameters": parameters},
                 "strategy": {"instanceMode": "Immediately"},
                 "dependencies": dependencies,
                 "outputs": outputs,
             },
         )
-        result["steps"]["configure_schedule"] = {"status": "ok" if scheduled else "failed", "cron": cron}
+        result["steps"]["configure_schedule"] = {
+            "status": "ok" if scheduled else "failed",
+            "cron": cron,
+        }
         if not scheduled:
             result["success"] = False
-            result["steps"]["configure_schedule"]["error"] = getattr(self.bff, "last_error", None) or "update_vertex failed"
+            result["steps"]["configure_schedule"]["error"] = (
+                getattr(self.bff, "last_error", None) or "update_vertex failed"
+            )
             result["node_uuid"], result["node_path"] = node_uuid, node_path
             return result
 
         dependency_status = "inline"
         if hasattr(self.bff, "_put"):
-            dependency_response = await self.bff._put("ide/addNodeDependencies", {"projectId": getattr(self.bff, "project_id", None), "uuid": node_uuid, "dependencies": dependencies})
+            dependency_response = await self.bff._put(
+                "ide/addNodeDependencies",
+                {
+                    "projectId": getattr(self.bff, "project_id", None),
+                    "uuid": node_uuid,
+                    "dependencies": dependencies,
+                },
+            )
             if dependency_response.get("code") != 200:
                 result["success"] = False
-                result["steps"]["configure_dependencies"] = {"status": "failed", "error": getattr(self.bff, "last_error", None) or "dependency configuration failed"}
+                result["steps"]["configure_dependencies"] = {
+                    "status": "failed",
+                    "error": getattr(self.bff, "last_error", None)
+                    or "dependency configuration failed",
+                }
                 return result
             dependency_status = "cookie_bff"
-        result["steps"]["configure_dependencies"] = {"status": "ok", "root_node_uuid": resolved_root_uuid, "dependency_status": dependency_status}
+        result["steps"]["configure_dependencies"] = {
+            "status": "ok",
+            "root_node_uuid": resolved_root_uuid,
+            "dependency_status": dependency_status,
+        }
         if publish:
-            deployed = await self.bff.deploy_nodes([node_uuid], comment=f"oss import {target_table}")
+            deployed = await self.bff.deploy_nodes(
+                [node_uuid], comment=f"oss import {target_table}"
+            )
             result["steps"]["publish"] = {"status": "ok" if deployed else "failed"}
             if not deployed:
                 result["success"] = False
         else:
             result["steps"]["publish"] = {"status": "skipped"}
-        result.update({"sql": sql, "node_uuid": node_uuid, "node_path": node_path, "dependencies": dependencies, "outputs": outputs, "output_ref": resolved_output_ref, "root_node_uuid": resolved_root_uuid})
+        result.update(
+            {
+                "sql": sql,
+                "node_uuid": node_uuid,
+                "node_path": node_path,
+                "dependencies": dependencies,
+                "outputs": outputs,
+                "output_ref": resolved_output_ref,
+                "root_node_uuid": resolved_root_uuid,
+            }
+        )
         return result

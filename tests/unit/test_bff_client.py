@@ -292,7 +292,9 @@ def test_reset_auth_cache_discards_cached_credentials(client: DataWorksClient):
 
 
 @pytest.mark.asyncio
-async def test_create_node_reuses_exact_existing_path_without_create_package(client: DataWorksClient):
+async def test_create_node_reuses_exact_existing_path_without_create_package(
+    client: DataWorksClient,
+):
     client.get_node_uuid_by_path = AsyncMock(return_value="existing-uuid")
     client._post = AsyncMock()
 
@@ -317,6 +319,7 @@ async def test_create_node_refuses_missing_parent_without_create_package(client:
     assert result is None
     assert "??" in client.last_error
     client._post.assert_not_awaited()
+
 
 @pytest.mark.asyncio
 async def test_create_node_creates_node_when_parent_is_confirmed_without_folder_creation(

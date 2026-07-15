@@ -23,13 +23,11 @@ async def test_list_holo_schemas(mocked_client):
     assert resp.status_code in (200, 400, 422, 500, 503)
 
 
-
 @pytest.mark.asyncio
 async def test_list_holo_tables(mocked_client):
     """GET /api/workspace/holo/schemas/{schema}/tables。"""
     resp = await mocked_client.get("/api/workspace/holo/schemas/dataworks/tables")
     assert resp.status_code in (200, 400, 422, 500, 503)
-
 
 
 @pytest.mark.asyncio
@@ -42,13 +40,11 @@ async def test_repository_tree(mocked_client):
     assert resp.status_code in (200, 400, 422, 500, 503)
 
 
-
 @pytest.mark.asyncio
 async def test_search_tables(mocked_client):
     """GET /api/workspace/search-tables — 跨项目搜表。"""
     resp = await mocked_client.get("/api/workspace/search-tables", params={"keyword": "ods_"})
     assert resp.status_code in (200, 400, 422, 500, 503)
-
 
 
 @pytest.mark.asyncio
@@ -115,7 +111,6 @@ async def test_pipeline_preview_oss_sql(mocked_client):
         json={"oss_path": "oss://bucket/path/", "target_table": "ods_oss_xxx"},
     )
     assert resp.status_code in (200, 400, 422, 500, 503)
-
 
 
 @pytest.mark.asyncio

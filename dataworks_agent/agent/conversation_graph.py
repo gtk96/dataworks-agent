@@ -1,4 +1,4 @@
-﻿"""LangGraph-backed conversational context for clarification follow-ups."""
+"""LangGraph-backed conversational context for clarification follow-ups."""
 
 from __future__ import annotations
 
@@ -35,7 +35,9 @@ class ConversationGraph:
         incoming = str(state.get("incoming_message") or "")
         pending = str(state.get("pending_objective") or "")
         updates = dict(state.get("context_updates") or {})
-        if any(word in incoming.lower() for word in ("取消", "重新开始", "新任务", "cancel", "reset")):
+        if any(
+            word in incoming.lower() for word in ("取消", "重新开始", "新任务", "cancel", "reset")
+        ):
             return {
                 "resolved_message": incoming,
                 "pending_objective": "",
@@ -45,7 +47,9 @@ class ConversationGraph:
                 "workflow_state": {},
             }
         objective = str(state.get("objective") or pending or incoming)
-        resolved = f"{objective}\n补充信息：{incoming}" if pending and incoming != objective else incoming
+        resolved = (
+            f"{objective}\n补充信息：{incoming}" if pending and incoming != objective else incoming
+        )
         current_params = dict(state.get("params") or {})
         current_params.update(updates.get("params") or {})
         result: dict[str, Any] = {"resolved_message": resolved}

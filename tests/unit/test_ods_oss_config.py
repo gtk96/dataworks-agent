@@ -51,7 +51,9 @@ def test_validate_config() -> None:
 
 def test_ods_names_follow_granularity() -> None:
     assert ods_table_name("tiktok_ad_struct", "day") == "ods_mc_ads_data__tiktok_ad_struct_day"
-    assert ods_table_name("tiktok_ad_insights", "hour") == "ods_mc_ads_data__tiktok_ad_insights_hour"
+    assert (
+        ods_table_name("tiktok_ad_insights", "hour") == "ods_mc_ads_data__tiktok_ad_insights_hour"
+    )
 
 
 def test_daily_ods_sql_uses_bizdate() -> None:
