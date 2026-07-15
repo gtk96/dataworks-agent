@@ -335,57 +335,11 @@ class GovernanceAgent:
 
     async def _validate_proposal(self, request: AgentRequest) -> AgentResponse:
         """执行提案校验。"""
-        from dataworks_agent.semantic.guard import ValidationResult
-
-        result: dict[str, Any] = {"checks": [], "overall_passed": True}
-        all_errors: list[str] = []
-
-        # 1. 词根校验
-        fields = request.context.get("fields", [])
-        if fields:
-            root_result = self.proposal_guard.check_root(fields)
-            result["checks"].append({"name": "root", "passed": root_result.passed})
-            if not root_result.passed:
-                all_errors.extend(root_result.errors)
-                result["overall_passed"] = False
-
-        # 2. DDL 校验
-        ddl = request.context.get("ddl", "")
-        if ddl:
-            ddl_result = self.proposal_guard.check_ddl(ddl)
-            result["checks"].append({"name": "ddl", "passed": ddl_result.passed})
-            if not ddl_result.passed:
-                all_errors.extend(ddl_result.errors)
-                result["overall_passed"] = False
-
-        # 3. 分层校验
-        source_table = request.context.get("source_table", "")
-        target_table = request.context.get("target_table", "")
-        target_layer = request.context.get("target_layer", "")
-        if source_table and target_table and target_layer:
-            layer_result = self.proposal_guard.check_layer_dependency(
-                target_layer, [source_table]
-            )
-            result["checks"].append({"name": "layer", "passed": layer_result.passed})
-            if not layer_result.passed:
-                all_errors.extend(layer_result.errors)
-                result["overall_passed"] = False
-
-        # 4. 表名校验
-        if target_table:
-            name_result = self.proposal_guard.check_table_name(target_table)
-            result["checks"].append({"name": "table_name", "passed": name_result.passed})
-            if not name_result.passed:
-                all_errors.extend(name_result.errors)
-                result["overall_passed"] = False
-
-        if all_errors:
-            result["errors"] = all_errors
-
+        result = self.proposal_guard.validate(request.content, request.context)
         return AgentResponse(
-            success=result["overall_passed"],
+            success=result.get("passed", False),
             response_type="validation_result",
-            content="提案校验完成" if result["overall_passed"] else "提案校验未通过",
+            content="提案校验完成",
             data=result,
         )
 
