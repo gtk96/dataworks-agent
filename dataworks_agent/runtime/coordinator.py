@@ -16,10 +16,8 @@ from enum import StrEnum
 from typing import Any
 
 from dataworks_agent.runtime.identity import (
-    AgentConstraint,
     AgentIdentity,
     AgentRegistry,
-    ConstraintLevel,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,7 +89,7 @@ class Coordinator:
 
     def __init__(self) -> None:
         self._registry = AgentRegistry()
-        self._agents: dict[AgentType, Agent] = {}
+        self._agents: dict[AgentType, Any] = {}
         self._register_agents()
 
     def _register_agents(self) -> None:

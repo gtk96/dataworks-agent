@@ -97,8 +97,8 @@ class RequirementAgent:
     )
 
     def __init__(self) -> None:
-        from dataworks_agent.agent.nlu.intent_parser import IntentParser
         from dataworks_agent.agent.nlu.entity_extractor import EntityExtractor
+        from dataworks_agent.agent.nlu.intent_parser import IntentParser
 
         self.intent_parser = IntentParser()
         self.entity_extractor = EntityExtractor()

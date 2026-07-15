@@ -99,9 +99,10 @@ class AgentIdentity:
             if constraint.level != ConstraintLevel.RED_LINE:
                 continue
             # 简单的关键词匹配检查
-            if constraint.rule in action or constraint.rule in str(context):
-                if constraint.enforce(False):
-                    red_lines_violated.append(constraint.rule)
+            if (
+                constraint.rule in action or constraint.rule in str(context)
+            ) and constraint.enforce(False):
+                red_lines_violated.append(constraint.rule)
         return red_lines_violated
 
     def add_capability(self, name: str, description: str, **kwargs) -> None:
