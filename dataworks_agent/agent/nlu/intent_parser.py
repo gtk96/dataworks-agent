@@ -35,6 +35,8 @@ DATAWORKS_GOAL_WORDS = (
     "dim_",
     "dmr_",
     "ads_",
+    "oss",
+    "数据源",
 )
 
 
