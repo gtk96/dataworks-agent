@@ -512,7 +512,7 @@ async def test_generate_node_action_returns_confirmation_without_writing(monkeyp
     from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
     from dataworks_agent.state import app_state
 
-    parent = "????/106_????/MaxCompute/????/02_DWD"
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
     bff = MagicMock()
     bff.check_existing_directory = AsyncMock(
         return_value=ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
@@ -552,7 +552,7 @@ async def test_confirmed_node_write_rechecks_and_updates_existing_uuid(monkeypat
     from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
     from dataworks_agent.state import app_state
 
-    parent = "????/106_????/MaxCompute/????/02_DWD"
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
     node_name = "tb_dwd_order"
     node_path = f"{parent}/{node_name}"
     script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
@@ -623,7 +623,7 @@ async def test_confirmed_node_write_creates_draft_with_fresh_evidence(monkeypatc
     from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
     from dataworks_agent.state import app_state
 
-    parent = "????/106_????/MaxCompute/????/00_ODS"
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"
     node_name = "tb_ods_order"
     node_path = f"{parent}/{node_name}"
     script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
@@ -692,7 +692,7 @@ async def test_confirmed_node_write_blocks_when_directory_recheck_fails(monkeypa
     from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
     from dataworks_agent.state import app_state
 
-    parent = "????/106_????/MaxCompute/????/02_DWD"
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
     bff = MagicMock()
     bff.check_existing_directory = AsyncMock(
         return_value=ExistingDirectoryEvidence.from_check(parent, "no_positive_evidence", False)
@@ -781,3 +781,9 @@ async def test_layer_option_refines_previous_objective_text() -> None:
     assert "找订单表" in parsed_message
     assert "只要 dwd" in parsed_message
     assert agent._workflow_service.execute.await_args.kwargs["params"]["layer"] == "dwd"
+
+@pytest.mark.parametrize("message", ["取消", "重新开始", "新任务", "cancel", "reset"])
+def test_conversation_reset_recognizes_supported_commands(message: str) -> None:
+    from dataworks_agent.agent.core import ChatAgent
+
+    assert ChatAgent._is_conversation_reset(message) is True

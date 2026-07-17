@@ -86,4 +86,25 @@ describe('MessageBubble structured interaction', () => {
     expect(wrapper.get('[data-interaction-option="table-1"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-interaction-custom]').attributes('disabled')).toBeDefined()
   })
+
+  it('unlocks a choice when the parent restores the pending interaction after failure', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        role: 'assistant',
+        content: '请选择表',
+        interaction,
+        activeInteractionId: 'int-1',
+      },
+    })
+
+    await wrapper.get('[data-interaction-option="table-1"]').trigger('click')
+    await wrapper.setProps({
+      interaction: { ...interaction, status: 'answered' },
+      activeInteractionId: null,
+    })
+    await wrapper.setProps({ interaction, activeInteractionId: 'int-1' })
+    await wrapper.get('[data-interaction-option="table-1"]').trigger('click')
+
+    expect(wrapper.emitted('answer-interaction')).toHaveLength(2)
+  })
 })

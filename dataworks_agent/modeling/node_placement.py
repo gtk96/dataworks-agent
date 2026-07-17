@@ -16,7 +16,7 @@ from dataworks_agent.services.ods_oss.directory_guard import (
 PlacementStatus = Literal["resolved", "needs_context", "blocked"]
 DirectoryReader = Callable[[str], ExistingDirectoryEvidence | Awaitable[ExistingDirectoryEvidence]]
 
-_AD_REPORT_BASE = "????/106_????/MaxCompute/????"
+_AD_REPORT_BASE = "业务流程/106_广告报告/MaxCompute/数据开发"
 _TEST_LAYER_PATHS = {
     "ODS": f"{_AD_REPORT_BASE}/00_ODS",
     "DIM": f"{_AD_REPORT_BASE}/01_DIM",
@@ -58,7 +58,7 @@ class NodePlacementPolicy:
         if not candidates:
             return NodePlacementDecision(
                 status="blocked",
-                reason="???????????????????????????",
+                reason="没有可供只读确认的现有目录，已停止。",
             )
 
         evidence: list[ExistingDirectoryEvidence] = []
@@ -76,21 +76,21 @@ class NodePlacementPolicy:
                 candidates=tuple(confirmed),
                 selected_path=confirmed[0],
                 evidence=tuple(evidence),
-                reason="?????????????????",
+                reason="唯一候选目录已通过在线只读证据确认。",
             )
         if len(confirmed) > 1:
             return NodePlacementDecision(
                 status="needs_context",
                 candidates=tuple(confirmed),
                 evidence=tuple(evidence),
-                reason="???????????????????????????",
+                reason="多个现有目录通过确认，需要用户选择，不能默认写入。",
             )
         missing = ", ".join(candidates)
         return NodePlacementDecision(
             status="blocked",
             candidates=tuple(candidates),
             evidence=tuple(evidence),
-            reason=f"?????????????{missing}?????????????",
+            reason=f"以下候选均未获得新鲜的在线目录证据：{missing}，已停止。",
         )
 
     @staticmethod

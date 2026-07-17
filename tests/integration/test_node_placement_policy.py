@@ -13,7 +13,7 @@ from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEv
 async def test_advertisement_report_dwd_requires_positive_directory_evidence() -> None:
     from dataworks_agent.modeling.node_placement import NodePlacementPolicy, NodePlacementRequest
 
-    expected = "????/106_????/MaxCompute/????/02_DWD"
+    expected = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
 
     async def reader(path: str) -> ExistingDirectoryEvidence:
         return ExistingDirectoryEvidence.from_check(
@@ -24,7 +24,7 @@ async def test_advertisement_report_dwd_requires_positive_directory_evidence() -
         NodePlacementRequest(
             environment="test",
             layer="DWD",
-            business_domain="106_????",
+            business_domain="106_广告报告",
         ),
         reader,
     )
@@ -42,7 +42,7 @@ async def test_advertisement_report_dim_blocks_without_confirmed_directory() -> 
         return ExistingDirectoryEvidence.from_check(path, "datastudio_directory_tree", False)
 
     decision = await NodePlacementPolicy().resolve(
-        NodePlacementRequest("test", "DIM", "106_????"),
+        NodePlacementRequest("test", "DIM", "106_广告报告"),
         reader,
     )
 
@@ -55,7 +55,7 @@ async def test_advertisement_report_dim_blocks_without_confirmed_directory() -> 
 async def test_production_resolves_only_unique_confirmed_candidate() -> None:
     from dataworks_agent.modeling.node_placement import NodePlacementPolicy, NodePlacementRequest
 
-    candidates = ("????/A/02_DWD", "????/B/02_DWD")
+    candidates = ("业务流程/A/02_DWD", "业务流程/B/02_DWD")
 
     async def reader(path: str) -> ExistingDirectoryEvidence:
         return ExistingDirectoryEvidence.from_check(
@@ -80,7 +80,7 @@ async def test_production_resolves_only_unique_confirmed_candidate() -> None:
 async def test_production_multiple_confirmed_candidates_need_context() -> None:
     from dataworks_agent.modeling.node_placement import NodePlacementPolicy, NodePlacementRequest
 
-    candidates = ("????/A/02_DWD", "????/B/02_DWD")
+    candidates = ("业务流程/A/02_DWD", "业务流程/B/02_DWD")
 
     async def reader(path: str) -> ExistingDirectoryEvidence:
         return ExistingDirectoryEvidence.from_check(path, "datastudio_directory_tree", True)
@@ -112,7 +112,7 @@ async def test_production_missing_evidence_blocks_without_default_path() -> None
             environment="production",
             layer="DWD",
             business_domain="orders",
-            candidate_paths=("????/A/02_DWD",),
+            candidate_paths=("业务流程/A/02_DWD",),
         ),
         reader,
     )
@@ -127,13 +127,13 @@ async def test_adapter_rejects_absent_mismatched_or_stale_evidence() -> None:
     api = AsyncMock()
     api.list_nodes.return_value = {"PagingInfo": {"Nodes": [], "TotalCount": 0}}
     adapter = OpenAPINodeAdapter(api)
-    path = "????/106_????/MaxCompute/????/02_DWD/test_node"
+    path = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD/test_node"
 
     assert await adapter.create_node("test_node", path) is None
-    mismatch = ExistingDirectoryEvidence.from_check("????/other", "datastudio_directory_tree", True)
+    mismatch = ExistingDirectoryEvidence.from_check("业务流程/其他", "datastudio_directory_tree", True)
     assert await adapter.create_node("test_node", path, directory_evidence=mismatch) is None
     stale = ExistingDirectoryEvidence(
-        path="????/106_????/MaxCompute/????/02_DWD",
+        path="业务流程/106_广告报告/MaxCompute/数据开发/02_DWD",
         source="datastudio_directory_tree",
         checked_at=(datetime.now(UTC) - timedelta(minutes=10)).isoformat(),
         confirmed=True,
@@ -148,7 +148,7 @@ async def test_adapter_uses_valid_evidence_and_never_creates_container() -> None
     api.list_nodes.return_value = {"PagingInfo": {"Nodes": [], "TotalCount": 0}}
     api.create_node.return_value = {"Id": "node-1"}
     adapter = OpenAPINodeAdapter(api)
-    parent = "????/106_????/MaxCompute/????/02_DWD"
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
     evidence = ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
 
     node_id = await adapter.create_node(

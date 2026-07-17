@@ -341,7 +341,7 @@ class ChatAgent:
     @staticmethod
     def _is_conversation_reset(message: str) -> bool:
         text = message.lower()
-        return any(marker in text for marker in ("??", "????", "???", "cancel", "reset"))
+        return any(marker in text for marker in ("取消", "重新开始", "新任务", "cancel", "reset"))
 
     @staticmethod
     def _is_context_summary_request(message: str, context: dict[str, Any]) -> bool:
