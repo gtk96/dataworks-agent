@@ -107,9 +107,7 @@ class SchedulePlanner:
         chain = DependencyChain()
 
         # 按分层顺序排序
-        sorted_layers = [
-            l for l in self.LAYER_ORDER if l in layers
-        ]
+        sorted_layers = [layer for layer in self.LAYER_ORDER if layer in layers]
 
         # 生成 Cron
         cron = generate_cron(granularity, minute=self._default_minute_slot)
@@ -125,7 +123,7 @@ class SchedulePlanner:
 
             # 确定依赖
             depends_on: list[str] = []
-            for prev_layer in reversed(sorted_layers[:sorted_layers.index(layer)]):
+            for prev_layer in reversed(sorted_layers[: sorted_layers.index(layer)]):
                 prev_table = tables.get(prev_layer)
                 if prev_table and prev_table in created_tables:
                     depends_on.append(prev_table)

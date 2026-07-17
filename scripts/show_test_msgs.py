@@ -1,5 +1,5 @@
 """Show the actual test input messages"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     content = f.read()
 
 import re

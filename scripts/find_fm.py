@@ -1,5 +1,5 @@
 """Find forward_modeling handling in workflow_service.py"""
-with open('dataworks_agent/agent/workflow_service.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/workflow_service.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):

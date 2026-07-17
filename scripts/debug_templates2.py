@@ -1,7 +1,6 @@
 """Debug: check templates.py more carefully"""
-import re
 
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Find forward_modeling block
@@ -25,15 +24,15 @@ for i, c in enumerate(content[fm_start:], fm_start):
             break
 
 print(f'forward_modeling starts at {fm_start}, ends at {end_idx}')
-print(f'Character at end_idx: {repr(content[end_idx])}')
-print(f'Context around end: {repr(content[end_idx:end_idx+50])}')
+print(f'Character at end_idx: {content[end_idx]!r}')
+print(f'Context around end: {content[end_idx:end_idx+50]!r}')
 
 # Now check if any_ods_modeling was inserted
 if '"any_ods_modeling"' in content:
     print('any_ods_modeling found')
     aom = content.find('"any_ods_modeling"')
     print(f'any_ods_modeling at {aom}')
-    print(f'Context: {repr(content[aom:aom+100])}')
+    print(f'Context: {content[aom:aom+100]!r}')
 else:
     print('any_ods_modeling NOT found')
 
@@ -41,4 +40,4 @@ else:
 lines = content.split('\n')
 for i, line in enumerate(lines):
     if 'forward_modeling' in line or 'any_ods' in line:
-        print(f'Line {i+1}: {repr(line[:100])}')
+        print(f'Line {i+1}: {line[:100]!r}')

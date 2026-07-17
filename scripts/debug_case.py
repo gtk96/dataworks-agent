@@ -3,11 +3,11 @@ import re
 
 text = "帮我搭建从OSS订单数据到DWS汇总的全链路"
 text_lower = text.lower().strip()
-print(f"text_lower: {repr(text_lower)}")
+print(f"text_lower: {text_lower!r}")
 
 # The pattern
 pattern = r"(\u5168\u94fe\u8def).*?(ods|dwd|dim|dws)"
-print(f"pattern: {repr(pattern)}")
+print(f"pattern: {pattern!r}")
 
 # Check if dws is in text_lower
 print(f"'dws' in text_lower: {'dws' in text_lower}")

@@ -1,7 +1,6 @@
 """Debug: check forward_modeling block"""
-import re
 
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Find forward_modeling block
@@ -23,4 +22,4 @@ for i, c in enumerate(content[fm_start:], fm_start):
 block = content[fm_start:end_idx+1]
 lines = block.split('\n')
 for i, line in enumerate(lines):
-    print(f'{i}: {repr(line)}')
+    print(f'{i}: {line!r}')

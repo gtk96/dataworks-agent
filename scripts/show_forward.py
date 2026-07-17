@@ -1,5 +1,5 @@
 """Show _forward_model method"""
-with open('dataworks_agent/agent/workflow_service.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/workflow_service.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i in range(2976, 3050):

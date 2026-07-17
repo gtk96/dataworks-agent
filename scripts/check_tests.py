@@ -1,5 +1,5 @@
 """Check failing test inputs"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Show test_parser_recognizes_mysql_ods_dwd_entities

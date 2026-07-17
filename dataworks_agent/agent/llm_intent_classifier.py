@@ -1,5 +1,4 @@
 """LangChain-based intent classifier for DataWorks Agent.
-
 Replaces regex-based intent parsing with LLM-driven understanding.
 """
 
@@ -9,9 +8,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from dataworks_agent.config import settings
 
@@ -49,15 +48,15 @@ class LLMIntentClassifier:
 
     def _create_prompt(self) -> ChatPromptTemplate:
         """创建意图分类 prompt。"""
-        return ChatPromptTemplate.from_messages([
-            (
-                "system",
-                """你是一个数据仓库 Agent 的意图理解器。
+        return ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """你是一个数据仓库 Agent 的意图理解器。
                 用户输入可能是：
                 1. 问候语（你好、hello 等）
                 2. 模糊请求（你、这个等）
                 3. 具体任务（建模、查询、诊断等）
-                
                 请分析用户意图并返回 JSON：
                 {{
                     "action": "greeting" | "clarification" | "ask_data" | "modeling" | "diagnosis" | "unknown",
@@ -66,21 +65,18 @@ class LLMIntentClassifier:
                     "is_negated": false,
                     "reasoning": "简短分析"
                 }}""",
-            ),
-            ("human", "{user_input}"),
-        ])
+                ),
+                ("human", "{user_input}"),
+            ]
+        )
 
     async def classify(self, text: str) -> LLMIntent:
         """分类用户输入。"""
         try:
             # 调用 LLM
-            response = await self._llm.ainvoke(
-                self._prompt.format_messages(user_input=text)
-            )
-            
+            response = await self._llm.ainvoke(self._prompt.format_messages(user_input=text))
             # 解析 JSON 响应
             result = self._parser.parse(response.content)
-            
             return LLMIntent(
                 action=result.get("action", "unknown"),
                 confidence=result.get("confidence", 0.0),
@@ -96,5 +92,5 @@ class LLMIntentClassifier:
                 action="unknown",
                 confidence=0.0,
                 raw_text=text,
-                reasoning=f"LLM 调用失败: {str(e)}",
+                reasoning=f"LLM 调用失败: {e!s}",
             )

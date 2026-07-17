@@ -93,4 +93,6 @@ def test_chat_endpoint_message_forwarded(client):
         json={"message": "测试消息"},
     )
     assert response.status_code == 200
-    mock_agent.chat.assert_called_once_with("测试消息", conversation_id=None)
+    mock_agent.chat.assert_called_once_with(
+        "测试消息", execution_mode="plan", conversation_id=None
+    )

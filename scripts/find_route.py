@@ -1,5 +1,5 @@
 """Find _route_action method"""
-with open('dataworks_agent/agent/workflow_service.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/workflow_service.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):

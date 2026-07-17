@@ -26,7 +26,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from dataworks_agent.config import settings
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import WordRootCacheModel
 from dataworks_agent.standards.loader import load_word_root_entries
@@ -34,7 +33,19 @@ from dataworks_agent.standards.loader import load_word_root_entries
 logger = logging.getLogger(__name__)
 
 # 通用后缀（允许不使用词根表）
-COMMON_SUFFIXES = {"dt", "hr", "pt", "id", "type", "status", "flag", "count", "num", "rate", "ratio"}
+COMMON_SUFFIXES = {
+    "dt",
+    "hr",
+    "pt",
+    "id",
+    "type",
+    "status",
+    "flag",
+    "count",
+    "num",
+    "rate",
+    "ratio",
+}
 
 # 数字列模式
 NUMERIC_COL_PATTERN = re.compile(r"^col_\d+$")
@@ -259,7 +270,9 @@ class WordRootValidator:
             return "、".join(suggestions)
         return "建议使用标准词根组合，参考词根表 dim_pub_column_dictionary_static"
 
-    def _find_closest_root(self, text: str, roots: dict[str, str], max_distance: int = 2) -> str | None:
+    def _find_closest_root(
+        self, text: str, roots: dict[str, str], max_distance: int = 2
+    ) -> str | None:
         """
         查找最接近的词根（基于编辑距离）。
         """

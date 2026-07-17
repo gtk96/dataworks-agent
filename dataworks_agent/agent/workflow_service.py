@@ -67,12 +67,12 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _ASK_DOMAIN_ALBUM_HINTS: dict[str, int] = {
     # Curated DataMap album ids that are explicitly tagged for the request.
     # Order matters: earlier (more specific) hint wins on tie.
-    "订单": 436,        # 订单数据（ods 层）订单
+    "订单": 436,  # 订单数据（ods 层）订单
     "订单信息": 436,
     "订单明细": 436,
     "客户订单": 436,
     "用户订单": 436,
-    "订单模型": 328,    # 模型汇总
+    "订单模型": 328,  # 模型汇总
     "订单汇总": 328,
     "订单汇总模型": 328,
 }
@@ -545,7 +545,11 @@ class AgentWorkflowService:
     @staticmethod
     def _extract_action_target(result_data: dict, message: str) -> str:
         """从结果数据或消息中提取操作目标。"""
-        target = result_data.get("target") or result_data.get("table_name") or result_data.get("node_name")
+        target = (
+            result_data.get("target")
+            or result_data.get("table_name")
+            or result_data.get("node_name")
+        )
         if target:
             return target
         # 从消息中提取表名/节点名
@@ -553,9 +557,12 @@ class AgentWorkflowService:
             return message[:50]
         return "unknown"
 
-    def store_episodic_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+    def store_episodic_memory(
+        self, content: dict[str, Any], tags: list[str] | None = None, source: str = ""
+    ) -> MemoryEntry:
         """存储 Episodic 记忆（对话轨迹、执行记录）。"""
         import uuid
+
         entry = MemoryEntry(
             entry_id=f"ep_{uuid.uuid4().hex[:12]}",
             memory_type=MemoryType.EPISODIC,
@@ -565,9 +572,12 @@ class AgentWorkflowService:
         )
         return self._memory_layering.store(entry)
 
-    def store_semantic_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+    def store_semantic_memory(
+        self, content: dict[str, Any], tags: list[str] | None = None, source: str = ""
+    ) -> MemoryEntry:
         """存储 Semantic 记忆（领域知识、规则）。"""
         import uuid
+
         entry = MemoryEntry(
             entry_id=f"sm_{uuid.uuid4().hex[:12]}",
             memory_type=MemoryType.SEMANTIC,
@@ -577,9 +587,12 @@ class AgentWorkflowService:
         )
         return self._memory_layering.store(entry)
 
-    def store_procedural_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+    def store_procedural_memory(
+        self, content: dict[str, Any], tags: list[str] | None = None, source: str = ""
+    ) -> MemoryEntry:
         """存储 Procedural 记忆（工作流模式、修复策略）。"""
         import uuid
+
         entry = MemoryEntry(
             entry_id=f"pr_{uuid.uuid4().hex[:12]}",
             memory_type=MemoryType.PROCEDURAL,
@@ -1307,9 +1320,7 @@ class AgentWorkflowService:
         params = params or {}
         business_query = params.get("business_query")
         try:
-            query_plan = await self._build_query_plan(
-                message, business_query, params=params
-            )
+            query_plan = await self._build_query_plan(message, business_query, params=params)
         except QueryNeedsClarificationError as clarification:
             return self._query_clarification_result(clarification, mode)
 
@@ -1535,14 +1546,10 @@ class AgentWorkflowService:
                     {
                         "type": "pick_table",
                         "id": f"opt_{idx}",
-                        "label": cand.get("table")
-                        or cand.get("full_name")
-                        or "",
+                        "label": cand.get("table") or cand.get("full_name") or "",
                         "subtitle": cand.get("comment") or "",
                         "layer": cand.get("layer"),
-                        "value": cand.get("table")
-                        or cand.get("full_name")
-                        or "",
+                        "value": cand.get("table") or cand.get("full_name") or "",
                     }
                 )
             option_chips.append(
@@ -2028,11 +2035,7 @@ class AgentWorkflowService:
                 "那个",
             )
             marker_hit = any(marker in message for marker in followup_markers)
-            counting_hit = (
-                "多少条" in message
-                or "行数" in message
-                or "count" in message.lower()
-            )
+            counting_hit = "多少条" in message or "行数" in message or "count" in message.lower()
             logger.info(
                 "history_table=%s marker_hit=%s counting_hit=%s (message=%s)",
                 history_table,
@@ -2050,8 +2053,7 @@ class AgentWorkflowService:
             sql = self._build_simple_table_sql(message, table_name)
             return self._ad_hoc_query_plan(
                 sql,
-                "用户明确指定表" if table_name != history_table
-                else "上下文延续：最近引用表",
+                "用户明确指定表" if table_name != history_table else "上下文延续：最近引用表",
                 table=table_name,
             )
 
@@ -2060,9 +2062,7 @@ class AgentWorkflowService:
         # to the semantic / LLM layer.
         search_keyword = self._extract_table_search_keyword(message, params)
         if search_keyword:
-            metadata_result = await self._metadata_provider.search_table(
-                search_keyword, message
-            )
+            metadata_result = await self._metadata_provider.search_table(search_keyword, message)
             if metadata_result is not None:
                 resolved = await self._build_plan_from_metadata(
                     message, search_keyword, metadata_result
@@ -2269,9 +2269,7 @@ class AgentWorkflowService:
             return "00"
         return _today_partition_value()
 
-    async def _partition_filter_clause(
-        self, table: str
-    ) -> tuple[str, str | None]:
+    async def _partition_filter_clause(self, table: str) -> tuple[str, str | None]:
         """Pick ``WHERE ...`` clause and a sample partition value (or None).
 
         Strategy:
@@ -2327,9 +2325,7 @@ class AgentWorkflowService:
         return tuple(cols)
 
     @staticmethod
-    def _format_partition_clause(
-        cols: tuple[str, ...], sample_value: str | None
-    ) -> str:
+    def _format_partition_clause(cols: tuple[str, ...], sample_value: str | None) -> str:
         if not cols:
             return ""
         parts: list[str] = []
@@ -2349,7 +2345,9 @@ class AgentWorkflowService:
         if any(k in message for k in ("多少条", "行数", "count", "数量")):
             base = f"SELECT COUNT(*) AS row_count FROM {table}{partition_clause}"
         else:
-            base = f"SELECT * FROM {table}{partition_clause} LIMIT {settings.ask_data_default_limit}"
+            base = (
+                f"SELECT * FROM {table}{partition_clause} LIMIT {settings.ask_data_default_limit}"
+            )
         return base
 
     async def _resolve_table_via_bff_search(
@@ -2398,9 +2396,7 @@ class AgentWorkflowService:
                     try:
                         tables = await bff.search_tables(keyword)
                     except Exception as retry_exc:
-                        logger.warning(
-                            "BFF search_tables(%s) 刷新后仍失败: %s", keyword, retry_exc
-                        )
+                        logger.warning("BFF search_tables(%s) 刷新后仍失败: %s", keyword, retry_exc)
                         tables = []
                 else:
                     logger.warning("BFF search_tables(%s) Cookie 失效: %s", keyword, exc)
@@ -2504,7 +2500,11 @@ class AgentWorkflowService:
                 len(tables or []),
             )
             return None
-        if album is None and not any(item.get("album_hit") for item in normalized) and len(normalized) > 1:
+        if (
+            album is None
+            and not any(item.get("album_hit") for item in normalized)
+            and len(normalized) > 1
+        ):
             # No business-domain album matched: only trust BFF-search
             # results when there is exactly one candidate. Many candidates
             # without album evidence usually means the keyword is too
@@ -2527,9 +2527,7 @@ class AgentWorkflowService:
             business = [
                 item
                 for item in normalized
-                if not str(item.get("table_name") or "").lower().startswith(
-                    ("ods_", "tb_ods_")
-                )
+                if not str(item.get("table_name") or "").lower().startswith(("ods_", "tb_ods_"))
             ]
             if business:
                 normalized = business
@@ -2576,10 +2574,7 @@ class AgentWorkflowService:
             # (ref_count == 0) and the runner-up is also an album hit:
             # surface the candidates so the user can choose rather than
             # silently picking the first one in iteration order.
-            if (
-                top_key > 0
-                and (runner_up_score == 0 or top_key >= runner_up_score + 5)
-            ):
+            if top_key > 0 and (runner_up_score == 0 or top_key >= runner_up_score + 5):
                 return self._plan_single_hit(message, keyword, top)
 
         # Single BFF-search hit with no album candidates: trust it as a
@@ -2618,9 +2613,8 @@ class AgentWorkflowService:
             if layer:
                 layer_counts[layer] = layer_counts.get(layer, 0) + 1
         layer_hint = (
-            "候选层级：" + " / ".join(
-                f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts
-            )
+            "候选层级："
+            + " / ".join(f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts)
             if layer_counts
             else ""
         )
@@ -2631,25 +2625,21 @@ class AgentWorkflowService:
                 f"元数据搜表为“{keyword}”找到 {len(normalized)} 张候选表，"
                 f"建议专辑：{album_label}。"
                 + (f" {layer_hint}。" if layer_hint else " 请选择一张后再查询。")
-                + " 可回复 \"只要 dwd\" 或具体表名进一步收敛。"
+                + ' 可回复 "只要 dwd" 或具体表名进一步收敛。'
             ),
             knowledge_matches=candidates,
             clarifying_questions=[
                 "请从候选表中选择一张，或直接回复完整表名（project.table）。",
                 "如果目标是统计行数，也可以说：查 giikin.xxx 有多少条。",
-                "回复 \"只要 dws / dwd / ods\" 可以只看对应分层。",
+                '回复 "只要 dws / dwd / ods" 可以只看对应分层。',
             ],
         )
 
-    def _plan_single_hit(
-        self, message: str, keyword: str, item: dict[str, Any]
-    ) -> MetricQueryPlan:
+    def _plan_single_hit(self, message: str, keyword: str, item: dict[str, Any]) -> MetricQueryPlan:
         table = item["full_name"]
         bare = table.split(".")[-1] if "." in table else table
         assert_safe_table_name(bare)
-        partition_clause, partition_source = (
-            self._build_table_partition_clause_sync(table)
-        )
+        partition_clause, partition_source = self._build_table_partition_clause_sync(table)
         sql = self._build_table_sql(message, table, partition_clause)
         plan = self._ad_hoc_query_plan(
             sql,
@@ -2694,10 +2684,7 @@ class AgentWorkflowService:
                 else int(normalized[1].get("ref_count") or 0)
             )
             top_key = int(top.get("ref_count") or 0)
-            if (
-                top_key > 0
-                and (runner_up_score == 0 or top_key >= runner_up_score + 5)
-            ):
+            if top_key > 0 and (runner_up_score == 0 or top_key >= runner_up_score + 5):
                 return self._plan_single_hit(message, keyword, top)
 
         if len(normalized) == 1 and not top.get("album_hit"):
@@ -2705,9 +2692,7 @@ class AgentWorkflowService:
         if len(unique_names) == 1 and len(normalized) > 1:
             return self._plan_single_hit(message, keyword, top)
 
-        return self._raise_metadata_clarification(
-            message, keyword, result, normalized
-        )
+        return self._raise_metadata_clarification(message, keyword, result, normalized)
 
     async def _shape_metadata_candidates(
         self,
@@ -2723,9 +2708,7 @@ class AgentWorkflowService:
             business = [
                 item
                 for item in normalized
-                if not str(item.get("table_name") or "").lower().startswith(
-                    ("ods_", "tb_ods_")
-                )
+                if not str(item.get("table_name") or "").lower().startswith(("ods_", "tb_ods_"))
             ]
             if business:
                 normalized = business
@@ -2742,9 +2725,7 @@ class AgentWorkflowService:
 
         bff = getattr(app_state, "_bff_client", None)
         bff_only = [item for item in normalized if not item.get("album_hit")]
-        if bff is not None and bff_only and any(
-            item.get("entity_guid") for item in bff_only
-        ):
+        if bff is not None and bff_only and any(item.get("entity_guid") for item in bff_only):
             await self._enrich_table_ref_counts(bff, bff_only)
 
         for item in normalized:
@@ -2804,18 +2785,15 @@ class AgentWorkflowService:
                 "placeholder": "project.table 或 SELECT ...",
             }
         )
-        album_label = (
-            (result.album or {}).get("name") if result.album else None
-        ) or "未命中专辑"
+        album_label = ((result.album or {}).get("name") if result.album else None) or "未命中专辑"
         layer_counts: dict[str, int] = {}
         for item in normalized:
             layer = self._table_layer(item.get("table_name") or "")
             if layer:
                 layer_counts[layer] = layer_counts.get(layer, 0) + 1
         layer_hint = (
-            "候选层级：" + " / ".join(
-                f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts
-            )
+            "候选层级："
+            + " / ".join(f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts)
             if layer_counts
             else ""
         )
@@ -2846,13 +2824,13 @@ class AgentWorkflowService:
                 f"元数据搜表为“{keyword}”找到 {len(normalized)} 张候选表，"
                 f"建议专辑：{album_label}。"
                 + (f" {layer_hint}。" if layer_hint else " 请选择一张后再查询。")
-                + " 可点选候选表，或点\"输入其它\"自定义回复。"
+                + ' 可点选候选表，或点"输入其它"自定义回复。'
             ),
             knowledge_matches=candidates,
             clarifying_questions=[
                 "请从候选表中选择一张，或直接回复完整表名（project.table）。",
                 "如果目标是统计行数，也可以说：查 giikin.xxx 有多少条。",
-                "回复 \"只要 dws / dwd / ods\" 可以只看对应分层。",
+                '回复 "只要 dws / dwd / ods" 可以只看对应分层。',
             ],
             option_chips=option_chips,
         )
@@ -2930,9 +2908,7 @@ class AgentWorkflowService:
                 hint = {
                     "album_id": hinted_id,
                     "name": str(detail.get("albumName") or detail.get("name") or ""),
-                    "description": str(
-                        detail.get("albumDesc") or detail.get("description") or ""
-                    ),
+                    "description": str(detail.get("albumDesc") or detail.get("description") or ""),
                     "score": 100.0,
                 }
                 cache[normalized] = (now, hint)

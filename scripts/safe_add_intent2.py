@@ -1,5 +1,5 @@
 """Safely add any_ods_modeling using line-by-line approach"""
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Find the line with "check_status":
@@ -49,7 +49,7 @@ with open('dataworks_agent/agent/nlu/templates.py', 'w', encoding='utf-8') as f:
 
 # Verify
 try:
-    with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+    with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
         compile(f.read(), 'templates.py', 'exec')
     print('SUCCESS: templates.py compiles correctly')
 except SyntaxError as e:

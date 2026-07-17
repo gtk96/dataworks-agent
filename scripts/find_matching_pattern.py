@@ -1,5 +1,6 @@
 """Find which pattern matches '创建ods_user表'"""
 import re
+
 from dataworks_agent.agent.nlu.templates import INTENT_TEMPLATES
 
 text = "\u521b\u5efaods_user\u8868"

@@ -1,5 +1,5 @@
 """Show MYSQL_ODS_DWD constant"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):

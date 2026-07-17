@@ -1,5 +1,5 @@
 """Add greeting intent to templates.py"""
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Find the first key in INTENT_TEMPLATES (should be cookie_manage at line 18)
@@ -32,7 +32,7 @@ with open('dataworks_agent/agent/nlu/templates.py', 'w', encoding='utf-8') as f:
 
 # Verify
 try:
-    with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+    with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
         compile(f.read(), 'templates.py', 'exec')
     print('SUCCESS: templates.py compiles correctly with greeting')
 except SyntaxError as e:

@@ -1,5 +1,5 @@
 """Add SmartChatPage and ModelingWizard routes"""
-with open('frontend/src/router/index.ts', 'r', encoding='utf-8') as f:
+with open('frontend/src/router/index.ts', encoding='utf-8') as f:
     content = f.read()
 
 # Replace AgentChatPage with SmartChatPage as the default

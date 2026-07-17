@@ -353,7 +353,6 @@ class GovernanceAgent:
 
     async def _validate_proposal(self, request: AgentRequest) -> AgentResponse:
         """执行提案校验。"""
-        from dataworks_agent.semantic.guard import ValidationResult
 
         result: dict[str, Any] = {"checks": [], "overall_passed": True}
         all_errors: list[str] = []
@@ -381,9 +380,7 @@ class GovernanceAgent:
         target_table = request.context.get("target_table", "")
         target_layer = request.context.get("target_layer", "")
         if source_table and target_table and target_layer:
-            layer_result = self.proposal_guard.check_layer_dependency(
-                target_layer, [source_table]
-            )
+            layer_result = self.proposal_guard.check_layer_dependency(target_layer, [source_table])
             result["checks"].append({"name": "layer", "passed": layer_result.passed})
             if not layer_result.passed:
                 all_errors.extend(layer_result.errors)
@@ -482,9 +479,6 @@ class DiagnosisAgent:
         """处理诊断请求。"""
         try:
             from dataworks_agent.runtime.self_heal import (
-                HealAction,
-                HealProposal,
-                HealResult,
                 IssueReport,
                 IssueType,
             )

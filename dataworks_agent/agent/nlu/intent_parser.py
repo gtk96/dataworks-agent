@@ -105,7 +105,10 @@ class IntentParser:
         table_name = self._extractor.extract_table_name(text)
         # Also try to extract plain table names like "订单表" -> "订单"
         if not table_name:
-            plain_match = re.search(r"(?:查|查看|查询|检索|找|看)[\s\S]*(?:一下|一|下)?[\s\S]*([^\s,，。；;\n]+?)表", text)
+            plain_match = re.search(
+                r"(?:查|查看|查询|检索|找|看)[\s\S]*(?:一下|一|下)?[\s\S]*([^\s,，。；;\n]+?)表",
+                text,
+            )
             if plain_match:
                 table_name = plain_match.group(1)
 

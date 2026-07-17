@@ -1,5 +1,5 @@
 """Fix test_planner_adds_ods_dwd_steps"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Show lines 80-95

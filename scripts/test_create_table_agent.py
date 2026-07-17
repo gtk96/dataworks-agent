@@ -1,6 +1,7 @@
 """Run just the failing test"""
 import asyncio
 import sys
+
 sys.path.insert(0, '.')
 
 async def main():

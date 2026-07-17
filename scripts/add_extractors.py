@@ -1,5 +1,5 @@
 """Add extractors for any_ods_modeling params"""
-with open('dataworks_agent/agent/nlu/entity_extractor.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/entity_extractor.py', encoding='utf-8') as f:
     content = f.read()
 
 # Add new extraction methods before extract_params

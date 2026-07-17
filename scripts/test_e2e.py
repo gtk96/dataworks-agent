@@ -1,12 +1,14 @@
 """End-to-end test of any_ods_modeling intent chain (fixed)"""
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 from dataworks_agent.agent.nlu.intent_parser import IntentParser
-from dataworks_agent.modeling.data_source import (
-    DataSourceConfig, DataSourceType, infer_data_source_type, build_datasource_config_from_text
-)
 from dataworks_agent.governance.word_root_validator import WordRootValidator
+from dataworks_agent.modeling.data_source import (
+    DataSourceType,
+    build_datasource_config_from_text,
+)
 from dataworks_agent.modeling.schedule_planner import SchedulePlanner
 
 print("=== Test 1: Intent Parsing ===")

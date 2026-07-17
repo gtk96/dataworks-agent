@@ -1,5 +1,5 @@
 """Check test_core.py fixture"""
-with open('tests/unit/test_agent/test_core.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent/test_core.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Show the fixture definition

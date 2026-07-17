@@ -12,4 +12,4 @@ tests = [
 
 for text in tests:
     intent = parser.parse(text)
-    print(f'{repr(text):50s} -> {intent.action:20s} (conf={intent.confidence:.2f})')
+    print(f'{text!r:50s} -> {intent.action:20s} (conf={intent.confidence:.2f})')

@@ -23,6 +23,6 @@ for text, expected in tests:
     status = "PASS" if intent.action == expected else "FAIL"
     if status == "FAIL":
         all_pass = False
-    print(f'[{status}] {repr(text[:30]):35s} -> {intent.action:20s} (exp={expected})')
+    print(f'[{status}] {text[:30]!r:35s} -> {intent.action:20s} (exp={expected})')
 
 print(f'\nAll passed: {all_pass}')

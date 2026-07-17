@@ -119,9 +119,7 @@ class MetadataProvider:
         )
         # Per-keyword BFF search cache. The album resolve cache lives
         # directly on app_state (shared with workflow_service).
-        self._search_cache: dict[
-            str, tuple[float, MetadataQueryResult]
-        ] = {}
+        self._search_cache: dict[str, tuple[float, MetadataQueryResult]] = {}
 
     @staticmethod
     def extract_keyword(message: str, params: dict[str, Any] | None = None) -> str:
@@ -162,7 +160,7 @@ class MetadataProvider:
         now = time.monotonic()
         cached = self._search_cache.get(keyword)
         if cached is not None and now - cached[0] < self._cache_ttl:
-                return cached[1]
+            return cached[1]
 
         bff = getattr(app_state, "_bff_client", None)
         if bff is None:
@@ -192,9 +190,7 @@ class MetadataProvider:
             else:
                 refresh = await _refresh_cookie_auth(bff)
                 if refresh.get("status") not in {"success", "refreshed", "extracted_unverified"}:
-                    logger.warning(
-                        "BFF search_tables(%s) Cookie 失效: %s", keyword, exc
-                    )
+                    logger.warning("BFF search_tables(%s) Cookie 失效: %s", keyword, exc)
                     tables = []
                 else:
                     try:
@@ -259,9 +255,7 @@ class MetadataProvider:
                 hint = {
                     "album_id": hinted_id,
                     "name": str(detail.get("albumName") or detail.get("name") or ""),
-                    "description": str(
-                        detail.get("albumDesc") or detail.get("description") or ""
-                    ),
+                    "description": str(detail.get("albumDesc") or detail.get("description") or ""),
                     "score": 100.0,
                 }
                 cache[normalized] = (now, hint)
@@ -418,7 +412,11 @@ class MetadataProvider:
                 album.get("name") if album else None,
             )
             return None
-        if album is None and not any(item.get("album_hit") for item in normalized) and len(normalized) > 1:
+        if (
+            album is None
+            and not any(item.get("album_hit") for item in normalized)
+            and len(normalized) > 1
+        ):
             logger.info(
                 "MetadataProvider weak hit (%d) for keyword=%s without album",
                 len(normalized),

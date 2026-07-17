@@ -1,5 +1,5 @@
 """Remove overly broad pattern that catches create_table"""
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Remove the two problematic patterns
@@ -19,7 +19,7 @@ print('Removed overly broad patterns')
 
 # Verify
 try:
-    with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+    with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
         compile(f.read(), 'templates.py', 'exec')
     print('Compiles OK')
 except SyntaxError as e:

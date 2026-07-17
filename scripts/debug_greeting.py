@@ -1,5 +1,5 @@
 """Fix greeting and other simple intents bypassing workflow"""
-with open('dataworks_agent/agent/core.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/core.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Find the greeting handling section and fix it

@@ -424,24 +424,27 @@ class EntityExtractor:
         )
         return match.group(1) if match else None
 
-
     def extract_holo_schema(self, text: str) -> str | None:
         """Extract Hologres schema name."""
         match = re.search(
             r"(?:holo[_\s]?schema|holo\s+schema|holo\s+\.?)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z][a-zA-Z0-9_]*)",
-            text, re.IGNORECASE
+            text,
+            re.IGNORECASE,
         )
         if match:
             return match.group(1)
         # Also match holo_schema.xxx pattern
-        match = re.search(r"holo[_\s]?schema[_\s]*[:\uff1a]\s*([a-zA-Z][a-zA-Z0-9_]*)", text, re.IGNORECASE)
+        match = re.search(
+            r"holo[_\s]?schema[_\s]*[:\uff1a]\s*([a-zA-Z][a-zA-Z0-9_]*)", text, re.IGNORECASE
+        )
         return match.group(1) if match else None
 
     def extract_database(self, text: str) -> str | None:
         """Extract database name for MySQL/PG."""
         match = re.search(
             r"(?:database|\u5e93|db)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z][a-zA-Z0-9_]*)",
-            text, re.IGNORECASE
+            text,
+            re.IGNORECASE,
         )
         return match.group(1) if match else None
 
@@ -458,7 +461,8 @@ class EntityExtractor:
         """Extract incremental sync column."""
         match = re.search(
             r"(?:增量\u5b57\u6bb5|incremental\s*column|\u589e\u91cf\u5217)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z_][a-zA-Z0-9_]*)",
-            text, re.IGNORECASE
+            text,
+            re.IGNORECASE,
         )
         return match.group(1) if match else None
 

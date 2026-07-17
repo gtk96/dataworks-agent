@@ -1,5 +1,5 @@
 """Fix overly greedy any_ods_modeling patterns"""
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # The issue is patterns like r"(搭建|创建|建).*?(全链路|ods|dwd|dws|数仓|建模)"

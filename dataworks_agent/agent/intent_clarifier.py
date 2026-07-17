@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -188,16 +188,12 @@ class IntentClarifier:
 
         return request
 
-    def _has_missing_fields(
-        self, intent: Intent, params: dict[str, Any]
-    ) -> list[str]:
+    def _has_missing_fields(self, intent: Intent, params: dict[str, Any]) -> list[str]:
         """检测缺失的必填字段。"""
         required = self.REQUIRED_FIELDS.get(intent.action, [])
         return [f for f in required if f not in params]
 
-    def _detect_missing_fields(
-        self, intent: Intent, params: dict[str, Any]
-    ) -> list[str]:
+    def _detect_missing_fields(self, intent: Intent, params: dict[str, Any]) -> list[str]:
         """检测缺失字段。"""
         return self._has_missing_fields(intent, params)
 
@@ -208,9 +204,11 @@ class IntentClarifier:
         questions = []
         for field_name in missing_fields:
             template = self.QUESTION_TEMPLATES.get(field_name, f"请补充: {field_name}")
-            questions.append(ClarificationQuestion(
-                question=template,
-                field_name=field_name,
-                required=True,
-            ))
+            questions.append(
+                ClarificationQuestion(
+                    question=template,
+                    field_name=field_name,
+                    required=True,
+                )
+            )
         return questions

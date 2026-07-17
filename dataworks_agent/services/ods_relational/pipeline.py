@@ -11,7 +11,11 @@ import logging
 from typing import Any
 
 from dataworks_agent.config import settings
-from dataworks_agent.modeling.data_source import DataSourceConfig, DataSourceType, FileFormat, SyncMode
+from dataworks_agent.modeling.data_source import (
+    DataSourceConfig,
+    DataSourceType,
+    SyncMode,
+)
 from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,
@@ -51,7 +55,6 @@ class RelationalOdsPipeline:
 
         返回完整的 DataX job JSON 字符串，用于写入 DI 节点内容。
         """
-        ds_name = config.name or config.database or ""
         reader_table = config.table_name or ""
         writer_table = target_table
 
@@ -244,10 +247,14 @@ class RelationalOdsPipeline:
 
         cron = generate_cron(normalized_schedule, hour=hour, minute=minute)
         cycle_type = get_cycle_type(normalized_schedule)
-        parameters = HOURLY_SQL_PARAMETERS if normalized_schedule == "hour" else DAILY_SQL_PARAMETERS
+        parameters = (
+            HOURLY_SQL_PARAMETERS if normalized_schedule == "hour" else DAILY_SQL_PARAMETERS
+        )
 
         # 5. 创建 DI 节点
-        node_path = generate_node_path(settings.holo_ods_node_path.replace("Hologres", "DataIntegration"), target_table)
+        node_path = generate_node_path(
+            settings.holo_ods_node_path.replace("Hologres", "DataIntegration"), target_table
+        )
         node_uuid = None
 
         try:
@@ -286,9 +293,7 @@ class RelationalOdsPipeline:
         # 6. 配置调度
         dependencies: list[dict[str, Any]] = []
         if root_node_uuid:
-            resolved_output_ref = str(
-                output_ref or f"giikin.{target_table}"
-            ).strip()
+            resolved_output_ref = str(output_ref or f"giikin.{target_table}").strip()
             dependencies = [
                 {
                     "type": "Normal",
@@ -310,8 +315,8 @@ class RelationalOdsPipeline:
                 {
                     "artifactType": "NodeOutput",
                     "sourceType": "System",
-                    "data": str(outputs.get("data", f"giikin.{target_table}")),
-                    "refTableName": str(outputs.get("data", f"giikin.{target_table}")),
+                    "data": str(output_ref or f"giikin.{target_table}"),
+                    "refTableName": str(output_ref or f"giikin.{target_table}"),
                     "isDefault": True,
                 }
             ]
@@ -377,7 +382,9 @@ class RelationalOdsPipeline:
         # 8. 发布
         if publish:
             try:
-                deployed = await self._bff.deploy_nodes([node_uuid], comment=f"relational import {target_table}")
+                deployed = await self._bff.deploy_nodes(
+                    [node_uuid], comment=f"relational import {target_table}"
+                )
                 result["steps"]["publish"] = {"status": "ok" if deployed else "failed"}
                 if not deployed:
                     result["success"] = False

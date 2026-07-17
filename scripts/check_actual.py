@@ -1,5 +1,5 @@
 """Check actual test content"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Show lines around 68-72
