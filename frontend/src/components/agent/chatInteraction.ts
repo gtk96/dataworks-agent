@@ -1,6 +1,33 @@
 export type AgentExecutionMode = 'auto' | 'plan' | 'dev_execute'
 export type AgentContextUpdates = Record<string, unknown>
 
+export interface InteractionAnswer {
+  interaction_id: string
+  option_id?: string
+  custom_text?: string
+  state_version: number
+}
+
+export interface AgentInteractionOption {
+  id: string
+  label: string
+  value?: unknown
+  description?: string
+  layer?: string
+}
+
+export interface AgentInteraction {
+  interaction_id: string
+  type: 'single_select' | 'confirm' | 'free_text'
+  purpose: string
+  prompt: string
+  options: AgentInteractionOption[]
+  allow_custom_input: boolean
+  custom_input_placeholder?: string
+  status: 'pending' | 'answered' | 'expired' | 'cancelled'
+  state_version: number
+}
+
 export interface AgentChatRequest {
   message: string
   execution_mode: AgentExecutionMode
@@ -8,6 +35,7 @@ export interface AgentChatRequest {
   publish: boolean
   conversation_id?: string
   context_updates?: AgentContextUpdates
+  interaction_answer?: InteractionAnswer
 }
 
 export function buildAgentChatRequest(
@@ -17,6 +45,7 @@ export function buildAgentChatRequest(
   publish: boolean,
   conversationId?: string,
   contextUpdates?: AgentContextUpdates,
+  interactionAnswer?: InteractionAnswer,
 ): AgentChatRequest {
   return {
     message: message.trim(),
@@ -25,6 +54,7 @@ export function buildAgentChatRequest(
     publish,
     ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(contextUpdates ? { context_updates: contextUpdates } : {}),
+    ...(interactionAnswer ? { interaction_answer: interactionAnswer } : {}),
   }
 }
 
@@ -34,7 +64,7 @@ export async function requestAgentChat<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetcher('/agent/chat', {
       method: 'POST',
@@ -54,7 +84,7 @@ export async function requestAgentChat<T>(
     }
     throw error
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
 }
 

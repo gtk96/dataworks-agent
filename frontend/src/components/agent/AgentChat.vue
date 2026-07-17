@@ -295,10 +295,24 @@ import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 import { buildSourceDiscoveryView } from './sourceDiscovery'
 import { buildExecutionResources } from './executionResources'
-import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentContextUpdates, type AgentExecutionMode } from './chatInteraction'
+import {
+  buildAgentChatRequest,
+  requestAgentChat,
+  reviewPublishRequest,
+  type AgentContextUpdates,
+  type AgentExecutionMode,
+  type AgentInteraction,
+  type InteractionAnswer,
+} from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
 
-interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
+interface ChatMsg {
+  id: string
+  text: string
+  isUser: boolean
+  timestamp: Date
+  interaction?: AgentInteraction
+}
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
 interface ExecutionStatus { task_id: string; current_step: string | null; total_steps: number; completed_steps: number; failed_steps: number; steps: Record<string, { status: string }> }
 interface SemanticPlan {
@@ -342,6 +356,7 @@ interface AgentPayload {
     allow_custom_input?: boolean
     custom_input_hint?: string
     agent_mode?: string
+    interaction?: AgentInteraction
     semantic_plan?: SemanticPlan
     source_discovery?: Record<string, unknown>
     query?: {
@@ -558,6 +573,7 @@ async function loadConversationHistory() {
         text: msg.content,
         isUser: msg.role === 'user',
         timestamp: new Date(msg.timestamp),
+        interaction: msg.payload?.interaction as AgentInteraction | undefined,
       }))
     } else {
       // 没有历史消息，显示欢迎消息
@@ -588,7 +604,11 @@ function connectWebSocket() {
   socket.onclose = () => { if (ws.value === socket) ws.value = null }
   socket.onerror = () => socket.close()
 }
-async function sendMessage(overrideText?: string, contextUpdates?: AgentContextUpdates) {
+async function sendMessage(
+  overrideText?: string,
+  contextUpdates?: AgentContextUpdates,
+  interactionAnswer?: InteractionAnswer,
+) {
   const text = (overrideText ?? input.value).trim()
   if (!text || loading.value) return
   input.value = ''
@@ -603,6 +623,7 @@ async function sendMessage(overrideText?: string, contextUpdates?: AgentContextU
       requestPublish.value,
       conversationId.value,
       contextUpdates,
+      interactionAnswer,
     )
     handleAgentResponse(await requestAgentChat<AgentPayload>(payload))
   } catch (error) {
@@ -616,7 +637,13 @@ function handleAgentResponse(payload: AgentPayload) {
   publishReviewFeedback.value = ''
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
   activeClarifyingQuestion.value = payload.data?.clarifying_questions?.[0] ?? ''
-  messages.value.push({ id: idempotencyKey(), text: payload.message, isUser: false, timestamp: new Date() })
+  messages.value.push({
+    id: idempotencyKey(),
+    text: payload.message,
+    isUser: false,
+    timestamp: new Date(),
+    interaction: payload.data?.interaction,
+  })
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)

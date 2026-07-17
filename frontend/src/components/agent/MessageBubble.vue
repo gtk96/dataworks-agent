@@ -17,8 +17,58 @@
     </div>
     <div class="bubble-wrapper">
       <div class="bubble" v-html="renderedContent" />
-      <!-- Option chips: pick_table + free_text fallback -->
-      <div v-if="optionChips.length" class="option-chips">
+      <section
+        v-if="interaction"
+        class="interaction-card"
+        :class="{ 'interaction-card--inactive': !interactionActionable }"
+        data-interaction-card
+      >
+        <header class="interaction-header">
+          <div>
+            <span class="interaction-kicker">CONVERSATION CHECKPOINT</span>
+            <strong>{{ interaction.prompt }}</strong>
+          </div>
+          <span class="interaction-status">{{ interactionStatusLabel }}</span>
+        </header>
+        <div v-if="interaction.options.length" class="interaction-options">
+          <button
+            v-for="option in interaction.options"
+            :key="option.id"
+            class="interaction-option"
+            :class="{ selected: selectedId === option.id }"
+            type="button"
+            :disabled="!interactionActionable || Boolean(selectedId)"
+            :data-interaction-option="option.id"
+            @click="onInteractionOption(option)"
+          >
+            <span class="interaction-option__main">
+              <span>{{ option.label }}</span>
+              <small v-if="option.description">{{ option.description }}</small>
+            </span>
+            <span v-if="option.layer" class="chip-layer">{{ option.layer.toUpperCase() }}</span>
+            <span class="interaction-option__arrow">→</span>
+          </button>
+        </div>
+        <div v-if="interaction.allow_custom_input" class="interaction-custom">
+          <input
+            v-model="interactionCustomText"
+            :placeholder="interaction.custom_input_placeholder || '输入自定义回答'"
+            :disabled="!interactionActionable || Boolean(selectedId)"
+            data-interaction-custom
+            @keydown.enter.exact.prevent="onInteractionCustomSubmit"
+          />
+          <button
+            type="button"
+            :disabled="!interactionActionable || Boolean(selectedId) || !interactionCustomText.trim()"
+            data-interaction-submit
+            @click="onInteractionCustomSubmit"
+          >
+            继续
+          </button>
+        </div>
+      </section>
+      <!-- Legacy option chips remain available for old history rows. -->
+      <div v-if="!interaction && optionChips.length" class="option-chips">
         <div
           v-for="chip in optionChips"
           :key="chip.id"
@@ -66,8 +116,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { renderMarkdown } from '@/utils/markdown-render'
+import type { AgentInteraction, AgentInteractionOption, InteractionAnswer } from './chatInteraction'
 
 export interface OptionChip {
   id: string
@@ -84,20 +135,53 @@ interface Props {
   content: string
   streaming?: boolean
   optionChips?: OptionChip[]
+  interaction?: AgentInteraction
+  activeInteractionId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   streaming: false,
   optionChips: () => [],
+  interaction: undefined,
+  activeInteractionId: null,
 })
 
 const emit = defineEmits<{
   pick: [value: string]
+  'answer-interaction': [payload: { message: string; answer: InteractionAnswer }]
 }>()
 
 const selectedId = ref<string | null>(null)
 const customOpen = ref(true)
 const customText = ref('')
+const interactionCustomText = ref('')
+
+const interactionActionable = computed(() => Boolean(
+  props.interaction
+  && props.interaction.status === 'pending'
+  && props.activeInteractionId === props.interaction.interaction_id,
+))
+
+const interactionStatusLabel = computed(() => {
+  if (!props.interaction) return ''
+  if (interactionActionable.value) return '等待回答'
+  return {
+    answered: '已回答',
+    expired: '已过期',
+    cancelled: '已取消',
+    pending: '非当前问题',
+  }[props.interaction.status]
+})
+
+watch(
+  () => [props.interaction?.interaction_id, props.interaction?.status, props.activeInteractionId],
+  () => {
+    if (interactionActionable.value) {
+      selectedId.value = null
+      interactionCustomText.value = ''
+    }
+  },
+)
 
 const renderedContent = computed(() => {
   if (props.role === 'user') {
@@ -110,6 +194,32 @@ const renderedContent = computed(() => {
   }
   return renderMarkdown(props.content).html
 })
+
+function emitInteraction(message: string, answer: InteractionAnswer) {
+  if (!interactionActionable.value || selectedId.value) return
+  selectedId.value = answer.option_id || 'custom'
+  emit('answer-interaction', { message, answer })
+}
+
+function onInteractionOption(option: AgentInteractionOption) {
+  if (!props.interaction) return
+  emitInteraction(option.label, {
+    interaction_id: props.interaction.interaction_id,
+    option_id: option.id,
+    state_version: props.interaction.state_version,
+  })
+}
+
+function onInteractionCustomSubmit() {
+  if (!props.interaction) return
+  const value = interactionCustomText.value.trim()
+  if (!value) return
+  emitInteraction(value, {
+    interaction_id: props.interaction.interaction_id,
+    custom_text: value,
+    state_version: props.interaction.state_version,
+  })
+}
 
 function onChipClick(chip: OptionChip) {
   if (selectedId.value) {
@@ -295,6 +405,81 @@ function onCustomSubmit() {
 .message-bubble.user :deep(a) {
   color: #C7D2FE;
 }
+
+/* Structured conversation checkpoint */
+.interaction-card {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-accent-blue) 34%, var(--color-border-primary));
+  border-radius: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--color-accent-blue) 7%, var(--color-bg-card)), var(--color-bg-card));
+}
+.interaction-card--inactive { opacity: 0.68; }
+.interaction-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+.interaction-header > div { display: grid; gap: 3px; }
+.interaction-header strong { color: var(--color-text-primary); font-size: 13px; line-height: 1.45; }
+.interaction-kicker { color: var(--color-accent-blue); font-size: 9px; font-weight: 800; letter-spacing: 0.11em; }
+.interaction-status {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.interaction-options { display: grid; gap: 6px; padding: 10px; }
+.interaction-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 9px;
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .16s ease, transform .16s ease, background .16s ease;
+}
+.interaction-option:hover:not(:disabled) { transform: translateX(2px); border-color: var(--color-accent-blue); background: var(--color-bg-hover); }
+.interaction-option:disabled { cursor: default; }
+.interaction-option.selected { border-color: var(--color-accent-blue); }
+.interaction-option__main { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.interaction-option__main > span { font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.interaction-option__main small { color: var(--color-text-tertiary); font-size: 10px; }
+.interaction-option__arrow { color: var(--color-accent-blue); font-weight: 800; }
+.interaction-custom { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--color-border-primary); }
+.interaction-custom input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  outline: none;
+}
+.interaction-custom input:focus { border-color: var(--color-accent-blue); }
+.interaction-custom button {
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-accent-blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.interaction-custom button:disabled { opacity: .45; cursor: default; }
 
 /* Option chips */
 .option-chips {
