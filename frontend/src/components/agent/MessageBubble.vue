@@ -17,6 +17,45 @@
     </div>
     <div class="bubble-wrapper">
       <div class="bubble" v-html="renderedContent" />
+      <!-- Option chips: pick_table + free_text fallback -->
+      <div v-if="optionChips.length" class="option-chips">
+        <div
+          v-for="chip in optionChips"
+          :key="chip.id"
+          class="option-chip"
+          :class="['option-chip--' + chip.type, { selected: selectedId === chip.id }]"
+          @click="onChipClick(chip)"
+        >
+          <div v-if="chip.type === 'pick_table'" class="chip-main">
+            <div class="chip-label">
+              <span class="chip-table">{{ chip.label }}</span>
+              <span v-if="chip.layer" class="chip-layer">{{ chip.layer.toUpperCase() }}</span>
+            </div>
+            <div v-if="chip.subtitle" class="chip-subtitle">{{ chip.subtitle }}</div>
+          </div>
+          <div v-else class="chip-main chip-main--custom">
+            <div class="chip-label">
+              <span class="chip-table">{{ chip.label }}</span>
+            </div>
+            <input
+              v-if="chip.type === 'free_text' && customOpen"
+              v-model="customText"
+              class="chip-input"
+              :placeholder="chip.placeholder || 'project.table 或 SELECT ...'"
+              @keydown.enter.exact.prevent="onCustomSubmit"
+              @click.stop
+            />
+            <button
+              v-if="chip.type === 'free_text' && customOpen"
+              class="chip-submit"
+              :disabled="!customText.trim()"
+              @click.stop="onCustomSubmit"
+            >
+              提交
+            </button>
+          </div>
+        </div>
+      </div>
       <div v-if="streaming" class="streaming-indicator">
         <span class="dot"></span>
         <span class="dot"></span>
@@ -27,20 +66,41 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { renderMarkdown } from '@/utils/markdown-render'
+
+export interface OptionChip {
+  id: string
+  type: 'pick_table' | 'free_text'
+  label: string
+  subtitle?: string
+  layer?: string
+  value?: string
+  placeholder?: string
+}
 
 interface Props {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  optionChips?: OptionChip[]
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  streaming: false,
+  optionChips: () => [],
+})
+
+const emit = defineEmits<{
+  pick: [value: string]
+}>()
+
+const selectedId = ref<string | null>(null)
+const customOpen = ref(true)
+const customText = ref('')
 
 const renderedContent = computed(() => {
   if (props.role === 'user') {
-    // User messages: escape HTML, preserve line breaks
     const escaped = props.content
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -50,6 +110,29 @@ const renderedContent = computed(() => {
   }
   return renderMarkdown(props.content).html
 })
+
+function onChipClick(chip: OptionChip) {
+  if (selectedId.value) {
+    return // already locked to a choice
+  }
+  if (chip.type === 'free_text') {
+    if (!customOpen.value) {
+      customOpen.value = true
+    }
+    return
+  }
+  selectedId.value = chip.id
+  emit('pick', String(chip.value || chip.label || ''))
+}
+
+function onCustomSubmit() {
+  const value = customText.value.trim()
+  if (!value) {
+    return
+  }
+  selectedId.value = 'opt_custom'
+  emit('pick', value)
+}
 </script>
 
 <style scoped>
@@ -211,6 +294,124 @@ const renderedContent = computed(() => {
 
 .message-bubble.user :deep(a) {
   color: #C7D2FE;
+}
+
+/* Option chips */
+.option-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: min(75%, 720px);
+}
+
+.option-chip {
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 13px;
+  color: #1E293B;
+}
+
+.option-chip:hover {
+  border-color: #6366F1;
+  background: rgba(99, 102, 241, 0.04);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.08);
+}
+
+.option-chip.selected {
+  border-color: #6366F1;
+  background: rgba(99, 102, 241, 0.08);
+  cursor: default;
+}
+
+.option-chip--free_text {
+  background: #F8FAFC;
+  border-style: dashed;
+}
+
+.chip-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chip-main--custom {
+  gap: 8px;
+}
+
+.chip-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.chip-table {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px;
+  color: #4F46E5;
+  word-break: break-all;
+}
+
+.chip-layer {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4F46E5;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.chip-subtitle {
+  font-size: 12px;
+  color: #64748B;
+  line-height: 1.45;
+}
+
+.chip-input {
+  flex: 1;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  background: #fff;
+  color: #1E293B;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chip-input:focus {
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.chip-submit {
+  border: none;
+  background: #6366F1;
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chip-submit:hover:not(:disabled) {
+  background: #4F46E5;
+}
+
+.chip-submit:disabled {
+  background: #CBD5E1;
+  cursor: not-allowed;
 }
 
 /* Streaming indicator */

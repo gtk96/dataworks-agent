@@ -1993,6 +1993,18 @@ class AgentWorkflowService:
         fenced = re.search(r"```sql\s*(.*?)```", message, re.I | re.S)
         if fenced:
             return self._ad_hoc_query_plan(fenced.group(1).strip(), "用户提供 SQL")
+
+        # History-pre-resolve for follow-ups like "刚才那张表有多少条"
+        # where the regex extractor cannot pull a physical name from the
+        # current message.  We feed the most recent table as a fallback
+        # table candidate further down.
+        history_table: str | None = None
+        recent = await self._history_provider.recent_tables(
+            params.get("conversation_id") or business_query
+        )
+        if recent and self._looks_like_physical_table(recent[0]):
+            history_table = recent[0]
+
         table = (
             params.get("table_name")
             or params.get("source_table")
@@ -2001,13 +2013,47 @@ class AgentWorkflowService:
         if not table:
             raw = re.search(r"(?:查询|统计|查看|表)\s*([A-Za-z][A-Za-z0-9_.]+)", message)
             table = raw.group(1) if raw else None
+        if not table and history_table:
+            # Use the last-discussed table from history when the new
+            # query references the same logical entity ("刚才那张表",
+            # "它", "上一张"…) but no new keyword is present.
+            followup_markers = (
+                "刚才",
+                "之前",
+                "上一张",
+                "它",
+                "上面",
+                "前面",
+                "刚才的",
+                "那个",
+            )
+            marker_hit = any(marker in message for marker in followup_markers)
+            counting_hit = (
+                "多少条" in message
+                or "行数" in message
+                or "count" in message.lower()
+            )
+            logger.info(
+                "history_table=%s marker_hit=%s counting_hit=%s (message=%s)",
+                history_table,
+                marker_hit,
+                counting_hit,
+                message[:80],
+            )
+            if marker_hit or counting_hit:
+                table = history_table
 
         # Physical English table names can be queried directly.
         if table and self._looks_like_physical_table(str(table)):
             table_name = str(table)
             assert_safe_table_name(table_name.split(".")[-1])
             sql = self._build_simple_table_sql(message, table_name)
-            return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table_name)
+            return self._ad_hoc_query_plan(
+                sql,
+                "用户明确指定表" if table_name != history_table
+                else "上下文延续：最近引用表",
+                table=table_name,
+            )
 
         # Chinese business keywords (e.g. 订单表) → MetadataProvider first
         # (cookie/bff search + data-album ranking) before falling through

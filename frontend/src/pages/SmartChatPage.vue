@@ -92,6 +92,8 @@
             :role="msg.role"
             :content="msg.content"
             :streaming="msg.streaming"
+            :option-chips="msg.optionChips"
+            @pick="handleSend"
           />
         </div>
       </div>
@@ -119,6 +121,15 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  optionChips?: Array<{
+    id: string
+    type: 'pick_table' | 'free_text'
+    label: string
+    subtitle?: string
+    layer?: string
+    value?: string
+    placeholder?: string
+  }>
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -223,6 +234,7 @@ async function handleSend(text: string) {
             role: 'assistant',
             content: event.message,
             streaming: false,
+            optionChips: event.data?.option_chips,
           }
         }
         isStreaming.value = false

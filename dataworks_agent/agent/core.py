@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+import json
 from typing import Any
 
 from sqlalchemy import select
@@ -126,6 +127,8 @@ class ChatAgent:
                 intent.params,
                 (context_updates or {}).get("params") or {},
             )
+            intent.params.setdefault("conversation_id", conversation_id)
+            intent.params["goal"] = intent.params.get("goal") or incoming_message
             if self._is_context_summary_request(incoming_message, previous_context):
                 return self._build_context_summary_response(previous_context, incoming_message)
             if self._is_context_read_only_request(incoming_message, previous_context):
@@ -170,7 +173,7 @@ class ChatAgent:
                 workflow = await self._workflow_service.execute(
                     message=message,
                     action=intent.action,
-                    params=intent.params,
+                    params=dict(intent.params or {}, conversation_id=conversation_id),
                     execution_mode=execution_mode,
                     initialize_data=initialize_data,
                     publish=publish,
@@ -215,8 +218,19 @@ class ChatAgent:
                         "message": workflow.message,
                     },
                 )
-                # 保存助手消息到历史
-                self._save_conversation_message(conversation_id, "assistant", workflow.message)
+                # Persist the assistant reply along with the metadata
+                # context (option chips / artifacts) so HistoryProvider
+                # can find recent tables in follow-up turns.
+                history_payload = {
+                    "message": workflow.message,
+                    "option_chips": (workflow.to_data() or {}).get("data", {}).get(
+                        "option_chips"
+                    )
+                    or [],
+                }
+                self._save_conversation_message(
+                    conversation_id, "assistant", json.dumps(history_payload, ensure_ascii=False)
+                )
                 return response
 
             plan = self._task_planner.plan(intent)
