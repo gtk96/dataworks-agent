@@ -1,0 +1,157 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6]: D
+      - generic [ref=f5e7]:
+        - strong [ref=f5e8]: DataWorks Agent
+        - generic [ref=f5e9]: 智能数仓工作台
+    - navigation [ref=f5e10]:
+      - generic [ref=f5e11]: 工作区
+      - link "Agent 会话" [ref=f5e12] [cursor=pointer]:
+        - /url: /
+      - link "任务运行" [ref=f5e18] [cursor=pointer]:
+        - /url: /tasks
+      - link "产物中心" [ref=f5e23] [cursor=pointer]:
+        - /url: /artifacts
+    - generic [ref=f5e29]:
+      - generic [ref=f5e30]: DW
+      - generic [ref=f5e31]:
+        - strong [ref=f5e32]: 开发工作空间
+        - generic [ref=f5e33]: Publish Gate 已启用
+  - generic [ref=f5e34]:
+    - generic [ref=f5e35]:
+      - generic [ref=f5e36]:
+        - strong [ref=f5e37]: Agent 会话
+        - generic [ref=f5e38]: Agent-first
+      - generic [ref=f5e39]:
+        - generic [ref=f5e40]: 开发环境
+        - generic [ref=f5e42]: 服务在线
+    - main [ref=f5e44]:
+      - generic [ref=f5e45]:
+        - complementary [ref=f5e46]:
+          - button [ref=f5e47] [cursor=pointer]
+          - generic [ref=f5e51]:
+            - generic [ref=f5e52]: 快捷能力
+            - button "正向建模" [ref=f5e53] [cursor=pointer]
+            - button "逆向建模" [ref=f5e58] [cursor=pointer]
+            - button "异常排查" [ref=f5e63] [cursor=pointer]
+            - button "自主问数" [ref=f5e68] [cursor=pointer]
+            - button "Cookie 管理" [ref=f5e73] [cursor=pointer]
+          - generic [ref=f5e79]:
+            - article [ref=f5e80]:
+              - generic [ref=f5e81]: 执行边界
+              - list [ref=f5e82]:
+                - listitem [ref=f5e83]:
+                  - strong [ref=f5e84]: Dev 建表
+                  - generic [ref=f5e85]: 允许自动执行
+                - listitem [ref=f5e86]:
+                  - strong [ref=f5e87]: Dev 建节点
+                  - generic [ref=f5e88]: 允许自动执行
+                - listitem [ref=f5e89]:
+                  - strong [ref=f5e90]: 改已有节点
+                  - generic [ref=f5e91]: 执行前确认
+                - listitem [ref=f5e92]:
+                  - strong [ref=f5e93]: 删除节点
+                  - generic [ref=f5e94]: 执行前确认
+                - listitem [ref=f5e95]:
+                  - strong [ref=f5e96]: 生产发布
+                  - generic [ref=f5e97]: 人工确认
+            - article [ref=f5e98]:
+              - generic [ref=f5e99]: 知识边界
+              - paragraph [ref=f5e100]: 通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。
+          - generic [ref=f5e102]:
+            - generic [ref=f5e103]: 执行底座
+            - generic [ref=f5e105]:
+              - generic [ref=f5e205]: LangGraph
+              - generic [ref=f5e107]: AK/SK
+              - generic [ref=f5e108]: OpenAPI
+              - generic [ref=f5e109]: MaxCompute
+              - generic [ref=f5e110]: Cookie
+              - generic [ref=f5e111]: "9222"
+              - generic [ref=f5e112]: 官方 MCP
+            - text: 7/7 条通道就绪
+        - generic [ref=f5e113]:
+          - generic [ref=f5e114]:
+            - generic [ref=f5e115]:
+              - generic [ref=f5e116]:
+                - generic [ref=f5e117]: D
+                - strong [ref=f5e118]: DataWorks Agent
+                - generic [ref=f5e119]: Workspace
+              - paragraph [ref=f5e120]: 一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。
+            - generic [ref=f5e121]:
+              - generic [ref=f5e122]: HTTP 可用
+              - button "刷新能力状态" [ref=f5e124] [cursor=pointer]
+          - generic [ref=f5e206]:
+            - generic [ref=f5e207]:
+              - generic [ref=f5e208]: AI
+              - generic [ref=f5e210]:
+                - generic [ref=f5e211]: DataWorks Agent
+                - paragraph [ref=f5e213]: 你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。
+                - generic [ref=f5e214]: 07:51
+            - generic [ref=f5e215]:
+              - generic [ref=f5e216]: 我
+              - generic [ref=f5e218]:
+                - generic [ref=f5e219]: 你
+                - generic [ref=f5e220]: OSS 数据源： oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report 帮我建模
+                - generic [ref=f5e221]: 07:52
+            - generic [ref=f5e230]:
+              - generic [ref=f5e231]: AI
+              - generic [ref=f5e233]:
+                - generic [ref=f5e234]: DataWorks Agent
+                - paragraph [ref=f5e236]: 无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。
+                - generic [ref=f5e237]: 07:52
+            - article [ref=f5e238]:
+              - generic [ref=f5e239]:
+                - generic [ref=f5e240]:
+                  - text: EXECUTION SUMMARY
+                  - heading "无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。" [level=3] [ref=f5e241]
+                - generic [ref=f5e242]: 待确认
+              - generic [ref=f5e243]:
+                - generic [ref=f5e244]:
+                  - strong [ref=f5e245]: 0/1
+                  - generic [ref=f5e246]: 步骤完成
+                - generic [ref=f5e247]:
+                  - strong [ref=f5e248]: "0"
+                  - generic [ref=f5e249]: 产物
+                - generic [ref=f5e250]:
+                  - strong [ref=f5e251]: "0"
+                  - generic [ref=f5e252]: 表 / 节点
+                - generic [ref=f5e253]:
+                  - strong [ref=f5e254]: 未发布
+                  - generic [ref=f5e255]: 发布状态
+              - list [ref=f5e256]:
+                - listitem [ref=f5e257]:
+                  - generic [ref=f5e258]: "1"
+                  - generic [ref=f5e259]:
+                    - strong [ref=f5e260]: Profile Json Sample
+                    - generic [ref=f5e261]: 执行步骤
+              - generic [ref=f5e262]:
+                - strong [ref=f5e263]: 建议下一步
+                - button "粘贴 JSON 样本" [ref=f5e264] [cursor=pointer]
+                - button "输入 data_profile.columns" [ref=f5e265] [cursor=pointer]
+                - generic [ref=f5e266]: "请在下方输入框粘贴真实 JSON 样本（对象或数组），或输入 data_profile，例如：{\"columns\":[{\"name\":\"material_id\",\"type\":\"STRING\"}]}，然后发送。"
+              - button "查看技术详情" [ref=f5e269] [cursor=pointer]
+            - generic [ref=f5e274]:
+              - strong [ref=f5e275]: 还需要你确认
+              - button [ref=f5e276] [cursor=pointer]
+          - generic [ref=f5e177]:
+            - generic [ref=f5e178]:
+              - textbox "无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。" [ref=f5e280]
+              - generic [ref=f5e180]:
+                - generic [ref=f5e181]:
+                  - generic [ref=f5e182]: 执行模式
+                  - radiogroup "segmented" [ref=f5e183]:
+                    - generic [ref=f5e184]:
+                      - generic [ref=f5e185] [cursor=pointer]:
+                        - radio "自动编排" [checked]
+                        - generic [ref=f5e186]: 自动编排
+                      - generic [ref=f5e187] [cursor=pointer]:
+                        - radio "只规划"
+                        - generic [ref=f5e188]: 只规划
+                      - generic [ref=f5e189] [cursor=pointer]:
+                        - radio "开发执行(dev)"
+                        - generic [ref=f5e190]: 开发执行(dev)
+                - button [ref=f5e191] [cursor=pointer]
+                - generic [ref=f5e195]: 自动判断：能线上执行的走 dev，风险操作停在确认点
+                - button [disabled] [ref=f5e200]
+            - paragraph [ref=f5e204]: Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。

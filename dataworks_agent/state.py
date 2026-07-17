@@ -27,6 +27,8 @@ class AppState:
         self._maxcompute_client = None  # MaxComputeClient | None
         self._node_client = None  # OpenAPINodeAdapter | None（节点操作 AK/SK，drop-in 替 bff）
         self._official_mcp_client = None  # OfficialDataWorksMCPClient | None
+        self._bff_client = None  # DataWorksClient | None（Cookie BFF 兜底）
+        self._cdp_client = None  # CDPClient | None
         self._publish_gate = None  # Runtime PublishGate | None
 
     def get_task_queue(self, ip: str) -> asyncio.Queue:

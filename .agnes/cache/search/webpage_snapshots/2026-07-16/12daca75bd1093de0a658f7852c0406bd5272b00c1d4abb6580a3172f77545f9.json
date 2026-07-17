@@ -1,0 +1,20 @@
+{
+  "kind": "webpage_snapshot",
+  "url": "https://www.truefoundry.com/blog/multi-agent-orchestration-frameworks",
+  "final_url": "https://www.truefoundry.com/blog/multi-agent-orchestration-frameworks",
+  "status": 200,
+  "read_status": "blocked",
+  "content_type": "text/html; charset=utf-8",
+  "fetched_at": "2026-07-16T01:44:14.478979200+00:00",
+  "title": "Best Multi-agent Orchestration Frameworks in 2026",
+  "description": "Compare the top multi-agent orchestration frameworks by orchestration model, production readiness, and what each one leaves unresolved at enterprise scale.",
+  "site_name": null,
+  "published_at": null,
+  "source_type": "unknown",
+  "text": "",
+  "quote_candidates": [],
+  "word_count": 0,
+  "truncated": false,
+  "blocked": true,
+  "source": "direct_http"
+}

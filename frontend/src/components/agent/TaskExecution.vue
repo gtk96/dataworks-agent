@@ -74,21 +74,20 @@ const statusText = computed(() => {
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .caption {
-  color: #98a2b3;
-  font-size: 11px;
+  color: #94A3B8;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .execution-header h4 {
-  margin: 4px 0 0;
-  color: #1f2a44;
-  font-size: 14px;
+  margin: 3px 0 0;
+  color: #1E293B;
+  font-size: 13px;
   line-height: 1.35;
   word-break: break-all;
 }
@@ -97,6 +96,6 @@ const statusText = computed(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 </style>

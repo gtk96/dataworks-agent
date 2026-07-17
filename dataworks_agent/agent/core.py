@@ -7,11 +7,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
+
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
+from dataworks_agent.db.models import ConversationHistoryModel
+from dataworks_agent.db.database import SessionLocal
+from dataworks_agent.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,7 @@ class ChatAgent:
         self._task_planner = TaskPlanner()
         self._task_executor = TaskExecutor()
         self._workflow_service = AgentWorkflowService()
+        self._skill_registry = SkillRegistry()
         self._conversation_graph = ConversationGraph()
         self._last_task_id: str | None = None
         self._query_frames: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -106,6 +112,8 @@ class ChatAgent:
 
         try:
             incoming_message = message.strip()
+            # 保存用户消息到历史
+            self._save_conversation_message(conversation_id, "user", incoming_message)
             previous_context = await self._conversation_graph.context(conversation_id)
             message = await self._conversation_graph.resolve(
                 message,
@@ -122,6 +130,14 @@ class ChatAgent:
                 return self._build_context_summary_response(previous_context, incoming_message)
             if self._is_context_read_only_request(incoming_message, previous_context):
                 return self._build_context_read_only_response(previous_context, incoming_message)
+
+            # 处理问候意图
+            if intent.action == "greeting":
+                return ChatResponse(
+                    message="你好！我是 DataWorks Agent，可以帮助你完成数仓建模、任务诊断、血缘分析等工作。请告诉我你想要处理什么任务。",
+                    success=True,
+                    data={"intent": self._intent_to_dict(intent), "agent_mode": "greeting"},
+                )
 
             previous_action = str(previous_context.get("action") or "")
             if previous_action and intent.action == "unknown":
@@ -140,6 +156,7 @@ class ChatAgent:
                 "agent_workflow",
                 "ods_dwd_modeling",
                 "forward_modeling",
+                "any_ods_modeling",
                 "reverse_modeling",
                 "diagnose_issue",
                 "cookie_manage",
@@ -147,7 +164,9 @@ class ChatAgent:
             }
             if intent.action == "ask_data" and execution_mode is None:
                 execution_mode = "auto"
-            if intent.action in workflow_actions and execution_mode is not None:
+            if intent.action in workflow_actions and (
+                execution_mode is not None or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
+            ):
                 workflow = await self._workflow_service.execute(
                     message=message,
                     action=intent.action,
@@ -196,6 +215,8 @@ class ChatAgent:
                         "message": workflow.message,
                     },
                 )
+                # 保存助手消息到历史
+                self._save_conversation_message(conversation_id, "assistant", workflow.message)
                 return response
 
             plan = self._task_planner.plan(intent)
@@ -452,6 +473,56 @@ class ChatAgent:
             oldest = sorted(self._query_frames, key=lambda key: self._query_frames[key][0])
             for key in oldest[:overflow]:
                 self._query_frames.pop(key, None)
+
+    def _save_conversation_message(
+        self, conversation_id: str | None, role: str, content: str
+    ) -> None:
+        """保存对话消息到数据库。"""
+        if not conversation_id or not content:
+            logger.debug("跳过保存消息: conversation_id=%s, content_len=%d", conversation_id, len(content) if content else 0)
+            return
+        try:
+            session = SessionLocal()
+            try:
+                msg = ConversationHistoryModel(
+                    conversation_id=conversation_id,
+                    role=role,
+                    content=content,
+                )
+                session.add(msg)
+                session.commit()
+                logger.debug("保存消息成功: conversation_id=%s, role=%s", conversation_id, role)
+            finally:
+                session.close()
+        except Exception as e:
+            logger.warning("保存对话消息失败: %s", e)
+
+    def get_conversation_history(
+        self, conversation_id: str, limit: int = 50
+    ) -> list[dict[str, str]]:
+        """获取对话历史消息。"""
+        if not conversation_id:
+            return []
+        try:
+            session = SessionLocal()
+            try:
+                stmt = (
+                    select(ConversationHistoryModel)
+                    .where(ConversationHistoryModel.conversation_id == conversation_id)
+                    .order_by(ConversationHistoryModel.id.desc())
+                    .limit(limit)
+                )
+                result = session.execute(stmt)
+                messages = result.scalars().all()
+                return [
+                    {"role": msg.role, "content": msg.content, "timestamp": msg.created_at}
+                    for msg in reversed(messages)
+                ]
+            finally:
+                session.close()
+        except Exception as e:
+            logger.warning("获取对话历史失败: %s", e)
+            return []
 
     def capability_status(self) -> dict[str, Any]:
         """Return the live AK/SK, Cookie/CDP and official MCP capability matrix."""

@@ -108,11 +108,16 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     )
     if not workflow_options_explicit:
         if payload.request_type is None:
-            response = await _agent.chat(payload.message, conversation_id=payload.conversation_id)
+            response = await _agent.chat(
+                payload.message,
+                execution_mode="plan",
+                conversation_id=payload.conversation_id,
+            )
         else:
             response = await _agent.chat(
                 payload.message,
                 payload.request_type,
+                execution_mode="plan",
                 conversation_id=payload.conversation_id,
             )
     else:
@@ -139,6 +144,13 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
 async def capabilities() -> dict[str, Any]:
     """Expose the Agent execution matrix used by the conversational workspace."""
     return {"capabilities": _agent.capability_status()}
+
+
+@router.get("/messages")
+async def get_messages(conversation_id: str, limit: int = 50) -> dict[str, Any]:
+    """获取对话历史消息。"""
+    messages = _agent.get_conversation_history(conversation_id, limit)
+    return {"messages": messages}
 
 
 @router.get("/publish-gate/requests")

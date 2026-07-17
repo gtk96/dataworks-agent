@@ -209,6 +209,7 @@
 import { ref, computed } from 'vue'
 import { request, idempotencyKey } from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 
 // ── 层选择 ──
 const layer = ref('DWD')
@@ -300,15 +301,12 @@ async function doPreview() {
     preview.value = await request('/api/modeling/preview', {
       method: 'POST', body: { ...buildBody(), dry_run: true },
     })
-    // DDL 规范检查
     if (preview.value?.ddl_dev) {
       try {
         ddlCheck.value = await request('/api/governance/check-ddl', {
           method: 'POST', body: { ddl: preview.value.ddl_dev },
         })
-      } catch {
-        // DDL 检查失败不阻塞预览
-      }
+      } catch {}
     }
   } catch (e: any) {
     ElMessage.error(`预览失败: ${e.message}`)

@@ -91,44 +91,45 @@ function statusLabel(status: StepStatus['status']) {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px;
-  border-radius: 14px;
-  background: #f8faff;
-  border: 1px solid rgba(98, 128, 210, 0.1);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
 }
 
 .step-icon {
   margin-top: 2px;
-  color: #98a2b3;
+  color: #94A3B8;
 }
 
 .step-copy {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
 
 .step-copy strong {
-  color: #1f2a44;
-  font-size: 13px;
+  color: #1E293B;
+  font-size: 12px;
 }
 
 .step-copy small {
-  color: #98a2b3;
+  color: #94A3B8;
+  font-size: 10px;
 }
 
 .step-item.completed .step-icon,
 .step-item.completed small {
-  color: #16a34a;
+  color: #16A34A;
 }
 
 .step-item.failed .step-icon,
 .step-item.failed small {
-  color: #ef4444;
+  color: #EF4444;
 }
 
 .step-item.running .step-icon,
 .step-item.running small {
-  color: #d97706;
+  color: #D97706;
 }
 </style>

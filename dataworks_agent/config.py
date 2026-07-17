@@ -116,6 +116,8 @@ class Settings(BaseSettings):
     # 自主问数默认返回行数与超时限制
     ask_data_default_limit: int = 100
     ask_data_timeout_seconds: int = 120
+    # 数据专辑关键字缓存（秒）：命中 BFF album list 不必每次都重拉
+    ask_data_album_cache_seconds: float = 600.0
 
     # Derived properties
     @property

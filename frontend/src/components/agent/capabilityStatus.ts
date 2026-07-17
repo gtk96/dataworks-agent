@@ -18,6 +18,8 @@ export function buildCapabilityBadges(capabilities: Record<string, unknown>): Ca
   const cookieHealth = String(capabilities.cookie_health ?? '').toLowerCase()
   const cookieOnline = Boolean(capabilities.cookie_bff) && COOKIE_USABLE.has(cookieHealth)
   const cookieSuffix = cookieHealth === 'degraded' ? COOKIE_HEALTH_LABELS.degraded : cookieOnline ? '' : COOKIE_HEALTH_LABELS[cookieHealth]
+  const tableSearchOnline = Boolean(capabilities.table_search ?? capabilities.cookie_bff)
+  const idaQueryOnline = Boolean(capabilities.ida_query ?? capabilities.cookie_bff)
 
   return [
     { label: runtime?.framework ? String(runtime.framework) : 'Agent Runtime', online: Boolean(runtime?.ready) },
@@ -27,5 +29,7 @@ export function buildCapabilityBadges(capabilities: Record<string, unknown>): Ca
     { label: cookieSuffix ? `Cookie(${cookieSuffix})` : 'Cookie', online: cookieOnline },
     { label: '9222', online: Boolean(capabilities.cdp_9222) },
     { label: '官方 MCP', online: Boolean(official?.connected) },
+    { label: '中文搜表', online: tableSearchOnline && cookieOnline },
+    { label: 'IDA 问数', online: idaQueryOnline && cookieOnline },
   ]
 }

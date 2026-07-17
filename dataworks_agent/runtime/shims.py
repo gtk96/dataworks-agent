@@ -128,6 +128,65 @@ class LoopOutcome(Generic[T]):
         self.best_score = best_score
 
     def to_dict(self) -> dict[str, Any]:
+        # Sanitize iterations so the payload is plain JSON.
+        # Each iteration may hold a WorkflowResult / LoopDecision object; those
+        # are not JSON-serializable and WorkflowResult.data can also contain a
+        # circular back-reference to this loop_data under key "loop".
+        safe_iterations = []
+        for it in self.iterations:
+            safe_it = {
+                "iteration": it.get("iteration"),
+                "elapsed_ms": it.get("elapsed_ms"),
+            }
+            res = it.get("result")
+            if res is None:
+                safe_it["result"] = None
+            elif isinstance(res, dict):
+                safe_it["result"] = {
+                    k: v for k, v in res.items() if k != "loop"
+                }
+            else:
+                # WorkflowResult (or similar): only keep lightweight fields.
+                data = getattr(res, "data", None)
+                if isinstance(data, dict):
+                    data = {k: v for k, v in data.items() if k != "loop"}
+                safe_it["result"] = {
+                    "success": bool(getattr(res, "success", False)),
+                    "message": str(getattr(res, "message", "") or ""),
+                    "workflow_type": str(getattr(res, "workflow_type", "") or ""),
+                    "mode": str(getattr(res, "mode", "") or ""),
+                    "errors": list(getattr(res, "errors", []) or []),
+                    "steps": list(getattr(res, "steps", []) or []),
+                    # Do NOT embed full data (may still contain non-JSON bits /
+                    # large payloads); evaluation already lives at top-level.
+                }
+            decision = it.get("decision")
+            if decision is None:
+                safe_it["decision"] = None
+            elif isinstance(decision, dict):
+                safe_it["decision"] = dict(decision)
+            else:
+                safe_it["decision"] = {
+                    "passed": bool(getattr(decision, "passed", False)),
+                    "score": float(getattr(decision, "score", 0.0) or 0.0),
+                    "summary": str(getattr(decision, "summary", "") or ""),
+                    "failure_class": str(getattr(decision, "failure_class", "") or ""),
+                    "retryable": bool(getattr(decision, "retryable", False)),
+                    "needs_context": bool(getattr(decision, "needs_context", False)),
+                    "needs_approval": bool(getattr(decision, "needs_approval", False)),
+                    "action": str(getattr(decision, "action", "") or ""),
+                }
+            repair = it.get("repair")
+            if isinstance(repair, dict):
+                safe_it["repair"] = dict(repair)
+            elif repair is not None:
+                safe_it["repair"] = {
+                    "action": getattr(repair, "action_taken", None)
+                    or getattr(repair, "action", None),
+                    "applied": bool(getattr(repair, "success", False)),
+                    "message": str(getattr(repair, "message", "") or ""),
+                }
+            safe_iterations.append(safe_it)
         return {
             "run_id": self.run_id,
             "objective": self.objective,
@@ -142,7 +201,7 @@ class LoopOutcome(Generic[T]):
                 "framework": "shims_loop",
                 "graph": "bounded_observe_act_verify_repair",
             },
-            "iterations": list(self.iterations),
+            "iterations": safe_iterations,
         }
 
 

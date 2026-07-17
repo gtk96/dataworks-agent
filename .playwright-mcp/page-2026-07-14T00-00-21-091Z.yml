@@ -1,0 +1,267 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6]: D
+      - generic [ref=f5e7]:
+        - strong [ref=f5e8]: DataWorks Agent
+        - generic [ref=f5e9]: 智能数仓工作台
+    - navigation [ref=f5e10]:
+      - generic [ref=f5e11]: 工作区
+      - link "Agent 会话" [ref=f5e12] [cursor=pointer]:
+        - /url: /
+      - link "任务运行" [ref=f5e18] [cursor=pointer]:
+        - /url: /tasks
+      - link "产物中心" [ref=f5e23] [cursor=pointer]:
+        - /url: /artifacts
+    - generic [ref=f5e29]:
+      - generic [ref=f5e30]: DW
+      - generic [ref=f5e31]:
+        - strong [ref=f5e32]: 开发工作空间
+        - generic [ref=f5e33]: Publish Gate 已启用
+  - generic [ref=f5e34]:
+    - generic [ref=f5e35]:
+      - generic [ref=f5e36]:
+        - strong [ref=f5e37]: Agent 会话
+        - generic [ref=f5e38]: Agent-first
+      - generic [ref=f5e39]:
+        - generic [ref=f5e40]: 开发环境
+        - generic [ref=f5e42]: 服务在线
+    - main [ref=f5e44]:
+      - generic [ref=f5e45]:
+        - complementary [ref=f5e46]:
+          - button [ref=f5e47] [cursor=pointer]
+          - generic [ref=f5e51]:
+            - generic [ref=f5e52]: 快捷能力
+            - button "正向建模" [ref=f5e53] [cursor=pointer]
+            - button "逆向建模" [ref=f5e58] [cursor=pointer]
+            - button "异常排查" [ref=f5e63] [cursor=pointer]
+            - button "自主问数" [ref=f5e68] [cursor=pointer]
+            - button "Cookie 管理" [ref=f5e73] [cursor=pointer]
+          - generic [ref=f5e79]:
+            - article [ref=f5e80]:
+              - generic [ref=f5e81]: 执行边界
+              - list [ref=f5e82]:
+                - listitem [ref=f5e83]:
+                  - strong [ref=f5e84]: Dev 建表
+                  - generic [ref=f5e85]: 允许自动执行
+                - listitem [ref=f5e86]:
+                  - strong [ref=f5e87]: Dev 建节点
+                  - generic [ref=f5e88]: 允许自动执行
+                - listitem [ref=f5e89]:
+                  - strong [ref=f5e90]: 改已有节点
+                  - generic [ref=f5e91]: 执行前确认
+                - listitem [ref=f5e92]:
+                  - strong [ref=f5e93]: 删除节点
+                  - generic [ref=f5e94]: 执行前确认
+                - listitem [ref=f5e95]:
+                  - strong [ref=f5e96]: 生产发布
+                  - generic [ref=f5e97]: 人工确认
+            - article [ref=f5e98]:
+              - generic [ref=f5e99]: 知识边界
+              - paragraph [ref=f5e100]: 通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。
+          - generic [ref=f5e102]:
+            - generic [ref=f5e103]: 执行底座
+            - generic [ref=f5e105]:
+              - generic [ref=f5e205]: LangGraph
+              - generic [ref=f5e107]: AK/SK
+              - generic [ref=f5e108]: OpenAPI
+              - generic [ref=f5e109]: MaxCompute
+              - generic [ref=f5e110]: Cookie
+              - generic [ref=f5e111]: "9222"
+              - generic [ref=f5e112]: 官方 MCP
+            - text: 7/7 条通道就绪
+        - generic [ref=f5e113]:
+          - generic [ref=f5e114]:
+            - generic [ref=f5e115]:
+              - generic [ref=f5e116]:
+                - generic [ref=f5e117]: D
+                - strong [ref=f5e118]: DataWorks Agent
+                - generic [ref=f5e119]: Workspace
+              - paragraph [ref=f5e120]: 一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。
+            - generic [ref=f5e121]:
+              - generic [ref=f5e122]: HTTP 可用
+              - button "刷新能力状态" [ref=f5e124] [cursor=pointer]
+          - generic [ref=f5e206]:
+            - generic [ref=f5e207]:
+              - generic [ref=f5e208]: AI
+              - generic [ref=f5e210]:
+                - generic [ref=f5e211]: DataWorks Agent
+                - paragraph [ref=f5e213]: 你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。
+                - generic [ref=f5e214]: 07:51
+            - generic [ref=f5e215]:
+              - generic [ref=f5e216]: 我
+              - generic [ref=f5e218]:
+                - generic [ref=f5e219]: 你
+                - generic [ref=f5e220]: OSS 数据源： oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report 帮我建模
+                - generic [ref=f5e221]: 07:52
+            - generic [ref=f5e230]:
+              - generic [ref=f5e231]: AI
+              - generic [ref=f5e233]:
+                - generic [ref=f5e234]: DataWorks Agent
+                - paragraph [ref=f5e236]: 无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。
+                - generic [ref=f5e237]: 07:52
+            - generic [ref=f5e285]:
+              - generic [ref=f5e286]: 我
+              - generic [ref=f5e288]:
+                - generic [ref=f5e289]: 你
+                - generic [ref=f5e290]: "{\"records\":[{\"material_id\":\"m-001\",\"material_name\":\"demo\",\"material_url\":\"https://example.com/demo\",\"spend\":12.5,\"report_time\":\"2026-07-14 00:00:00\"}]}"
+                - generic [ref=f5e291]: 07:54
+            - generic [ref=f5e292]:
+              - generic [ref=f5e293]: AI
+              - generic [ref=f5e295]:
+                - generic [ref=f5e296]: DataWorks Agent
+                - paragraph [ref=f5e298]: 请确认 JSON 字段到 DWD 字段的映射。
+                - generic [ref=f5e299]: 07:54
+            - generic [ref=f5e315]:
+              - generic [ref=f5e316]: 我
+              - generic [ref=f5e318]:
+                - generic [ref=f5e319]: 你
+                - generic [ref=f5e320]: Use all observed fields
+                - generic [ref=f5e321]: 07:55
+            - generic [ref=f5e322]:
+              - generic [ref=f5e323]: AI
+              - generic [ref=f5e325]:
+                - generic [ref=f5e326]: DataWorks Agent
+                - paragraph [ref=f5e328]: 请确认 DWD 的逻辑主键；候选：material_id
+                - generic [ref=f5e329]: 07:55
+            - generic [ref=f5e345]:
+              - generic [ref=f5e346]: 我
+              - generic [ref=f5e348]:
+                - generic [ref=f5e349]: 你
+                - generic [ref=f5e350]: material_id
+                - generic [ref=f5e351]: 07:55
+            - generic [ref=f5e360]:
+              - generic [ref=f5e361]: AI
+              - generic [ref=f5e363]:
+                - generic [ref=f5e364]: DataWorks Agent
+                - paragraph [ref=f5e366]: "Standard OSS -> ODS -> DWD flow completed: Cookie created ODS/DWD tables and SQL nodes in giikin_develop, configured the ODS->DWD dependency, and left production artifacts behind the Publish Gate."
+                - generic [ref=f5e367]: 07:55
+            - generic [ref=f5e436]:
+              - generic [ref=f5e437]: 我
+              - generic [ref=f5e439]:
+                - generic [ref=f5e440]: 你
+                - generic [ref=f5e441]: 请总结当前会话的建模结果，不要重复执行。
+                - generic [ref=f5e442]: 07:56
+            - generic [ref=f5e443]:
+              - generic [ref=f5e444]: AI
+              - generic [ref=f5e446]:
+                - generic [ref=f5e447]: DataWorks Agent
+                - paragraph [ref=f5e449]: 当前会话上下文：tiktok_smart_plus_material_report；已完成 9 个步骤；开发表或节点：giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour、giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour；生产 DDL 已生成，等待 Publish Gate 审批
+                - generic [ref=f5e450]: 07:56
+            - generic [ref=f5e456]:
+              - generic [ref=f5e457]: 我
+              - generic [ref=f5e459]:
+                - generic [ref=f5e460]: 你
+                - generic [ref=f5e461]: 查看当前 ODS/DWD SQL 产物
+                - generic [ref=f5e462]: 08:00
+            - generic [ref=f5e463]:
+              - generic [ref=f5e464]: D
+              - emphasis [ref=f5e469]: 正在理解目标并编排执行路径
+            - article [ref=f5e238]:
+              - generic [ref=f5e239]:
+                - generic [ref=f5e240]:
+                  - text: EXECUTION SUMMARY
+                  - heading "当前会话上下文：tiktok_smart_plus_material_report；已完成 9 个步骤；开发表或节点：giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour、giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour；生产 DDL 已生成，等待 Publish Gate 审批" [level=3] [ref=f5e451]
+                - generic [ref=f5e242]: 开发完成
+              - generic [ref=f5e243]:
+                - generic [ref=f5e244]:
+                  - strong [ref=f5e245]: 9/11
+                  - generic [ref=f5e246]: 步骤完成
+                - generic [ref=f5e247]:
+                  - strong [ref=f5e248]: "4"
+                  - generic [ref=f5e249]: 产物
+                - generic [ref=f5e250]:
+                  - strong [ref=f5e251]: "4"
+                  - generic [ref=f5e252]: 表 / 节点
+                - generic [ref=f5e253]:
+                  - strong [ref=f5e254]: 未发布
+                  - generic [ref=f5e255]: 发布状态
+              - list [ref=f5e256]:
+                - listitem [ref=f5e369]:
+                  - generic [ref=f5e370]: ✓
+                  - generic [ref=f5e371]:
+                    - strong [ref=f5e372]: Inspect Oss Directory
+                    - generic [ref=f5e373]: 执行步骤
+                - listitem [ref=f5e374]:
+                  - generic [ref=f5e375]: ✓
+                  - generic [ref=f5e376]:
+                    - strong [ref=f5e377]: Profile Json Sample
+                    - generic [ref=f5e378]: 执行步骤
+                - listitem [ref=f5e379]:
+                  - generic [ref=f5e380]: ✓
+                  - generic [ref=f5e381]:
+                    - strong [ref=f5e382]: Dmr Pub Column Check
+                    - generic [ref=f5e383]: 执行步骤
+                - listitem [ref=f5e384]:
+                  - generic [ref=f5e385]: ✓
+                  - generic [ref=f5e386]:
+                    - strong [ref=f5e387]: Create Dev Tables Cookie
+                    - generic [ref=f5e388]: 执行步骤
+                - listitem [ref=f5e389]:
+                  - generic [ref=f5e390]: ✓
+                  - generic [ref=f5e391]:
+                    - strong [ref=f5e392]: Create Ods Sql Node Cookie
+                    - generic [ref=f5e393]: 执行步骤
+                - listitem [ref=f5e394]:
+                  - generic [ref=f5e395]: ✓
+                  - generic [ref=f5e396]:
+                    - strong [ref=f5e397]: Configure Ods Schedule Cookie
+                    - generic [ref=f5e398]: 执行步骤
+                - listitem [ref=f5e399]:
+                  - generic [ref=f5e400]: ✓
+                  - generic [ref=f5e401]:
+                    - strong [ref=f5e402]: Create Dwd Sql Node Cookie
+                    - generic [ref=f5e403]: 执行步骤
+                - listitem [ref=f5e404]:
+                  - generic [ref=f5e405]: ✓
+                  - generic [ref=f5e406]:
+                    - strong [ref=f5e407]: Configure Dwd Schedule Cookie
+                    - generic [ref=f5e408]: 执行步骤
+                - listitem [ref=f5e409]:
+                  - generic [ref=f5e410]: ✓
+                  - generic [ref=f5e411]:
+                    - strong [ref=f5e412]: Configure Ods To Dwd Dependency Cookie
+                    - generic [ref=f5e413]: 执行步骤
+                - listitem [ref=f5e414]:
+                  - generic [ref=f5e415]: 审
+                  - generic [ref=f5e416]:
+                    - strong [ref=f5e417]: Create Prod Tables
+                    - generic [ref=f5e418]: 执行步骤
+                - listitem [ref=f5e419]:
+                  - generic [ref=f5e420]: –
+                  - generic [ref=f5e421]:
+                    - strong [ref=f5e422]: Publish Gate
+                    - generic [ref=f5e423]: 执行步骤
+              - generic [ref=f5e424]:
+                - generic [ref=f5e425]: "ODS 表: giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+                - generic [ref=f5e426]: "DWD 表: giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour"
+                - generic [ref=f5e427]: "ODS 节点: 业务流程/106_广告报告/MaxCompute/数据开发/00_ODS/ods_mc_ads_data__tiktok_smart_plus_material_report_hour"
+                - generic [ref=f5e428]: "DWD 节点: 业务流程/106_广告报告/MaxCompute/数据开发/02_DWD/dwd_mkt_tiktok_smart_plus_material_report_hour"
+              - generic [ref=f5e262]:
+                - strong [ref=f5e263]: 建议下一步
+                - button "检查 ODS/DWD SQL 产物" [disabled] [ref=f5e429] [cursor=pointer]
+                - button "查看当前 ODS/DWD 调度" [disabled] [ref=f5e430] [cursor=pointer]
+                - button "准备 Publish Gate 审查" [disabled] [ref=f5e431] [cursor=pointer]
+                - generic [ref=f5e266]: 可以输入自定义后续要求，例如：查看 SQL、查看调度、准备 Publish Gate 审查。
+              - button "查看技术详情" [ref=f5e269] [cursor=pointer]
+          - generic [ref=f5e177]:
+            - generic [ref=f5e178]:
+              - textbox "可以输入自定义后续要求，例如：查看 SQL、查看调度、准备 Publish Gate 审查。" [disabled] [ref=f5e455]
+              - generic [ref=f5e180]:
+                - generic [ref=f5e181]:
+                  - generic [ref=f5e182]: 执行模式
+                  - radiogroup "segmented" [ref=f5e183]:
+                    - generic [ref=f5e184]:
+                      - generic [ref=f5e185] [cursor=pointer]:
+                        - radio "自动编排" [checked]
+                        - generic [ref=f5e186]: 自动编排
+                      - generic [ref=f5e187] [cursor=pointer]:
+                        - radio "只规划"
+                        - generic [ref=f5e188]: 只规划
+                      - generic [ref=f5e189] [cursor=pointer]:
+                        - radio "开发执行(dev)"
+                        - generic [ref=f5e190]: 开发执行(dev)
+                - button [ref=f5e191] [cursor=pointer]
+                - generic [ref=f5e195]: 自动判断：能线上执行的走 dev，风险操作停在确认点
+                - button [disabled] [ref=f5e200]
+            - paragraph [ref=f5e204]: Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。

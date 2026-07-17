@@ -116,16 +116,11 @@ async function viewDetail(row: any) {
   detailVisible.value = true
   try {
     const r = await request<any>(`/api/artifacts/ddl/${row.id}`)
-    // schedule_config_json is a JSON string; parse it for prettification
     let sched = ''
     if (r.schedule_config) {
       try { sched = JSON.stringify(JSON.parse(r.schedule_config), null, 2) } catch { sched = r.schedule_config }
     }
-    detailTable.value = {
-      ...r,
-      schedule_config: sched,
-      error: null,
-    }
+    detailTable.value = { ...r, schedule_config: sched, error: null }
   } catch (e: any) {
     detailTable.value.error = e.message
   }

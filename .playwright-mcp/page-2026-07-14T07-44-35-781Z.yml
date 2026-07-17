@@ -1,0 +1,217 @@
+- generic [ref=f3e3]:
+  - complementary [ref=f3e4]:
+    - generic [ref=f3e5]:
+      - generic [ref=f3e6]: D
+      - generic [ref=f3e7]:
+        - strong [ref=f3e8]: DataWorks Agent
+        - generic [ref=f3e9]: 智能数仓工作台
+    - navigation [ref=f3e10]:
+      - generic [ref=f3e11]: 工作区
+      - link "Agent 会话" [ref=f3e12] [cursor=pointer]:
+        - /url: /
+      - link "任务运行" [ref=f3e18] [cursor=pointer]:
+        - /url: /tasks
+      - link "产物中心" [ref=f3e23] [cursor=pointer]:
+        - /url: /artifacts
+    - generic [ref=f3e29]:
+      - generic [ref=f3e30]: DW
+      - generic [ref=f3e31]:
+        - strong [ref=f3e32]: 开发工作空间
+        - generic [ref=f3e33]: Publish Gate 已启用
+  - generic [ref=f3e34]:
+    - generic [ref=f3e35]:
+      - generic [ref=f3e36]:
+        - strong [ref=f3e37]: Agent 会话
+        - generic [ref=f3e38]: Agent-first
+      - generic [ref=f3e39]:
+        - generic [ref=f3e40]: 开发环境
+        - generic [ref=f3e42]: 服务在线
+    - main [ref=f3e44]:
+      - generic [ref=f3e45]:
+        - complementary [ref=f3e46]:
+          - button [ref=f3e47] [cursor=pointer]
+          - generic [ref=f3e51]:
+            - generic [ref=f3e52]: 快捷能力
+            - button "正向建模" [ref=f3e53] [cursor=pointer]
+            - button "逆向建模" [ref=f3e58] [cursor=pointer]
+            - button "异常排查" [ref=f3e63] [cursor=pointer]
+            - button "自主问数" [ref=f3e68] [cursor=pointer]
+            - button "Cookie 管理" [ref=f3e73] [cursor=pointer]
+          - generic [ref=f3e79]:
+            - article [ref=f3e80]:
+              - generic [ref=f3e81]: 执行边界
+              - list [ref=f3e82]:
+                - listitem [ref=f3e83]:
+                  - strong [ref=f3e84]: Dev 建表
+                  - generic [ref=f3e85]: 允许自动执行
+                - listitem [ref=f3e86]:
+                  - strong [ref=f3e87]: Dev 建节点
+                  - generic [ref=f3e88]: 允许自动执行
+                - listitem [ref=f3e89]:
+                  - strong [ref=f3e90]: 改已有节点
+                  - generic [ref=f3e91]: 执行前确认
+                - listitem [ref=f3e92]:
+                  - strong [ref=f3e93]: 删除节点
+                  - generic [ref=f3e94]: 执行前确认
+                - listitem [ref=f3e95]:
+                  - strong [ref=f3e96]: 生产发布
+                  - generic [ref=f3e97]: 人工确认
+            - article [ref=f3e98]:
+              - generic [ref=f3e99]: 知识边界
+              - paragraph [ref=f3e100]: 通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。
+          - generic [ref=f3e102]:
+            - generic [ref=f3e103]: 执行底座
+            - generic [ref=f3e105]:
+              - generic [ref=f3e106]: LangGraph
+              - generic [ref=f3e107]: AK/SK
+              - generic [ref=f3e108]: OpenAPI
+              - generic [ref=f3e109]: MaxCompute
+              - generic [ref=f3e110]: Cookie
+              - generic [ref=f3e111]: "9222"
+              - generic [ref=f3e112]: 官方 MCP
+            - text: 7/7 条通道就绪
+        - generic [ref=f3e113]:
+          - generic [ref=f3e114]:
+            - generic [ref=f3e115]:
+              - generic [ref=f3e116]:
+                - generic [ref=f3e117]: D
+                - strong [ref=f3e118]: DataWorks Agent
+                - generic [ref=f3e119]: Workspace
+              - paragraph [ref=f3e120]: 一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。
+            - generic [ref=f3e121]:
+              - generic [ref=f3e122]: HTTP 可用
+              - button "刷新能力状态" [ref=f3e124] [cursor=pointer]
+          - generic [ref=f3e220]:
+            - generic [ref=f3e221]:
+              - generic [ref=f3e222]: AI
+              - generic [ref=f3e224]:
+                - generic [ref=f3e225]: DataWorks Agent
+                - paragraph [ref=f3e227]: 你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。
+                - generic [ref=f3e228]: 15:09
+            - generic [ref=f3e229]:
+              - generic [ref=f3e230]: 我
+              - generic [ref=f3e232]:
+                - generic [ref=f3e233]: 你
+                - generic [ref=f3e234]: 请把 OSS 路径 oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report 的 JSON 数据建成 ODS 表 ods_mc_ads_data__tiktok_smart_plus_material_report_hour，并生成 DWD 小时链路。只规划，不写入 DataWorks，不创建文件夹；若按规范路径已有同名节点则复用并更新。
+                - generic [ref=f3e235]: 15:23
+            - generic [ref=f3e244]:
+              - generic [ref=f3e245]: AI
+              - generic [ref=f3e247]:
+                - generic [ref=f3e248]: DataWorks Agent
+                - paragraph [ref=f3e250]: 无法从 OSS 样本探查 JSON/数据字段；请提供真实样本或 data_profile。
+                - generic [ref=f3e251]: 15:23
+            - generic [ref=f3e299]:
+              - generic [ref=f3e300]: 我
+              - generic [ref=f3e302]:
+                - generic [ref=f3e303]: 你
+                - generic [ref=f3e304]: "{\"columns\":[{\"name\":\"material_id\",\"type\":\"STRING\"},{\"name\":\"material_name\",\"type\":\"STRING\"},{\"name\":\"report_hour\",\"type\":\"DATETIME\"},{\"name\":\"spend\",\"type\":\"DOUBLE\"}]}"
+                - generic [ref=f3e305]: 15:33
+            - generic [ref=f3e306]:
+              - generic [ref=f3e307]: AI
+              - generic [ref=f3e309]:
+                - generic [ref=f3e310]: DataWorks Agent
+                - paragraph [ref=f3e312]: 请确认 JSON 字段到 DWD 字段的映射。
+                - generic [ref=f3e313]: 15:33
+            - generic [ref=f3e329]:
+              - generic [ref=f3e330]: 我
+              - generic [ref=f3e332]:
+                - generic [ref=f3e333]: 你
+                - generic [ref=f3e334]: Use all observed fields
+                - generic [ref=f3e335]: 15:40
+            - generic [ref=f3e336]:
+              - generic [ref=f3e337]: AI
+              - generic [ref=f3e339]:
+                - generic [ref=f3e340]: DataWorks Agent
+                - paragraph [ref=f3e342]: 请确认 DWD 的逻辑主键；候选：material_id
+                - generic [ref=f3e343]: 15:40
+            - generic [ref=f3e359]:
+              - generic [ref=f3e360]: 我
+              - generic [ref=f3e362]:
+                - generic [ref=f3e363]: 你
+                - generic [ref=f3e364]: material_id
+                - generic [ref=f3e365]: 15:42
+            - generic [ref=f3e366]:
+              - generic [ref=f3e367]: AI
+              - generic [ref=f3e369]:
+                - generic [ref=f3e370]: DataWorks Agent
+                - paragraph [ref=f3e372]: 已通过 Cookie 检查并生成 ODS/DWD 产物；计划模式不写入 DataWorks，生产变更仍需 Publish Gate。
+                - generic [ref=f3e373]: 15:42
+            - article [ref=f3e252]:
+              - generic [ref=f3e253]:
+                - generic [ref=f3e254]:
+                  - text: EXECUTION SUMMARY
+                  - heading "已通过 Cookie 检查并生成 ODS/DWD 产物；计划模式不写入 DataWorks，生产变更仍需 Publish Gate。" [level=3] [ref=f3e374]
+                - generic [ref=f3e256]: 计划完成
+              - generic [ref=f3e257]:
+                - generic [ref=f3e258]:
+                  - strong [ref=f3e259]: 4/4
+                  - generic [ref=f3e260]: 步骤完成
+                - generic [ref=f3e261]:
+                  - strong [ref=f3e262]: "4"
+                  - generic [ref=f3e263]: 产物
+                - generic [ref=f3e264]:
+                  - strong [ref=f3e265]: "0"
+                  - generic [ref=f3e266]: 表 / 节点
+                - generic [ref=f3e267]:
+                  - strong [ref=f3e268]: 未发布
+                  - generic [ref=f3e269]: 发布状态
+              - list [ref=f3e270]:
+                - listitem [ref=f3e375]:
+                  - generic [ref=f3e376]: ✓
+                  - generic [ref=f3e377]:
+                    - strong [ref=f3e378]: Inspect Oss Directory
+                    - generic [ref=f3e379]: 执行步骤
+                - listitem [ref=f3e380]:
+                  - generic [ref=f3e381]: ✓
+                  - generic [ref=f3e382]:
+                    - strong [ref=f3e383]: Profile Json Sample
+                    - generic [ref=f3e384]: 执行步骤
+                - listitem [ref=f3e385]:
+                  - generic [ref=f3e386]: ✓
+                  - generic [ref=f3e387]:
+                    - strong [ref=f3e388]: Dmr Pub Column Check
+                    - generic [ref=f3e389]: 执行步骤
+                - listitem [ref=f3e390]:
+                  - generic [ref=f3e391]: ✓
+                  - generic [ref=f3e392]:
+                    - strong [ref=f3e393]: Build Standard Ods Dwd Artifacts
+                    - generic [ref=f3e394]: 执行步骤
+              - generic [ref=f3e282]:
+                - button "查看技术详情" [expanded] [active] [ref=f3e283] [cursor=pointer]
+                - region "查看技术详情" [ref=f3e399]:
+                  - generic [ref=f3e400]:
+                    - generic [ref=f3e401]:
+                      - article [ref=f3e402]:
+                        - strong [ref=f3e403]: ods
+                        - paragraph [ref=f3e404]: "{ \"ods_table\": \"ods_mc_ads_data__tiktok_smart_plus_material_report_hour\", \"file_format\": \"json\", \"oss_path\": \"oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report\", \"ods_sql_directory\": \"业务流程/106_广告报告/MaxCompute/数据开发/00_ODS\", \"environment_artifacts\": { \"dev\": { \"schema\": \"giikin_develop\", \"ddl\": \"CREATE TABLE IF NOT EXISTS giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour (\\n `json_data` STRING COMMENT 'OSS JSON raw record'\\n) COMMENT 'TikTok Smart Plus material report raw JSON ODS'\\nPARTITIONED BY (`dt` STRING, `ht` STRING);\", \"status\": \"draft\" }, \"prod\": { \"schema\": \"giikin\", \"ddl\": \"CREATE TABLE IF NOT EXISTS giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour (\\n `json_data` STRING COMMENT 'OSS JSON raw record'\\n) COMMENT 'TikTok Smart Plus material report raw JSON ODS'\\nPARTITIONED BY (`dt` STRING, `ht` STRING);\", \"status\": \"approval_required\" } }, \"ddl\": \"CREATE TABLE IF NOT EXISTS giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour (\\n `json_data` STRING COMMENT 'OSS JSON raw record'\\n) COMMENT 'TikTok Smart Plus material report raw JSON ODS'\\nPARTITIONED BY (`dt` STRING, `ht` STRING);\", \"sql\": \"-- OSS import target: ods_mc_ads_data__tiktok_smart_plus_material_report_hour\\n-- OSS location: oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report\\n-- file format: json\\nALTER TABLE ods_mc_ads_data__tiktok_smart_plus_material_report_hour\\nADD IF NOT EXISTS PARTITION (dt='${gmtdate}', ht='${hour_last1h}');\\n\\nLOAD OVERWRITE TABLE ods_mc_ads_data__tiktok_smart_plus_material_report_hour\\nPARTITION (dt='${gmtdate}', ht='${hour_last1h}')\\nFROM LOCATION 'oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report'\\n STORED AS TEXTFILE\\n;\", \"partition_precreate_sql\": \"ALTER TABLE ods_mc_ads_data__tiktok_smart_plus_material_report_hour\\nADD IF NOT EXISTS PARTITION (dt='${gmtdate}', ht='${hour_last1h}');\", \"ingestion_mode\": \"raw_json_text\", \"schedule\": { \"cycle\": \"hourly\", \"parameters\": [ \"gmtdate\", \"hour_last1h\" ] } }"
+                      - article [ref=f3e405]:
+                        - strong [ref=f3e406]: dwd
+                        - paragraph [ref=f3e407]: "{ \"standard\": \"tiktok_smart_plus_material_report\", \"dev_schema\": \"giikin_develop\", \"prod_schema\": \"giikin\", \"qualified_ods_table\": \"giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\", \"qualified_dwd_table\": \"giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour\", \"ods_table\": \"ods_mc_ads_data__tiktok_smart_plus_material_report_hour\", \"dwd_table\": \"dwd_mkt_tiktok_smart_plus_material_report_hour\", \"template_task_id\": \"10002152501\", \"template_node\": \"dwd_mkt_ad_country_insights_tiktok_hour\", \"field_mappings\": [ { \"json_key\": \"material_id\", \"target_name\": \"material_id\", \"type\": \"STRING\", \"comment\": \"\" }, { \"json_key\": \"material_name\", \"target_name\": \"material_name\", \"type\": \"STRING\", \"comment\": \"\" }, { \"json_key\": \"report_hour\", \"target_name\": \"report_hour\", \"type\": \"DATETIME\", \"comment\": \"\" }, { \"json_key\": \"spend\", \"target_name\": \"spend\", \"type\": \"DOUBLE\", \"comment\": \"\" } ], \"data_profile\": { \"columns\": [ { \"name\": \"material_id\", \"type\": \"STRING\" }, { \"name\": \"material_name\", \"type\": \"STRING\" }, { \"name\": \"report_hour\", \"type\": \"DATETIME\" }, { \"name\": \"spend\", \"type\": \"DOUBLE\" } ] }, \"candidate_logical_primary_keys\": [ [ \"material_id\" ] ], \"logical_primary_keys\": [ \"material_id\" ], \"granularity\": \"hour\", \"ods_sql_directory\": \"业务流程/106_广告报告/MaxCompute/数据开发/00_ODS\", \"dwd_sql_directory\": \"业务流程/106_广告报告/MaxCompute/数据开发/02_DWD\", \"structured_metadata\": { \"targets\": [ { \"table_name\": \"dwd_mkt_tiktok_smart_plus_material_report_hour\", \"table_comment\": \"TikTok Smart Plus material report JSON DWD\", \"update_mode\": \"hourly\", \"partition_fields\": [ \"dt\", \"ht\" ], \"logical_primary_keys\": [ \"material_id\" ], \"fields\": [ { \"name\": \"material_id\", \"type\": \"STRING\", \"comment\": \"material_id\" }, { \"name\": \"material_name\", \"type\": \"STRING\", \"comment\": \"material_name\" }, { \"name\": \"report_hour\", \"type\": \"DATETIME\", \"comment\": \"report_hour\" }, { \"name\": \"spend\", \"type\": \"DOUBLE\", \"comment\": \"spend\" }, { \"name\": \"dt\", \"type\": \"STRING\", \"comment\": \"business partition\" }, { \"name\": \"ht\", \"type\": \"STRING\", \"comment\": \"business partition\" } ] } ], \"sources\": [ { \"table_name\": \"ods_mc_ads_data__tiktok_smart_plus_material_report_hour\", \"alias\": \"t1\", \"is_master\": true } ], \"field_mappings\": [ { \"source_alias\": \"t2\", \"source_field_name\": \"j1\", \"target_field_name\": \"material_id\", \"json_key\": \"material_id\", \"field_category\": \"json_tuple\", \"apply_coalesce\": false }, { \"source_alias\": \"t2\", \"source_field_name\": \"j2\", \"target_field_name\": \"material_name\", \"json_key\": \"material_name\", \"field_category\": \"json_tuple\", \"apply_coalesce\": false }, { \"source_alias\": \"t2\", \"source_field_name\": \"j3\", \"target_field_name\": \"report_hour\", \"json_key\": \"report_hour\", \"field_category\": \"json_tuple\", \"apply_coalesce\": false }, { \"source_alias\": \"t2\", \"source_field_name\": \"j4\", \"target_field_name\": \"spend\", \"json_key\": \"spend\", \"field_category\": \"json_tuple\", \"apply_coalesce\": false } ], \"joins\": [] }, \"ddl\": \"drop table if exists dwd_mkt_tiktok_smart_plus_material_report_hour;\\ncreate table dwd_mkt_tiktok_smart_plus_material_report_hour (\\n material_id STRING COMMENT 'material_id',\\n material_name STRING COMMENT 'material_name',\\n report_hour DATETIME COMMENT 'report_hour',\\n spend DOUBLE COMMENT 'spend'\\n)\\nCOMMENT 'TikTok Smart Plus material report JSON DWD'\\nPARTITIONED BY (dt STRING COMMENT 'business partition', ht STRING COMMENT 'business partition')\\n;\", \"sql\": \"INSERT OVERWRITE TABLE giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour PARTITION (dt = '${gmtdate}', ht = '${hour_last1h}')\\nSELECT\\n t2.j1 AS material_id,\\n t2.j2 AS material_name,\\n t2.j3 AS report_hour,\\n t2.j4 AS spend\\nFROM giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour t1\\nLATERAL VIEW OUTER JSON_TUPLE(\\n t1.json_data,\\n 'material_id',\\n 'material_name',\\n 'report_hour',\\n 'spend'\\n) t2 AS\\n j1,\\n j2,\\n j3,\\n j4\\nWHERE t1.dt = '${gmtdate}' AND t1.ht = '${hour_last1h}';\", \"environment_artifacts\": { \"dev\": { \"schema\": \"giikin_develop\", \"ddl\": \"drop table if exists giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour;\\ncreate table giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour (\\n material_id STRING COMMENT 'material_id',\\n material_name STRING COMMENT 'material_name',\\n report_hour DATETIME COMMENT 'report_hour',\\n spend DOUBLE COMMENT 'spend'\\n)\\nCOMMENT 'TikTok Smart Plus material report JSON DWD'\\nPARTITIONED BY (dt STRING COMMENT 'business partition', ht STRING COMMENT 'business partition')\\n;\", \"sql\": \"INSERT OVERWRITE TABLE giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour PARTITION (dt = '${gmtdate}', ht = '${hour_last1h}')\\nSELECT\\n t2.j1 AS material_id,\\n t2.j2 AS material_name,\\n t2.j3 AS report_hour,\\n t2.j4 AS spend\\nFROM giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour t1\\nLATERAL VIEW OUTER JSON_TUPLE(\\n t1.json_data,\\n 'material_id',\\n 'material_name',\\n 'report_hour',\\n 'spend'\\n) t2 AS\\n j1,\\n j2,\\n j3,\\n j4\\nWHERE t1.dt = '${gmtdate}' AND t1.ht = '${hour_last1h}';\", \"status\": \"draft\" }, \"prod\": { \"schema\": \"giikin\", \"ddl\": \"drop table if exists giikin.dwd_mkt_tiktok_smart_plus_material_report_hour;\\ncreate table giikin.dwd_mkt_tiktok_smart_plus_material_report_hour (\\n material_id STRING COMMENT 'material_id',\\n material_name STRING COMMENT 'material_name',\\n report_hour DATETIME COMMENT 'report_hour',\\n spend DOUBLE COMMENT 'spend'\\n)\\nCOMMENT 'TikTok Smart Plus material report JSON DWD'\\nPARTITIONED BY (dt STRING COMMENT 'business partition', ht STRING COMMENT 'business partition')\\n;\", \"sql\": \"INSERT OVERWRITE TABLE giikin.dwd_mkt_tiktok_smart_plus_material_report_hour PARTITION (dt = '${gmtdate}', ht = '${hour_last1h}')\\nSELECT\\n t2.j1 AS material_id,\\n t2.j2 AS material_name,\\n t2.j3 AS report_hour,\\n t2.j4 AS spend\\nFROM giikin.ods_mc_ads_data__tiktok_smart_plus_material_report_hour t1\\nLATERAL VIEW OUTER JSON_TUPLE(\\n t1.json_data,\\n 'material_id',\\n 'material_name',\\n 'report_hour',\\n 'spend'\\n) t2 AS\\n j1,\\n j2,\\n j3,\\n j4\\nWHERE t1.dt = '${gmtdate}' AND t1.ht = '${hour_last1h}';\", \"status\": \"approval_required\" } }, \"schedule\": { \"cycle\": \"hourly\", \"cron\": \"00 03 00-23/1 * * ?\", \"minute\": 3, \"parameters\": [ \"gmtdate\", \"hour_last1h\" ], \"template_task_id\": \"10002152501\", \"template_node\": \"dwd_mkt_ad_country_insights_tiktok_hour\" }, \"dependency_plan\": { \"mode\": \"dry_run_plan\", \"upstream_refs\": [ \"giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\" ], \"target_output\": \"giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour\", \"flow_depends\": [ { \"type\": \"Normal\", \"sourceType\": \"Manual\", \"output\": \"giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\", \"refTableName\": \"giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour\" } ], \"self_dependency\": { \"type\": \"CrossCycleDependsOnSelf\" }, \"dev_schema\": \"giikin_develop\", \"template_task_id\": \"10002152501\", \"template_parent_references\": [ \"ods_mc_ads_data__tiktok_ad_country_insights_hour\", \"dim_fin_currency_info_hourly\" ], \"template_parent_references_are_reference_only\": true }, \"validation\": { \"passed\": true, \"checker\": \"dmr_pub_column_check\", \"root_check\": { \"passed\": true, \"field_results\": [ { \"field_name\": \"material_id\", \"valid\": true, \"invalid_segments\": [], \"suggested_name\": null }, { \"field_name\": \"material_name\", \"valid\": true, \"invalid_segments\": [], \"suggested_name\": null }, { \"field_name\": \"report_hour\", \"valid\": true, \"invalid_segments\": [], \"suggested_name\": null }, { \"field_name\": \"spend\", \"valid\": true, \"invalid_segments\": [], \"suggested_name\": null } ], \"summary\": \"0/4 invalid fields (online synced root dictionary)\", \"source\": \"online\" }, \"ddl_check\": { \"table_name\": \"dwd_mkt_tiktok_smart_plus_material_report_hour\", \"passed\": true, \"errors\": [], \"warnings\": [ \"字段 'report_hour' 类型 'DATETIME' 可能不符合规范（期望 'string'）\", \"字段 'spend' 类型 'DOUBLE' 可能不符合规范（期望 'decimal(24,6)'）\" ] }, \"root_source\": \"online\" } }"
+                      - article [ref=f3e408]:
+                        - strong [ref=f3e409]: directory check
+                        - paragraph [ref=f3e410]: "{ \"success\": true, \"channel\": \"cookie_bff\", \"bucket\": \"giikin-dataworks-shenzhen\", \"prefix\": \"ads/data/tiktok_smart_plus_material_report\", \"is_prefix\": false, \"datasource_name\": \"giikin_dataworks_shenzhen\", \"matched_external_table\": \"tiktok_smart_plus_material_report\", \"entries\": [] }"
+                      - article [ref=f3e411]:
+                        - strong [ref=f3e412]: sample profile
+                        - paragraph [ref=f3e413]: "{ \"columns\": [ { \"name\": \"material_id\", \"type\": \"STRING\" }, { \"name\": \"material_name\", \"type\": \"STRING\" }, { \"name\": \"report_hour\", \"type\": \"DATETIME\" }, { \"name\": \"spend\", \"type\": \"DOUBLE\" } ] }"
+                    - code [ref=f3e415]: "{ \"workflow_type\": \"forward_modeling\", \"execution_mode\": \"plan\" }"
+          - generic [ref=f3e177]:
+            - generic [ref=f3e178]:
+              - textbox "给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化" [ref=f3e395]
+              - generic [ref=f3e180]:
+                - generic [ref=f3e181]:
+                  - generic [ref=f3e182]: 执行模式
+                  - radiogroup "segmented" [ref=f3e183]:
+                    - generic [ref=f3e184]:
+                      - generic [ref=f3e185] [cursor=pointer]:
+                        - radio "自动编排"
+                        - generic [ref=f3e186]: 自动编排
+                      - generic [ref=f3e187] [cursor=pointer]:
+                        - radio "只规划" [checked]
+                        - generic [ref=f3e188]: 只规划
+                      - generic [ref=f3e189] [cursor=pointer]:
+                        - radio "开发执行(dev)"
+                        - generic [ref=f3e190]: 开发执行(dev)
+                - button [ref=f3e191] [cursor=pointer]
+                - generic [ref=f3e195]: 只生成计划和产物，不写线上环境
+                - button [disabled] [ref=f3e200]
+            - paragraph [ref=f3e204]: Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。

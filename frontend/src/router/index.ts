@@ -2,10 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
 
 const coreChildren = [
-  { path: '', name: 'Dashboard', component: () => import('@/pages/ModelingDashboard.vue') },
+  { path: '', name: 'Dashboard', component: () => import('@/pages/SmartChatPage.vue') },
+  { path: 'anomaly', name: 'AnomalyDetection', component: () => import('@/pages/AnomalyDetection.vue') },
   { path: 'tasks', name: 'TaskList', component: () => import('@/pages/TaskList.vue') },
   { path: 'tasks/:id', name: 'TaskDetail', component: () => import('@/pages/TaskDetail.vue') },
   { path: 'artifacts', name: 'Artifacts', component: () => import('@/pages/ArtifactsView.vue') },
+  { path: 'modeling', name: 'ModelingWizard', component: () => import('@/pages/ModelingWizardPage.vue') },
 ]
 
 const advancedChildren = [

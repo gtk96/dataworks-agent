@@ -57,15 +57,16 @@ function formatTime(date: Date): string {
 }
 
 .agent-avatar {
-  background: linear-gradient(135deg, #2456d6, #4f8cff);
+  background: linear-gradient(135deg, #6366F1, #4F46E5);
   color: #fff;
   font-weight: 800;
+  font-size: 11px;
 }
-
 .user-avatar {
-  background: #111827;
+  background: #1E293B;
   color: #fff;
   font-weight: 800;
+  font-size: 11px;
 }
 
 .message-content {
@@ -73,10 +74,10 @@ function formatTime(date: Date): string {
 }
 
 .message-author {
-  margin: 0 0 5px 2px;
-  color: #98a2b3;
-  font-size: 12px;
-  font-weight: 700;
+  margin: 0 0 4px 2px;
+  color: #94A3B8;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .user-message .message-author,
@@ -85,23 +86,23 @@ function formatTime(date: Date): string {
 }
 
 .message-text {
-  padding: 13px 16px;
-  border: 1px solid rgba(98, 128, 210, 0.12);
-  border-radius: 18px;
-  background: #ffffff;
-  color: #26324b;
-  line-height: 1.7;
-  box-shadow: 0 10px 26px rgba(31, 45, 91, 0.07);
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #1E293B;
+  line-height: 1.65;
+  font-size: 13px;
 }
 
 .user-message .message-text {
-  border-color: rgba(64, 158, 255, 0.35);
-  background: linear-gradient(135deg, #2456d6, #409eff);
+  background: linear-gradient(135deg, #6366F1, #4F46E5);
+  border-color: transparent;
   color: #fff;
 }
 
 .message-text :deep(p) {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 
 .message-text :deep(p:last-child) {
@@ -109,10 +110,10 @@ function formatTime(date: Date): string {
 }
 
 .message-text :deep(code) {
-  background: rgba(36, 86, 214, 0.08);
-  padding: 2px 6px;
-  border-radius: 6px;
-  color: #1d4ed8;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #4F46E5;
   font-size: 0.9em;
 }
 
@@ -122,22 +123,28 @@ function formatTime(date: Date): string {
 }
 
 .message-text :deep(pre) {
-  margin: 10px 0;
-  padding: 12px;
-  background: #111827;
-  border-radius: 10px;
+  margin: 8px 0;
+  padding: 10px;
+  background: #0F172A;
+  border-radius: 8px;
   overflow-x: auto;
 }
 
 .message-text :deep(pre code) {
   background: none;
   padding: 0;
-  color: #e5e7eb;
+  color: #E2E8F0;
+  font-size: 0.85em;
 }
 
 .message-time {
-  margin-top: 5px;
-  color: #98a2b3;
-  font-size: 12px;
+  margin-top: 4px;
+  color: #94A3B8;
+  font-size: 10px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

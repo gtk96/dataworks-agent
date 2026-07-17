@@ -1,0 +1,120 @@
+- generic [ref=f7e3]:
+  - complementary [ref=f7e4]:
+    - generic [ref=f7e5]:
+      - generic [ref=f7e6]: D
+      - generic [ref=f7e7]:
+        - strong [ref=f7e8]: DataWorks Agent
+        - generic [ref=f7e9]: 智能数仓工作台
+    - navigation [ref=f7e10]:
+      - generic [ref=f7e11]: 工作区
+      - link "Agent 会话" [ref=f7e12] [cursor=pointer]:
+        - /url: /
+      - link "任务运行" [ref=f7e18] [cursor=pointer]:
+        - /url: /tasks
+      - link "产物中心" [ref=f7e23] [cursor=pointer]:
+        - /url: /artifacts
+    - generic [ref=f7e29]:
+      - generic [ref=f7e30]: DW
+      - generic [ref=f7e31]:
+        - strong [ref=f7e32]: 开发工作空间
+        - generic [ref=f7e33]: Publish Gate 已启用
+  - generic [ref=f7e34]:
+    - generic [ref=f7e35]:
+      - generic [ref=f7e36]:
+        - strong [ref=f7e37]: Agent 会话
+        - generic [ref=f7e38]: Agent-first
+      - generic [ref=f7e39]:
+        - generic [ref=f7e40]: 开发环境
+        - generic [ref=f7e42]: 服务在线
+    - main [ref=f7e44]:
+      - generic [ref=f7e45]:
+        - complementary [ref=f7e46]:
+          - button [ref=f7e47] [cursor=pointer]
+          - generic [ref=f7e51]:
+            - generic [ref=f7e52]: 快捷能力
+            - button "正向建模" [ref=f7e53] [cursor=pointer]
+            - button "逆向建模" [ref=f7e58] [cursor=pointer]
+            - button "异常排查" [ref=f7e63] [cursor=pointer]
+            - button "自主问数" [ref=f7e68] [cursor=pointer]
+            - button "Cookie 管理" [ref=f7e73] [cursor=pointer]
+          - generic [ref=f7e79]:
+            - article [ref=f7e80]:
+              - generic [ref=f7e81]: 执行边界
+              - list [ref=f7e82]:
+                - listitem [ref=f7e83]:
+                  - strong [ref=f7e84]: Dev 建表
+                  - generic [ref=f7e85]: 允许自动执行
+                - listitem [ref=f7e86]:
+                  - strong [ref=f7e87]: Dev 建节点
+                  - generic [ref=f7e88]: 允许自动执行
+                - listitem [ref=f7e89]:
+                  - strong [ref=f7e90]: 改已有节点
+                  - generic [ref=f7e91]: 执行前确认
+                - listitem [ref=f7e92]:
+                  - strong [ref=f7e93]: 删除节点
+                  - generic [ref=f7e94]: 执行前确认
+                - listitem [ref=f7e95]:
+                  - strong [ref=f7e96]: 生产发布
+                  - generic [ref=f7e97]: 人工确认
+            - article [ref=f7e98]:
+              - generic [ref=f7e99]: 知识边界
+              - paragraph [ref=f7e100]: 通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。
+          - generic [ref=f7e102]:
+            - generic [ref=f7e103]: 执行底座
+            - generic [ref=f7e105]:
+              - generic [ref=f7e106]: LangGraph
+              - generic [ref=f7e107]: AK/SK
+              - generic [ref=f7e108]: OpenAPI
+              - generic [ref=f7e109]: MaxCompute
+              - generic [ref=f7e110]: Cookie
+              - generic [ref=f7e111]: "9222"
+              - generic [ref=f7e112]: 官方 MCP
+            - text: 7/7 条通道就绪
+        - generic [ref=f7e113]:
+          - generic [ref=f7e114]:
+            - generic [ref=f7e115]:
+              - generic [ref=f7e116]:
+                - generic [ref=f7e117]: D
+                - strong [ref=f7e118]: DataWorks Agent
+                - generic [ref=f7e119]: Workspace
+              - paragraph [ref=f7e120]: 一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。
+            - generic [ref=f7e121]:
+              - generic [ref=f7e122]: HTTP 可用
+              - button "刷新能力状态" [ref=f7e124] [cursor=pointer]
+          - generic [ref=f7e205]:
+            - generic [ref=f7e206]:
+              - generic [ref=f7e207]: AI
+              - generic [ref=f7e209]:
+                - generic [ref=f7e210]: DataWorks Agent
+                - paragraph [ref=f7e212]: 你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。
+                - generic [ref=f7e213]: 08:21
+            - generic [ref=f7e214]:
+              - generic [ref=f7e215]: 我
+              - generic [ref=f7e217]:
+                - generic [ref=f7e218]: 你
+                - generic [ref=f7e219]: OSS 数据源：oss://oss-cn-shenzhen-internal.aliyuncs.com/giikin-dataworks-shenzhen/ads/data/tiktok_smart_plus_material_report 帮我建模
+                - generic [ref=f7e220]: 08:24
+            - generic [ref=f7e221]:
+              - generic [ref=f7e222]: D
+              - emphasis [ref=f7e227]: 正在理解目标并编排执行路径
+          - generic [ref=f7e177]:
+            - generic [ref=f7e178]:
+              - textbox "给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化" [disabled] [ref=f7e179]
+              - generic [ref=f7e180]:
+                - generic [ref=f7e181]:
+                  - generic [ref=f7e182]: 执行模式
+                  - radiogroup "segmented" [ref=f7e183]:
+                    - generic [ref=f7e184]:
+                      - generic [ref=f7e185] [cursor=pointer]:
+                        - radio "自动编排" [checked]
+                        - generic [ref=f7e186]: 自动编排
+                      - generic [ref=f7e187] [cursor=pointer]:
+                        - radio "只规划"
+                        - generic [ref=f7e188]: 只规划
+                      - generic [ref=f7e189] [cursor=pointer]:
+                        - radio "开发执行(dev)"
+                        - generic [ref=f7e190]: 开发执行(dev)
+                - button [ref=f7e191] [cursor=pointer]
+                - generic [ref=f7e195]: 自动判断：能线上执行的走 dev，风险操作停在确认点
+                - button [disabled] [ref=f7e200]
+            - paragraph [ref=f7e204]: Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。

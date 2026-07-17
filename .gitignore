@@ -60,7 +60,12 @@ replace-expressions.txt
 AGENTS.md
 CLAUDE.md
 
-# Codex/IDE local workspace artifacts
+# 私有知识库（含真实业务数据）
+semantic/metrics.json
+semantic/knowledge.json
+data/sql_archive/*.sql
+
+# 误入库的外部 README 解码副本（v9 §3.6）
 .codex-logs/
 .idea/
 tmp_agent_api.txt

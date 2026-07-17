@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-row style="margin-bottom: 16px">
+    <el-row :gutter="12" style="margin-bottom:16px">
       <el-col :span="6">
         <el-select v-model="filter.status" placeholder="按状态筛选" clearable @change="onFilterChange">
           <el-option-group label="执行中">
@@ -13,30 +13,30 @@
           </el-option-group>
         </el-select>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="5">
         <el-select v-model="filter.layer" placeholder="按层筛选" clearable @change="onFilterChange">
           <el-option v-for="l in ['ODS','DWD','DWS','DMR','DIM']" :key="l" :value="l" />
         </el-select>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="5">
         <el-select v-model="filter.nodeType" placeholder="按任务类型" clearable @change="onFilterChange">
           <el-option value="holo" label="Holo SQL" />
           <el-option value="di" label="数据集成 DI" />
           <el-option value="odps-sql" label="MaxCompute SQL" />
         </el-select>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <el-select v-model="filter.scope" @change="onFilterChange" style="width:100%">
           <el-option value="mine" label="我的任务" />
           <el-option value="all" label="全部任务" />
         </el-select>
       </el-col>
-      <el-col :span="6" style="text-align: right">
+      <el-col :span="4" style="text-align:right">
         <el-button type="primary" @click="$router.push('/tasks/create')">+ 新建任务</el-button>
       </el-col>
     </el-row>
 
-    <el-table :data="tasks" style="width: 100%" :row-class-name="rowClass">
+    <el-table :data="tasks" style="width:100%" :row-class-name="rowClass">
       <el-table-column prop="task_id" label="任务 ID" width="180" />
       <el-table-column prop="target_table" label="目标表" min-width="180" />
       <el-table-column prop="target_layer" label="分层" width="70" />
@@ -73,13 +73,13 @@
         <template #default="{ row }">
           <el-button size="small" @click="$router.push(`/tasks/${row.task_id}`)">详情</el-button>
           <el-button v-if="row.status==='failed'||row.status==='cancelled'" size="small" type="warning" @click="retryTask(row.task_id)">重试</el-button>
-          <!-- 取消：覆盖 pending/running + 6 个中间态；终态和 SUSPENDED 不允许取消 -->
           <el-button v-if="isCancellable(row.status)" size="small" type="info" @click="cancelTask(row.task_id)">取消</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-pagination
+      v-if="total > pageSize"
       style="margin-top:16px;justify-content:flex-end"
       layout="total, sizes, prev, pager, next"
       :total="total"
@@ -151,7 +151,6 @@ async function cancelTask(taskId: string) {
   }
 }
 
-// T7: 后端 list_tasks 已算好 node_type，前端直接采用，避免规则漂移产生不一致。
 function displayNodeType(row: { node_type?: string }) {
   return (row.node_type || '').trim().toLowerCase() || 'odps-sql'
 }
@@ -195,5 +194,10 @@ onMounted(load)
 </script>
 
 <style scoped>
-:deep(.error-row) { background: #fef0f0; }
+:deep(.error-row) {
+  background: rgba(248, 113, 113, 0.08) !important;
+}
+:deep(.error-row:hover > td) {
+  background: rgba(248, 113, 113, 0.12) !important;
+}
 </style>

@@ -186,3 +186,235 @@ npm run test:unit
 - 通用仓库只保存能力、规则和知识结构，不保存私有业务指标与真实账号数据。
 - 破坏性操作必须经过项目内 guard；生产发布只认 Publish Gate 的人工结果。
 - OpenAPI 元数据权限不足时走 Cookie 兜底，不通过扩大 AK/SK 权限或前端直连绕过。
+
+---
+
+## Harness Engineering 十支柱
+
+本项目采用 **Harness Engineering** 框架实现 Agent 的可控、可预测、可信任。每个支柱解决一个特定的可靠性问题，共同构成完整的 Agent 运行时。
+
+### [1] Identity — 角色定义与约束体系
+
+**解决的问题**：Agent 不知道自己该做什么，导致越权操作或行为不一致。
+
+**实现**：
+- 每个 Agent 类型（Requirement/Architecture/Modeling/Governance/Diagnosis/Query）声明明确的身份
+- 三层金字塔约束：超级红线（违反即阻断）/ 错误记录（引起重视）/ 操作规则（建议性）
+- 能力边界声明：能做什么、绝对不能做什么
+
+**关键文件**：`dataworks_agent/runtime/identity.py`
+
+**示例**：
+```python
+# Modeling Agent 的红线
+- 不得越界产出方案或 SQL 代码
+- 不得跳过 Publish Gate 自动发布生产
+```
+
+### [2] Orchestration — 流程编排与智能调度
+
+**解决的问题**：Agent 执行顺序混乱，缺乏流程控制。
+
+**实现**：
+- Coordinator 编排 6 个专业 Agent 协同工作
+- 任务分解为子任务，按依赖顺序执行
+- 支持全链路/快案/快码三种执行路径
+- 无依赖任务并行执行，有依赖任务串行执行
+
+**关键文件**：`dataworks_agent/runtime/coordinator.py`
+
+**核心公式**：Agent = Model + Harness
+
+### [3] Context — 上下文工程
+
+**解决的问题**：上下文污染，Agent 看到不该看到的信息。
+
+**实现**：
+- Spec 文件驱动：Agent 之间通过结构化 Spec 交换信息
+- CP 检查点摘要：上游 Agent 产出压缩为固定格式传给下游
+- 渐进式加载：下游只加载需要的 Spec 片段
+- 物理隔离：每个 Agent 只读自己该读的文件
+
+**关键文件**：`dataworks_agent/runtime/spec_protocol.py`
+
+**设计原则**：一切皆文件，小工具组合
+
+### [4] Gate — 门禁检查与质量评估
+
+**解决的问题**：Agent 产出质量不可控，错误难以发现。
+
+**实现**：
+- ProposalGuard 五道闸门校验（词根/DDL/分层/表名/语义）
+- PublishGate 发布前最终确认
+- DestructiveOpGuard 阻止破坏性操作
+- 生成与评估分离：Agent 不自评
+
+**关键文件**：`dataworks_agent/semantic/guard.py`
+
+**核心理念**：可控，比聪明更重要
+
+### [5] Recovery — 状态追踪与故障恢复
+
+**解决的问题**：Agent 执行中断后无法恢复，前功尽弃。
+
+**实现**：
+- LoopKernel 有界循环：observe-act-verify-repair
+- 12 个明确的状态枚举值
+- 故障分级：可重试 / 需回退 / 必须中止
+- 断点续接：从最近检查点恢复
+
+**关键文件**：`dataworks_agent/runtime/loop.py`
+
+**状态机**：PENDING → RUNNING → DDL_GEN → TABLE_CRE → ... → COMPLETED
+
+### [6] Evolution — 经验沉淀与进化学习
+
+**解决的问题**：同一个错误反复出现，系统不学习。
+
+**实现**：
+- 错误记录本：递增编号/日期/一句话描述/正确做法
+- 自动加载：Agent 工作时自动加载经验库
+- 约束迭代：反复出现的错误升级为超级红线（阈值=3）
+- 实时记录：用户指出错误时立刻结构化记录
+
+**关键文件**：`dataworks_agent/runtime/evolution_loop.py`
+
+**驱动机制**：实时记录 → 自动加载 → 行为约束迭代
+
+### [7] Reflection — LLM 反思执行偏差
+
+**解决的问题**：验证失败后盲目重试，不知为何失败。
+
+**实现**：
+- LLM 驱动反思：分析偏差根因，生成策略调整建议
+- 确定性回退：无 LLM 时基于规则的启发式分析
+- 偏差分类：incorrect_input / insufficient_context / wrong_tool / strategy_flaw / constraint_violation
+- 与 Evolution 联动：反思结果自动送入进化回路
+
+**关键文件**：`dataworks_agent/runtime/reflection.py`
+
+**核心流程**：Act → Verify → [失败] → Reflection → Repair → Act → Verify
+
+### [8] Intent Clarification — 意图确认机制
+
+**解决的问题**：模糊需求直接执行，导致错误操作。
+
+**实现**：
+- 置信度分级：>=0.8 自动确认，0.5-0.8 建议确认，<0.5 必须确认
+- 必填字段检测：根据 action 类型检查缺失参数
+- 反问确认：对模糊需求生成澄清问题
+- 只对工作流类 action 生效，简单工具调用由下游处理
+
+**关键文件**：`dataworks_agent/agent/intent_clarifier.py`
+
+**示例**：
+```
+用户: "帮我分析一下这个指标为什么下降"
+→ 置信度 0.58, 缺失 metric_id
+→ 返回: "需要澄清：需要归因的指标或口径 ID 是什么？"
+```
+
+### [9] Memory Layering — 记忆分层管理
+
+**解决的问题**：记忆混乱，无法区分短期/长期、重要/次要。
+
+**实现**：
+- 四类记忆：user（季度级）/ feedback（月级）/ project（周级）/ reference（永不过期）
+- 写入三道闸门：能推导的不写 / 跨会话才有用才写 / 先查重
+- 组织纪律：原子事实 + 带 why + 绝对时间 + 指针优于副本
+- TTL 自动清理：过期记忆自动删除
+
+**关键文件**：`dataworks_agent/runtime/memory_service.py`
+
+**记忆是线索，不是缓存**
+
+### [10] Self-Evolution — 持续自愈与语义自进化
+
+**解决的问题**：系统静态不变，无法适应新场景和新错误。
+
+**实现**：
+- SelfEvolveFlow 完整循环：Detect → Classify → Propose → Apply → Verify → Learn
+- 连接 Evaluator → EvolutionLoop → AgentRegistry 的行为进化
+- 连接 SemanticEvolver → SemanticLayer 的语义进化
+- 连接 SelfHealFlow → 自愈提议的自动执行与验证
+
+**关键文件**：`dataworks_agent/runtime/self_evolve.py`
+
+**完整闭环**：
+```
+Detect (收集 badcases)
+  ↓
+Classify (分类 behavioral/semantic/operational)
+  ↓
+Propose (生成进化提议)
+  ↓
+Apply (自动应用安全的，人工审批风险的)
+  ↓
+Verify (验证改进效果)
+  ↓
+Learn (沉淀经验到知识库)
+```
+
+---
+
+## 支柱关系图
+
+```
+                    User Input (Natural Language)
+                           │
+                    ┌──────▼──────┐
+                    │  Intent     │  [8] Intent Clarification
+                    │  Clarifier  │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │  Requirement│  [1] Identity
+                    │  Agent      │  (Role + Constraints)
+                    └──────┬──────┘
+                           │
+              ┌────────────▼────────────┐
+              │   Coordinator           │  [2] Orchestration
+              │   (Task Decomposition)  │
+              └────────────┬────────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+   ┌────────────┐  ┌─────────────┐  ┌──────────────┐
+   │ Modeling   │  │ Governance  │  │ Diagnosis    │
+   │ Agent      │  │ Agent       │  │ Agent        │
+   └─────┬──────┘  └──────┬──────┘  └──────┬───────┘
+         │                │                │
+    ┌────▼────┐      ┌────▼────┐      ┌────▼────┐
+    │ Gate    │      │ Gate    │      │ Gate    │  [4] Gate
+    │ [DDL]   │      │ [Naming]│      │ [Safety]│
+    └────┬────┘      └────┬────┘      └────┬────┘
+         │                │                │
+    ┌────▼────────────────▼────────────────▼────┐
+    │         LoopKernel                        │  [5] Recovery
+    │  (observe → act → verify → repair)        │
+    └────────────┬──────────────────────────────┘
+                 │
+           ┌─────▼─────┐
+           │ Reflection│  [7] Reflection
+           │ (LLM)     │
+           └─────┬─────┘
+                 │
+    ┌────────────▼────────────┐
+    │     Evolution Loop      │  [6] Evolution
+    │ (Badcase → Constraint)  │
+    └────────────┬────────────┘
+                 │
+    ┌────────────▼────────────┐
+    │   SelfEvolveFlow        │  [10] Self-Evolution
+    │ (Detect→Classify→...)   │
+    └─────────────────────────┘
+```
+
+## 测试状态
+
+- **1077 passed** ✅
+- 3 个 pre-existing failures（`test_memory_layering.py`，与 Harness 支柱无关）
+
+## 许可证
+
+MIT License

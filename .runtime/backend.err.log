@@ -1,0 +1,704 @@
+2026-07-14 08:35:43,814 dataworks_agent INFO 前端静态文件: E:\giikin_dw_agent\frontend\dist
+2026-07-14 08:35:43,841 dataworks_agent INFO 前端静态文件: E:\giikin_dw_agent\frontend\dist
+2026-07-14 08:35:43,841 dataworks_agent INFO 前端静态文件: E:\giikin_dw_agent\frontend\dist
+INFO:     Started server process [8708]
+INFO:     Waiting for application startup.
+2026-07-14 08:35:43,866 dataworks_agent INFO dataworks-agent v0.1.1 启动中...
+2026-07-14 08:35:43,866 dataworks_agent INFO dataworks-agent v0.1.1 启动中...
+2026-07-14 08:35:43,880 dataworks_agent INFO SQLite 数据库就绪: E:\giikin_dw_agent\data\dw_modeling.db
+2026-07-14 08:35:43,880 dataworks_agent INFO SQLite 数据库就绪: E:\giikin_dw_agent\data\dw_modeling.db
+2026-07-14 08:35:43,893 dataworks_agent INFO CDP 客户端已注册（惰性连接）
+2026-07-14 08:35:43,893 dataworks_agent INFO CDP 客户端已注册（惰性连接）
+2026-07-14 08:35:43,894 dataworks_agent INFO DataWorks 客户端就绪
+2026-07-14 08:35:43,894 dataworks_agent INFO DataWorks 客户端就绪
+2026-07-14 08:35:44,081 dataworks_agent INFO DataWorks OpenAPI 客户端就绪 (AK/SK)
+2026-07-14 08:35:44,081 dataworks_agent INFO DataWorks OpenAPI 客户端就绪 (AK/SK)
+2026-07-14 08:35:44,822 dataworks_agent INFO MaxCompute 客户端就绪 (AK/SK)
+2026-07-14 08:35:44,822 dataworks_agent INFO MaxCompute 客户端就绪 (AK/SK)
+2026-07-14 08:35:44,824 dataworks_agent INFO OpenAPI 节点适配器就绪 (AK/SK, 待接线)
+2026-07-14 08:35:44,824 dataworks_agent INFO OpenAPI 节点适配器就绪 (AK/SK, 待接线)
+2026-07-14 08:35:47,806 dataworks_agent.mcp.official_dataworks INFO 阿里云官方 DataWorks MCP 已连接，工具数: 20
+2026-07-14 08:35:47,806 dataworks_agent.mcp.official_dataworks INFO 阿里云官方 DataWorks MCP 已连接，工具数: 20
+2026-07-14 08:35:47,808 dataworks_agent.cookie.health INFO Cookie keepalive 已启用 (间隔 300s, 仅 BFF 心跳)
+2026-07-14 08:35:47,808 dataworks_agent.cookie.health INFO Cookie keepalive 已启用 (间隔 300s, 仅 BFF 心跳)
+2026-07-14 08:35:47,950 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新任务已启动
+2026-07-14 08:35:47,950 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新任务已启动
+2026-07-14 08:35:48,148 dataworks_agent.governance.word_root_sync INFO 词根自动同步任务已启动
+2026-07-14 08:35:48,148 dataworks_agent.governance.word_root_sync INFO 词根自动同步任务已启动
+2026-07-14 08:35:48,622 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:48,622 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:48,650 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:48,650 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:48,876 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:35:48,876 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:35:48,878 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 08:35:48,878 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 08:35:48,913 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:35:48,913 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:35:49,187 httpx INFO HTTP Request: GET http://localhost:9222/json/version "HTTP/1.1 200 OK"
+2026-07-14 08:35:49,187 httpx INFO HTTP Request: GET http://localhost:9222/json/version "HTTP/1.1 200 OK"
+2026-07-14 08:35:49,232 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:49,232 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:49,338 dataworks_agent.bootstrap INFO 启动检查: 5/5 项就绪
+2026-07-14 08:35:49,338 dataworks_agent.bootstrap INFO 启动检查: 5/5 项就绪
+2026-07-14 08:35:49,340 dataworks_agent.task_engine.monitor INFO 任务监控已启动，间隔 300 秒
+2026-07-14 08:35:49,340 dataworks_agent.task_engine.monitor INFO 任务监控已启动，间隔 300 秒
+2026-07-14 08:35:49,341 dataworks_agent INFO dataworks-agent 启动完成，端口: 8085
+2026-07-14 08:35:49,341 dataworks_agent INFO dataworks-agent 启动完成，端口: 8085
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8085 (Press CTRL+C to quit)
+2026-07-14 08:35:52,612 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=20260714083552d83f361a09365b06target project_name=giikin_dev instance_id=2026071400354974g66j0hcizul>
+2026-07-14 08:35:52,612 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=20260714083552d83f361a09365b06target project_name=giikin_dev instance_id=2026071400354974g66j0hcizul>
+2026-07-14 08:35:53,172 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 08:35:53,172 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 08:35:53,418 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:53,418 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:35:53,652 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:35:53,652 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:36:02,557 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=2026071408360250e9ef0a09365189target project_name=giikin_dev instance_id=20260714003558777gbverekajh7>
+2026-07-14 08:36:02,557 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=2026071408360250e9ef0a09365189target project_name=giikin_dev instance_id=20260714003558777gbverekajh7>
+2026-07-14 08:36:04,009 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 08:36:04,009 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+INFO:     127.0.0.1:62817 - "WebSocket /agent/ws" [accepted]
+INFO:     connection open
+2026-07-14 08:40:27,994 dataworks_agent.routers.agent INFO Received chat request: OSS 数据源： oss://oss-cn-shenzhen-internal.aliyuncs.c
+2026-07-14 08:40:27,994 dataworks_agent.routers.agent INFO Received chat request: OSS 数据源： oss://oss-cn-shenzhen-internal.aliyuncs.c
+2026-07-14 08:40:28,023 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:40:28,023 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:40:28,426 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:28,426 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:28,801 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:40:28,801 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:40:28,872 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:28,872 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:29,360 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:40:29,360 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:40:29,408 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:29,408 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:31,298 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:40:31,298 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:40:31,367 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:31,367 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:31,717 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 08:40:31,717 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 08:40:31,782 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:31,782 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:31,879 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:31,879 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:34,934 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:34,934 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:35,025 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:35,025 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:38,080 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:38,080 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:38,205 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:38,205 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:41,265 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:41,265 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:41,435 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=2594&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:41,435 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-e8120590-d873-49ba-8c27-334c7e93bade&index=0&offset=2594&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 08:40:41,437 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 08:40:41,437 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 08:40:41,449 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:40:41,449 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:40:41,451 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:40:41,451 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:40:41,457 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:40:41,457 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:40:48,122 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:40:48,122 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:06,397 dataworks_agent.routers.agent INFO Received chat request: {"records":[{"material_id":"m-001","material_name"
+2026-07-14 08:42:06,397 dataworks_agent.routers.agent INFO Received chat request: {"records":[{"material_id":"m-001","material_name"
+2026-07-14 08:42:06,406 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:42:06,406 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:42:06,653 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:06,653 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:07,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:42:07,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:42:07,242 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:07,242 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:09,039 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:42:09,039 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:42:09,054 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:42:09,054 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:42:09,055 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:42:09,055 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:42:09,056 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:42:09,056 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:42:57,629 dataworks_agent.routers.agent INFO Received chat request: Use all observed fields
+2026-07-14 08:42:57,629 dataworks_agent.routers.agent INFO Received chat request: Use all observed fields
+2026-07-14 08:42:57,637 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:42:57,637 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:42:57,920 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:57,920 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:58,296 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:42:58,296 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:42:58,367 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:42:58,367 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:00,154 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:43:00,154 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:43:00,167 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:43:00,167 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 08:43:00,168 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:43:00,168 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:43:00,170 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:43:00,170 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:43:40,079 dataworks_agent.routers.agent INFO Received chat request: material_id
+2026-07-14 08:43:40,079 dataworks_agent.routers.agent INFO Received chat request: material_id
+2026-07-14 08:43:40,088 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:43:40,088 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 08:43:40,330 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:40,330 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:40,544 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:43:40,544 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 08:43:40,591 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:40,591 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:42,256 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:43:42,256 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 08:43:42,324 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:42,324 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:43,987 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour "HTTP/1.1 200 "
+2026-07-14 08:43:43,987 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.ods_mc_ads_data__tiktok_smart_plus_material_report_hour "HTTP/1.1 200 "
+2026-07-14 08:43:44,032 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:44,032 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:45,632 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour "HTTP/1.1 200 "
+2026-07-14 08:43:45,632 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.dwd_mkt_tiktok_smart_plus_material_report_hour "HTTP/1.1 200 "
+2026-07-14 08:43:45,679 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:45,679 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:45,755 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getFile?scheme=vfs_file&projectId=70827&scene=DATAWORKS_PROJECT&filePath=%E4%B8%9A%E5%8A%A1%E6%B5%81%E7%A8%8B%2F106_%E5%B9%BF%E5%91%8A%E6%8A%A5%E5%91%8A%2FMaxCompute%2F%E6%95%B0%E6%8D%AE%E5%BC%80%E5%8F%91%2F00_ODS%2Fods_mc_ads_data__tiktok_smart_plus_material_report_hour%2F.dataworks%2Fmetadata.json "HTTP/1.1 200 "
+2026-07-14 08:43:45,755 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getFile?scheme=vfs_file&projectId=70827&scene=DATAWORKS_PROJECT&filePath=%E4%B8%9A%E5%8A%A1%E6%B5%81%E7%A8%8B%2F106_%E5%B9%BF%E5%91%8A%E6%8A%A5%E5%91%8A%2FMaxCompute%2F%E6%95%B0%E6%8D%AE%E5%BC%80%E5%8F%91%2F00_ODS%2Fods_mc_ads_data__tiktok_smart_plus_material_report_hour%2F.dataworks%2Fmetadata.json "HTTP/1.1 200 "
+2026-07-14 08:43:45,813 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:45,813 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,198 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/updateNode "HTTP/1.1 200 "
+2026-07-14 08:43:46,198 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/updateNode "HTTP/1.1 200 "
+2026-07-14 08:43:46,251 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,251 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,641 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/updateVertex "HTTP/1.1 200 "
+2026-07-14 08:43:46,641 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/updateVertex "HTTP/1.1 200 "
+2026-07-14 08:43:46,714 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,714 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,807 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getFile?scheme=vfs_file&projectId=70827&scene=DATAWORKS_PROJECT&filePath=%E4%B8%9A%E5%8A%A1%E6%B5%81%E7%A8%8B%2F106_%E5%B9%BF%E5%91%8A%E6%8A%A5%E5%91%8A%2FMaxCompute%2F%E6%95%B0%E6%8D%AE%E5%BC%80%E5%8F%91%2F02_DWD%2Fdwd_mkt_tiktok_smart_plus_material_report_hour%2F.dataworks%2Fmetadata.json "HTTP/1.1 200 "
+2026-07-14 08:43:46,807 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getFile?scheme=vfs_file&projectId=70827&scene=DATAWORKS_PROJECT&filePath=%E4%B8%9A%E5%8A%A1%E6%B5%81%E7%A8%8B%2F106_%E5%B9%BF%E5%91%8A%E6%8A%A5%E5%91%8A%2FMaxCompute%2F%E6%95%B0%E6%8D%AE%E5%BC%80%E5%8F%91%2F02_DWD%2Fdwd_mkt_tiktok_smart_plus_material_report_hour%2F.dataworks%2Fmetadata.json "HTTP/1.1 200 "
+2026-07-14 08:43:46,856 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:46,856 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:47,262 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/updateNode "HTTP/1.1 200 "
+2026-07-14 08:43:47,262 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/updateNode "HTTP/1.1 200 "
+2026-07-14 08:43:47,306 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:47,306 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:47,686 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/updateVertex "HTTP/1.1 200 "
+2026-07-14 08:43:47,686 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/updateVertex "HTTP/1.1 200 "
+2026-07-14 08:43:47,739 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:47,739 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:43:47,851 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/addNodeDependencies "HTTP/1.1 200 "
+2026-07-14 08:43:47,851 httpx INFO HTTP Request: PUT https://bff-cn-shenzhen.data.aliyun.com/ide/addNodeDependencies "HTTP/1.1 200 "
+2026-07-14 08:43:47,864 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 1.00 ratio
+2026-07-14 08:43:47,864 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 1.00 ratio
+2026-07-14 08:43:47,867 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:43:47,867 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 08:43:47,871 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:43:47,871 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:45:01,380 dataworks_agent.routers.agent INFO Received chat request: 检查 ODS/DWD SQL 产物
+2026-07-14 08:45:01,380 dataworks_agent.routers.agent INFO Received chat request: 检查 ODS/DWD SQL 产物
+2026-07-14 08:45:01,386 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:45:01,386 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:45:48,380 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:45:48,380 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:45:49,136 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:45:49,136 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:45:49,348 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:45:49,348 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:45:49,350 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 08:45:49,350 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 08:46:38,481 dataworks_agent.routers.agent INFO Received chat request: 查看当前 ODS/DWD 调度
+2026-07-14 08:46:38,481 dataworks_agent.routers.agent INFO Received chat request: 查看当前 ODS/DWD 调度
+2026-07-14 08:46:38,484 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:46:38,484 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:47:46,795 dataworks_agent.routers.agent INFO Received chat request: 准备 Publish Gate 审查
+2026-07-14 08:47:46,795 dataworks_agent.routers.agent INFO Received chat request: 准备 Publish Gate 审查
+2026-07-14 08:47:46,797 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:47:46,797 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:48:59,212 dataworks_agent.routers.agent INFO Received chat request: 查看当前 ODS/DWD SQL 产物
+2026-07-14 08:48:59,212 dataworks_agent.routers.agent INFO Received chat request: 查看当前 ODS/DWD SQL 产物
+2026-07-14 08:48:59,216 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:48:59,216 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 08:50:48,603 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:50:48,603 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:55:48,870 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:55:48,870 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:55:49,580 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:55:49,580 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 08:55:49,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:55:49,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 08:55:49,801 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 08:55:49,801 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:00:49,125 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:00:49,125 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:05:49,422 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:05:49,422 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:05:50,009 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:05:50,009 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:05:50,240 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:05:50,240 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:05:50,242 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:05:50,242 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:10:49,639 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:10:49,639 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:15:49,887 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:15:49,887 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:15:50,461 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:15:50,461 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:15:50,751 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:15:50,751 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:15:50,751 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:15:50,751 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:20:50,178 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:20:50,178 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:25:50,443 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:25:50,443 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:25:50,964 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:25:50,964 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:25:51,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:25:51,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:25:51,199 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:25:51,199 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:30:50,718 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:30:50,718 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:35:51,079 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 09:35:51,079 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 09:35:51,608 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:35:51,608 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:35:51,623 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:35:51,623 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:35:51,907 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:35:51,907 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:35:51,909 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:35:51,909 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:40:51,809 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:40:51,809 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+INFO:     connection closed
+2026-07-14 09:45:52,283 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:45:52,283 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:45:52,332 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:45:52,332 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:45:56,665 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:45:56,665 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:45:56,666 dataworks_agent.cookie.background_refresh INFO Cookie 失效，尝试 CDP 自助提取: exception occurs：path=[/bff_v1/ListDatasources2]，api=di_ListDatasources2，remoteMessage=[Internal system error requestId:
+2026-07-14 09:45:56,666 dataworks_agent.cookie.background_refresh INFO Cookie 失效，尝试 CDP 自助提取: exception occurs：path=[/bff_v1/ListDatasources2]，api=di_ListDatasources2，remoteMessage=[Internal system error requestId:
+2026-07-14 09:45:56,943 httpx INFO HTTP Request: GET http://localhost:9222/json/version "HTTP/1.1 200 OK"
+2026-07-14 09:45:56,943 httpx INFO HTTP Request: GET http://localhost:9222/json/version "HTTP/1.1 200 OK"
+2026-07-14 09:45:57,785 dataworks_agent.api_clients.cdp_client INFO Chrome 已连接，3 个页面
+2026-07-14 09:45:57,785 dataworks_agent.api_clients.cdp_client INFO Chrome 已连接，3 个页面
+2026-07-14 09:45:58,261 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:45:58,261 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:46:00,195 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:46:00,195 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:46:00,196 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: refreshed — ok
+2026-07-14 09:46:00,196 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: refreshed — ok
+2026-07-14 09:50:52,567 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:50:52,567 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:55:52,854 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:55:52,854 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:56:00,628 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:56:00,628 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 09:56:03,168 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:56:03,168 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 09:56:03,170 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 09:56:03,170 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:00:53,099 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:00:53,099 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:05:53,343 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:05:53,343 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:06:04,121 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:06:04,121 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:06:12,731 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:06:12,731 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:06:12,732 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:06:12,732 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:10:53,566 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:10:53,566 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:15:53,841 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:15:53,841 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:16:13,150 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:16:13,150 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:16:13,371 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:16:13,371 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:16:13,372 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:16:13,372 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:20:54,027 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:20:54,027 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:25:54,286 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:25:54,286 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:26:13,804 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:26:13,804 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:26:14,078 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:26:14,078 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:26:14,080 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:26:14,080 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:30:54,472 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:30:54,472 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+INFO:     127.0.0.1:52077 - "WebSocket /agent/ws" [accepted]
+INFO:     connection open
+2026-07-14 10:35:52,927 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 10:35:52,927 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 10:35:54,723 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:35:54,723 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:35:57,198 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=2026071410355757e4ef0a01a93da7target project_name=giikin_dev instance_id=2026071402355418gvn2wfrrx285>
+2026-07-14 10:35:57,198 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=2026071410355757e4ef0a01a93da7target project_name=giikin_dev instance_id=2026071402355418gvn2wfrrx285>
+2026-07-14 10:35:58,554 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 10:35:58,554 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 10:36:14,510 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:36:14,510 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:36:14,745 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:36:14,745 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:36:14,746 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:36:14,746 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:40:54,962 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:40:54,962 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:45:55,224 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:45:55,224 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:46:15,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:46:15,197 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:46:15,478 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:46:15,478 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:46:15,479 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:46:15,479 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:50:55,501 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:50:55,501 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:55:55,779 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:55:55,779 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:56:15,904 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:56:15,904 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 10:56:16,206 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:56:16,206 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 10:56:16,208 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 10:56:16,208 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:00:56,063 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:00:56,063 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:05:56,256 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:05:56,256 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:06:16,639 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:06:16,639 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:06:16,857 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:06:16,857 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:06:16,858 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:06:16,858 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:10:56,517 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:10:56,517 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:15:56,742 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:15:56,742 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:16:17,305 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:16:17,305 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:16:17,494 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:16:17,494 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:16:17,497 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:16:17,497 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:20:56,956 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:20:56,956 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:25:57,208 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:25:57,208 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:26:17,927 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:26:17,927 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:26:18,232 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:26:18,232 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:26:18,233 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:26:18,233 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:30:57,668 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:30:57,668 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:35:54,559 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 11:35:54,559 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 11:35:57,954 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:35:57,954 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:36:18,661 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:36:18,661 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:36:18,975 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:36:18,975 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:36:18,976 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:36:18,976 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:40:58,172 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:40:58,172 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:45:58,382 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:45:58,382 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:46:19,511 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:46:19,511 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:46:19,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:46:19,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:46:19,802 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:46:19,802 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:50:58,642 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:50:58,642 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:55:58,903 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:55:58,903 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:56:20,336 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:56:20,336 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 11:56:20,579 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:56:20,579 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 11:56:20,580 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 11:56:20,580 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:00:59,098 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:00:59,098 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:05:59,339 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:05:59,339 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:06:21,003 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:06:21,003 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:06:21,269 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:06:21,269 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:06:21,270 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:06:21,270 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:10:59,597 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:10:59,597 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:15:59,810 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:15:59,810 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:16:21,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:16:21,800 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:16:22,037 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:16:22,037 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:16:22,040 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:16:22,040 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:21:00,062 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:21:00,062 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:26:00,248 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:26:00,248 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:26:22,466 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:26:22,466 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:26:22,702 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:26:22,702 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:26:22,705 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:26:22,705 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:31:00,518 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:31:00,518 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:35:56,423 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 12:35:56,423 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 12:36:00,798 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:36:00,798 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:36:06,543 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=20260714123606dfbe371a095920b1target project_name=giikin_dev instance_id=20260714043559850gy6o33f3vl26>
+2026-07-14 12:36:06,543 odps.tunnel.instancetunnel INFO Tunnel session created: <InstanceDownloadSession id=20260714123606dfbe371a095920b1target project_name=giikin_dev instance_id=20260714043559850gy6o33f3vl26>
+2026-07-14 12:36:08,151 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 12:36:08,151 dataworks_agent.governance.word_root_sync INFO 词根同步完成: 1060 条, table=giikin.dim_pub_column_dictionary_static
+2026-07-14 12:36:23,155 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:36:23,155 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:36:23,427 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:36:23,427 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:36:23,428 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:36:23,428 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:41:01,048 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:41:01,048 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:46:01,252 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:46:01,252 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:46:23,861 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:46:23,861 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:46:24,147 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:46:24,147 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:46:24,148 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:46:24,148 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:51:01,479 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:51:01,479 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:56:01,687 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:56:01,687 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:56:24,593 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:56:24,593 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 12:56:24,795 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:56:24,795 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 12:56:24,796 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 12:56:24,796 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:01:01,943 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:01:01,943 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+INFO:     127.0.0.1:60389 - "WebSocket /agent/ws" [accepted]
+INFO:     connection open
+2026-07-14 13:06:02,236 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:06:02,236 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:06:25,223 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:06:25,223 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:06:25,452 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:06:25,452 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:06:25,453 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:06:25,453 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:11:02,535 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:11:02,535 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:36,123 dataworks_agent.routers.agent INFO Received chat request: 请按已有数仓规范生成 OSS 到 ODS 的只读建模方案：源路径 oss://oss-cn-shen
+2026-07-14 13:13:36,123 dataworks_agent.routers.agent INFO Received chat request: 请按已有数仓规范生成 OSS 到 ODS 的只读建模方案：源路径 oss://oss-cn-shen
+2026-07-14 13:13:36,143 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 13:13:36,143 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 13:13:36,442 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:36,442 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:36,825 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:13:36,825 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:13:36,895 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:36,895 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:37,516 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:13:37,516 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:13:37,581 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:37,581 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:39,304 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:13:39,304 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:13:39,370 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:39,370 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:39,741 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 13:13:39,741 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 13:13:39,802 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:39,802 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:39,917 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:39,917 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:42,986 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:42,986 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:43,082 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:43,082 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:46,150 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:46,150 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:46,247 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:46,247 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:49,311 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:49,311 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:49,460 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:49,460 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:52,541 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:52,541 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:13:52,687 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=2594&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:52,687 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-5ae50cee-80bb-4245-b73e-3619fd4b2898&index=0&offset=2594&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:13:52,688 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 13:13:52,688 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 13:13:52,698 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:13:52,698 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:13:52,699 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:13:52,699 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:13:52,703 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:13:52,703 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:14:42,375 dataworks_agent.routers.agent INFO Received chat request: {columns:[{name:material_id,type:STRING},{name:rep
+2026-07-14 13:14:42,375 dataworks_agent.routers.agent INFO Received chat request: {columns:[{name:material_id,type:STRING},{name:rep
+2026-07-14 13:14:42,384 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 13:14:42,384 dataworks_agent.agent.core INFO NLU parsed: action=forward_modeling, confidence=0.82
+2026-07-14 13:14:42,611 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:42,611 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:42,850 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:14:42,850 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:14:42,898 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:42,898 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:44,581 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:14:44,581 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:14:44,630 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:44,630 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:44,961 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 13:14:44,961 httpx INFO HTTP Request: POST https://bff-cn-shenzhen.data.aliyun.com/ide/createExecutorJobV3 "HTTP/1.1 200 "
+2026-07-14 13:14:45,019 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:45,019 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:45,099 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:45,099 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:48,163 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:48,163 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:48,279 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:48,279 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:51,352 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:51,352 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:51,489 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:51,489 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=0&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:54,552 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:54,552 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:14:54,694 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=149&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:54,694 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/ide/getExecutorJobLog?code=unified-a2274397-c215-4105-910f-6207e889889d&index=0&offset=149&extend=true&showScript=false&projectId=70827 "HTTP/1.1 200 "
+2026-07-14 13:14:54,695 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 13:14:54,695 dataworks_agent.services.ods_oss.managed_discovery WARNING Cookie/BFF OSS sample query failed: RuntimeError
+2026-07-14 13:14:54,704 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:14:54,704 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:14:54,705 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:14:54,705 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:14:54,709 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:14:54,709 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:16:02,760 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:16:02,760 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:16:25,880 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:16:25,880 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:16:26,123 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:16:26,123 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:16:26,124 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:16:26,124 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:21:03,052 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:21:03,052 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+INFO:     127.0.0.1:52413 - "WebSocket /agent/ws" [accepted]
+INFO:     connection open
+2026-07-14 13:26:03,326 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:26:03,326 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:26:26,550 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:26:26,550 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:26:26,836 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:26:26,836 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:26:26,837 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:26:26,837 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:31:03,515 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:31:03,515 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:15,493 dataworks_agent.routers.agent INFO Received chat request: 请按 OSS 标准流程只规划，不执行：源路径 oss://oss-cn-shenzhen-inter
+2026-07-14 13:33:15,493 dataworks_agent.routers.agent INFO Received chat request: 请按 OSS 标准流程只规划，不执行：源路径 oss://oss-cn-shenzhen-inter
+2026-07-14 13:33:15,503 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:33:15,503 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:33:15,785 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:15,785 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:16,139 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:33:16,139 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=100&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:33:16,205 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:16,205 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:16,650 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:33:16,650 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:33:16,703 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:16,703 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:33:18,761 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:33:18,761 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:33:18,771 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:33:18,771 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:33:18,772 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:33:18,772 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:33:18,775 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:33:18,775 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:34:12,803 dataworks_agent.routers.agent INFO Received chat request: Use all observed fields
+2026-07-14 13:34:12,803 dataworks_agent.routers.agent INFO Received chat request: Use all observed fields
+2026-07-14 13:34:12,811 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:34:12,811 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:34:13,063 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:34:13,063 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:34:13,552 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:34:13,552 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:34:13,597 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:34:13,597 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:34:15,493 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:34:15,493 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:34:15,503 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:34:15,503 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 0.00 ratio
+2026-07-14 13:34:15,503 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:34:15,503 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:34:15,507 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:34:15,507 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:35:37,947 dataworks_agent.routers.agent INFO Received chat request: material_id
+2026-07-14 13:35:37,947 dataworks_agent.routers.agent INFO Received chat request: material_id
+2026-07-14 13:35:37,954 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:35:37,954 dataworks_agent.agent.core INFO NLU parsed: action=agent_workflow, confidence=0.58
+2026-07-14 13:35:38,148 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:35:38,148 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:35:38,707 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:35:38,707 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/searchTables?keyword=tiktok_smart_plus_material_report&entityType=odps-table&pageNum=1&pageSize=50 "HTTP/1.1 200 "
+2026-07-14 13:35:38,752 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:35:38,752 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:35:40,641 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:35:40,641 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/dma/geneCreationDdl?tableGuid=odps.giikin_develop.tiktok_smart_plus_material_report "HTTP/1.1 200 "
+2026-07-14 13:35:40,782 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 1.00 ratio
+2026-07-14 13:35:40,782 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_verified_success = 1.00 ratio
+2026-07-14 13:35:40,783 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:35:40,783 dataworks_agent.runtime.evaluator INFO 记录质量指标: loop_iterations = 1.00 count
+2026-07-14 13:35:40,784 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:35:40,784 dataworks_agent.routers.agent INFO Chat response: success=True
+2026-07-14 13:35:58,034 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 13:35:58,034 dataworks_agent.db.backup INFO 数据库备份完成
+2026-07-14 13:36:03,770 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:36:03,770 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:36:27,281 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:36:27,281 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:36:27,523 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:36:27,523 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:36:27,524 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:36:27,524 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:41:04,037 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:41:04,037 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:46:04,292 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:46:04,292 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:46:27,960 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:46:27,960 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/csrf?version=v2 "HTTP/1.1 200 "
+2026-07-14 13:46:28,268 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:46:28,268 httpx INFO HTTP Request: GET https://bff-cn-shenzhen.data.aliyun.com/v1/ListDatasources2?projectId=70827&tenantId=290841902758113&productCode=di&pageSize=10&onlyShowDiSupport=false "HTTP/1.1 200 "
+2026-07-14 13:46:28,270 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok
+2026-07-14 13:46:28,270 dataworks_agent.cookie.background_refresh INFO Cookie 后台刷新: valid — ok

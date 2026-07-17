@@ -15,6 +15,14 @@ BUSINESS_QUERY_PATTERNS = (
 )
 
 INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "greeting": {
+        "patterns": [
+            r"^(\u4f60\u597d|hi|hello|hey|\u55a8|\u65e9\u4e0a\u597d|\u4e0b\u5348\u597d|\u665a\u4e0a\u597d|\u5728\u5417|\u5728\u4e0d\u5728)[\s!\uff01。\。.]*$",
+            r"^(\u4f60\u597d|hi|hello|hey|\u55a8|\u65e9\u4e0a\u597d|\u4e0b\u5348\u597d|\u665a\u4e0a\u597d|\u5728\u5417|\u5728\u4e0d\u5728)[\s!\uff01。\。.]*",
+        ],
+        "required_params": [],
+        "optional_params": [],
+    },
     "cookie_manage": {
         "patterns": [
             r"(cookie|\u767b\u5f55\u6001|9222).*?(\u68c0\u67e5|\u63d0\u53d6|\u5237\u65b0|\u540c\u6b65|\u66f4\u65b0|\u7ba1\u7406)?",
@@ -188,6 +196,27 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "required_params": ["table_name"],
         "optional_params": ["depth", "source_table"],
+    },
+    "any_ods_modeling": {
+        "patterns": [
+            r"(oss|对象存储|\\.json|\\.csv|\\.parquet).*?(ods|入仓|贴源|建模)",
+            r"oss_path.*?ods",
+            r"(holo|hologres|实时).*?(ods|入仓|建模)",
+            r"(mysql|polardb|postgres|关系型).*?(ods|入仓|建模)",
+            r"(全链路|端到端|完整链路).*?(ods|dwd|dim|dws|建模|数仓)",
+            r"(ods|dwd|dim|dws).*?(全链路|端到端|完整链路|建模)",
+            r"(oss|hologres|mysql|polardb|postgres).*?(全链路|端到端|完整链路|入仓)",
+            r"(全链路|端到端|完整链路).*?(oss|hologres|mysql|polardb|postgres)",
+        ],
+        "required_params": [],
+        "optional_params": [
+            "goal", "table_name", "source_table", "layer", "domain",
+            "schedule_cycle", "source_type", "datasource_name", "oss_path",
+            "file_format", "ods_table", "dwd_table", "dim_table", "dws_table",
+            "task_id", "dev_schema", "granularity", "schedule_minute",
+            "holo_schema", "holo_table", "database", "sync_mode",
+            "incremental_column",
+        ],
     },
     "check_status": {
         "patterns": [

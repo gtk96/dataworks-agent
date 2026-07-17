@@ -110,7 +110,15 @@ class RequirementAgent:
             intent = self.intent_parser.parse(request.content)
 
             # 提取实体
-            entities = self.entity_extractor.extract(request.content)
+            entities = {
+                "table_name": self.entity_extractor.extract_table_name(request.content),
+                "table_names": self.entity_extractor.extract_table_names(request.content),
+                "source_table": self.entity_extractor.extract_source_table(request.content),
+                "layer": self.entity_extractor.extract_layer(request.content),
+                "depth": self.entity_extractor.extract_depth(request.content),
+                "task_id": self.entity_extractor.extract_task_id(request.content),
+                "domain": self.entity_extractor.extract_domain(request.content),
+            }
 
             # 检查是否需要澄清
             if intent.confidence < 0.7 or intent.action == "unknown":
@@ -245,15 +253,25 @@ class ModelingAgent:
 
     async def _handle_reverse_modeling(self, params: dict[str, Any]) -> AgentResponse:
         """处理逆向建模。"""
+        from dataworks_agent.runtime.reverse_flow import ReverseModelingRequest
+
         result = await self.reverse_flow.execute(
-            table_name=params.get("table_name", ""),
-            domain=params.get("domain", ""),
+            ReverseModelingRequest(
+                source_type="table",
+                source_value=params.get("table_name", ""),
+            )
         )
         return AgentResponse(
             success=result.success,
             response_type="proposal",
-            content=result.message if hasattr(result, "message") else "逆向建模完成",
-            data=getattr(result, "data", {}),
+            content=result.table_name or "逆向建模完成",
+            data={
+                "table_name": result.table_name,
+                "layer": result.layer,
+                "domain": result.domain,
+                "columns": result.columns,
+                "steps": result.steps,
+            },
             needs_approval=False,
         )
 
@@ -335,11 +353,57 @@ class GovernanceAgent:
 
     async def _validate_proposal(self, request: AgentRequest) -> AgentResponse:
         """执行提案校验。"""
-        result = self.proposal_guard.validate(request.content, request.context)
+        from dataworks_agent.semantic.guard import ValidationResult
+
+        result: dict[str, Any] = {"checks": [], "overall_passed": True}
+        all_errors: list[str] = []
+
+        # 1. 词根校验
+        fields = request.context.get("fields", [])
+        if fields:
+            root_result = self.proposal_guard.check_root(fields)
+            result["checks"].append({"name": "root", "passed": root_result.passed})
+            if not root_result.passed:
+                all_errors.extend(root_result.errors)
+                result["overall_passed"] = False
+
+        # 2. DDL 校验
+        ddl = request.context.get("ddl", "")
+        if ddl:
+            ddl_result = self.proposal_guard.check_ddl(ddl)
+            result["checks"].append({"name": "ddl", "passed": ddl_result.passed})
+            if not ddl_result.passed:
+                all_errors.extend(ddl_result.errors)
+                result["overall_passed"] = False
+
+        # 3. 分层校验
+        source_table = request.context.get("source_table", "")
+        target_table = request.context.get("target_table", "")
+        target_layer = request.context.get("target_layer", "")
+        if source_table and target_table and target_layer:
+            layer_result = self.proposal_guard.check_layer_dependency(
+                target_layer, [source_table]
+            )
+            result["checks"].append({"name": "layer", "passed": layer_result.passed})
+            if not layer_result.passed:
+                all_errors.extend(layer_result.errors)
+                result["overall_passed"] = False
+
+        # 4. 表名校验
+        if target_table:
+            name_result = self.proposal_guard.check_table_name(target_table)
+            result["checks"].append({"name": "table_name", "passed": name_result.passed})
+            if not name_result.passed:
+                all_errors.extend(name_result.errors)
+                result["overall_passed"] = False
+
+        if all_errors:
+            result["errors"] = all_errors
+
         return AgentResponse(
-            success=result.get("passed", False),
+            success=result["overall_passed"],
             response_type="validation_result",
-            content="提案校验完成",
+            content="提案校验完成" if result["overall_passed"] else "提案校验未通过",
             data=result,
         )
 
@@ -362,12 +426,19 @@ class GovernanceAgent:
     async def _consume_quality(self, request: AgentRequest) -> AgentResponse:
         """消费质量信号。"""
         task_id = request.context.get("task_id", "")
-        result = await self.dq_consumer.consume(task_id)
+        table_name = request.context.get("table_name", task_id)
+        result = await self.dq_consumer.fetch_quality_signals(table_name)
         return AgentResponse(
             success=True,
             response_type="quality_signal",
             content="质量信号消费完成",
-            data=result if isinstance(result, dict) else {},
+            data={
+                "table_name": result.table_name,
+                "freshness": result.freshness,
+                "completeness": result.completeness,
+                "uniqueness": result.uniqueness,
+                "quality_status": result.quality_status,
+            },
         )
 
 
@@ -410,16 +481,54 @@ class DiagnosisAgent:
     async def process(self, request: AgentRequest) -> AgentResponse:
         """处理诊断请求。"""
         try:
-            result = await self.self_heal.diagnose(
-                issue_description=request.content,
+            from dataworks_agent.runtime.self_heal import (
+                HealAction,
+                HealProposal,
+                HealResult,
+                IssueReport,
+                IssueType,
+            )
+
+            issue_type_str = request.context.get("issue_type", "schedule_failure")
+            try:
+                issue_type = IssueType(issue_type_str)
+            except ValueError:
+                issue_type = IssueType.SCHEDULE_FAILURE
+
+            issue = IssueReport(
+                issue_id=request.context.get("issue_id", ""),
+                issue_type=issue_type,
+                source=request.context.get("source", ""),
+                description=request.content,
                 context=request.context,
             )
+
+            proposal = await self.self_heal.diagnose(issue)
+
+            # 执行自愈提议
+            heal_result = await self.self_heal.execute(proposal)
+
+            result_data: dict[str, Any] = {
+                "proposal": {
+                    "proposal_id": proposal.proposal_id,
+                    "action": proposal.action.value,
+                    "description": proposal.description,
+                    "requires_approval": proposal.requires_approval,
+                    "affected_resources": proposal.affected_resources,
+                },
+                "heal_result": {
+                    "success": heal_result.success,
+                    "message": heal_result.message,
+                },
+                "summary": proposal.description,
+            }
+
             return AgentResponse(
-                success=True,
+                success=heal_result.success,
                 response_type="diagnosis",
-                content=result.get("summary", "诊断完成"),
-                data=result,
-                needs_approval=result.get("requires_approval", False),
+                content=proposal.description,
+                data=result_data,
+                needs_approval=proposal.requires_approval,
             )
         except Exception as e:
             logger.error("DiagnosisAgent 处理失败: %s", e)
@@ -543,9 +652,9 @@ class ArchitectureAgent:
     )
 
     def __init__(self) -> None:
-        from dataworks_agent.modeling.bus_matrix import BusinessDomainMatrix
+        from dataworks_agent.modeling.bus_matrix import BusMatrixManager
 
-        self.bus_matrix = BusinessDomainMatrix()
+        self.bus_matrix = BusMatrixManager()
 
     async def process(self, request: AgentRequest) -> AgentResponse:
         """处理架构请求。"""
@@ -612,6 +721,15 @@ class ArchitectureAgent:
         if target_layer:
             return f"用户指定目标分层为 {target_layer}"
         return f"根据源表 {source_table} 推断推荐分层"
+
+    async def _map_domain(self, request: AgentRequest) -> AgentResponse:
+        """执行业务域映射。"""
+        return AgentResponse(
+            success=True,
+            response_type="architecture_suggestion",
+            content="业务域映射完成",
+            data={"domain": request.context.get("domain", "unknown")},
+        )
 
 
 class Agent:

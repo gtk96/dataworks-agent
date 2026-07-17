@@ -1,0 +1,134 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e3]:
+    - complementary [ref=f1e4]:
+      - generic [ref=f1e5]:
+        - generic [ref=f1e6]: D
+        - generic [ref=f1e7]:
+          - strong [ref=f1e8]: DataWorks Agent
+          - generic [ref=f1e9]: 智能数仓工作台
+      - navigation [ref=f1e10]:
+        - generic [ref=f1e11]: 工作区
+        - link "Agent 会话" [ref=f1e12] [cursor=pointer]:
+          - /url: /
+        - link "任务运行" [ref=f1e18] [cursor=pointer]:
+          - /url: /tasks
+        - link "产物中心" [ref=f1e23] [cursor=pointer]:
+          - /url: /artifacts
+      - generic [ref=f1e29]:
+        - generic [ref=f1e30]: DW
+        - generic [ref=f1e31]:
+          - strong [ref=f1e32]: 开发工作空间
+          - generic [ref=f1e33]: Publish Gate 已启用
+    - generic [ref=f1e34]:
+      - generic [ref=f1e35]:
+        - generic [ref=f1e36]:
+          - strong [ref=f1e37]: Agent 会话
+          - generic [ref=f1e38]: Agent-first
+        - generic [ref=f1e39]:
+          - generic [ref=f1e40]: 开发环境
+          - generic [ref=f1e42]: 服务在线
+      - main [ref=f1e44]:
+        - generic [ref=f1e45]:
+          - complementary [ref=f1e46]:
+            - button [ref=f1e47] [cursor=pointer]
+            - generic [ref=f1e51]:
+              - generic [ref=f1e52]: 快捷能力
+              - button "正向建模" [ref=f1e53] [cursor=pointer]
+              - button "逆向建模" [ref=f1e58] [cursor=pointer]
+              - button "异常排查" [ref=f1e63] [cursor=pointer]
+              - button "自主问数" [ref=f1e68] [cursor=pointer]
+              - button "Cookie 管理" [ref=f1e73] [cursor=pointer]
+            - generic [ref=f1e79]:
+              - article [ref=f1e80]:
+                - generic [ref=f1e81]: 执行边界
+                - list [ref=f1e82]:
+                  - listitem [ref=f1e83]:
+                    - strong [ref=f1e84]: Dev 建表
+                    - generic [ref=f1e85]: 允许自动执行
+                  - listitem [ref=f1e86]:
+                    - strong [ref=f1e87]: Dev 建节点
+                    - generic [ref=f1e88]: 允许自动执行
+                  - listitem [ref=f1e89]:
+                    - strong [ref=f1e90]: 改已有节点
+                    - generic [ref=f1e91]: 执行前确认
+                  - listitem [ref=f1e92]:
+                    - strong [ref=f1e93]: 删除节点
+                    - generic [ref=f1e94]: 执行前确认
+                  - listitem [ref=f1e95]:
+                    - strong [ref=f1e96]: 生产发布
+                    - generic [ref=f1e97]: 人工确认
+              - article [ref=f1e98]:
+                - generic [ref=f1e99]: 知识边界
+                - paragraph [ref=f1e100]: 通用能力走线上产品；私有指标、目录和业务词沉淀到本地知识库。
+            - generic [ref=f1e102]:
+              - generic [ref=f1e103]: 执行底座
+              - generic [ref=f1e105]:
+                - generic [ref=f1e106]: LangGraph
+                - generic [ref=f1e107]: AK/SK
+                - generic [ref=f1e108]: OpenAPI
+                - generic [ref=f1e109]: MaxCompute
+                - generic [ref=f1e110]: Cookie
+                - generic [ref=f1e111]: "9222"
+                - generic [ref=f1e112]: 官方 MCP
+              - text: 7/7 条通道就绪
+          - generic [ref=f1e113]:
+            - generic [ref=f1e114]:
+              - generic [ref=f1e115]:
+                - generic [ref=f1e116]:
+                  - generic [ref=f1e117]: D
+                  - strong [ref=f1e118]: DataWorks Agent
+                  - generic [ref=f1e119]: Workspace
+                - paragraph [ref=f1e120]: 一句话完成通用建模、诊断、问数和审批编排；私有知识不硬编码进产品。
+              - generic [ref=f1e121]:
+                - generic [ref=f1e122]: HTTP 可用
+                - button "刷新能力状态" [ref=f1e124] [cursor=pointer]
+            - generic [ref=f1e130]:
+              - heading "今天想让数据 Agent 完成什么？" [level=1] [ref=f1e134]
+              - paragraph [ref=f1e135]: 直接描述业务目标。Agent 负责自动编排执行路径，改节点、删节点和生产发布会停在确认点。
+              - generic [ref=f1e136]:
+                - button "一句话建完整数仓链路 ODS、DWD、DIM、DWS 建表与任务一次完成" [ref=f1e137] [cursor=pointer]:
+                  - strong [ref=f1e142]: 一句话建完整数仓链路
+                  - generic [ref=f1e143]: ODS、DWD、DIM、DWS 建表与任务一次完成
+                - button "逆向理解存量模型 读取结构、节点、血缘并生成语义候选" [ref=f1e147] [cursor=pointer]:
+                  - strong [ref=f1e152]: 逆向理解存量模型
+                  - generic [ref=f1e153]: 读取结构、节点、血缘并生成语义候选
+                - button "排查失败与数据异常 汇总日志、依赖和健康状态，给恢复方案" [ref=f1e157] [cursor=pointer]:
+                  - strong [ref=f1e162]: 排查失败与数据异常
+                  - generic [ref=f1e163]: 汇总日志、依赖和健康状态，给恢复方案
+                - button "直接问业务数据 只读 SQL 护栏下自然语言查询 MaxCompute" [ref=f1e167] [cursor=pointer]:
+                  - strong [ref=f1e172]: 直接问业务数据
+                  - generic [ref=f1e173]: 只读 SQL 护栏下自然语言查询 MaxCompute
+            - generic [ref=f1e177]:
+              - generic [ref=f1e178]:
+                - textbox "给 DataWorks Agent 发消息，例如：把 <数据源>.<源表> 做成 ODS→DWD→DWS 小时链路并初始化" [ref=f1e179]: 把 <数据源> 的 <源表> 做成 ODS→DWD→DIM→DWS 全链路，创建开发表、节点和调度；先给我规划，不发布生产。
+                - generic [ref=f1e180]:
+                  - generic [ref=f1e181]:
+                    - generic [ref=f1e182]: 执行模式
+                    - radiogroup "segmented" [ref=f1e183]:
+                      - generic [ref=f1e184]:
+                        - generic [ref=f1e185] [cursor=pointer]:
+                          - radio "自动编排"
+                          - generic [ref=f1e186]: 自动编排
+                        - generic [ref=f1e187] [cursor=pointer]:
+                          - radio "只规划" [checked] [active]
+                          - generic [ref=f1e188]: 只规划
+                        - generic [ref=f1e189] [cursor=pointer]:
+                          - radio "开发执行(dev)"
+                          - generic [ref=f1e190]: 开发执行(dev)
+                  - button [ref=f1e191] [cursor=pointer]
+                  - generic [ref=f1e195]: 只生成计划和产物，不写线上环境
+                  - button [ref=f1e200] [cursor=pointer]
+              - paragraph [ref=f1e204]: Agent 可能会犯错，执行结果会保留审计记录；生产发布始终需要人工审批。
+  - tooltip "高级执行设置 初始化 ODS 数据 提交发布审批 只创建 Publish Gate，不自动上线" [ref=f1e205]:
+    - generic [ref=f1e206]:
+      - strong [ref=f1e207]: 高级执行设置
+      - generic [ref=f1e208]:
+        - generic [ref=f1e209]: 初始化 ODS 数据
+        - generic [ref=f1e210]:
+          - switch "初始化 ODS 数据" [checked]
+      - generic [ref=f1e213]:
+        - generic [ref=f1e214]:
+          - text: 提交发布审批
+          - generic [ref=f1e215]: 只创建 Publish Gate，不自动上线
+        - generic [ref=f1e216]:
+          - switch "提交发布审批 只创建 Publish Gate，不自动上线"

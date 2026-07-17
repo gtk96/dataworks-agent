@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from dataworks_agent.runtime.loop import LoopDecision
+from dataworks_agent.runtime.shims import LoopDecision
 
 _TRANSIENT_MARKERS = (
     "timeout",
@@ -94,7 +94,7 @@ class WorkflowOutcomeVerifier:
 
         if workflow_type == "ask_data":
             return self._verify_ask_data(result, mode, base_score)
-        if workflow_type == "forward_modeling":
+        if workflow_type in ("forward_modeling", "any_ods_modeling"):
             return self._verify_forward(result, mode, base_score, publish_requested)
         if workflow_type == "reverse_modeling":
             return self._verify_reverse(result, base_score)

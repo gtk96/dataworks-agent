@@ -16,10 +16,10 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-PartKind = Literal["schema", "metadata", "instruction", "prompt", "data_row"]
+PartKind = Literal["schema", "metadata", "instruction", "prompt", "response", "data_row"]
 
 # 允许出境的片段类型（不含 data_row）
-_ALLOWED_KINDS: frozenset[str] = frozenset({"schema", "metadata", "instruction", "prompt"})
+_ALLOWED_KINDS: frozenset[str] = frozenset({"schema", "metadata", "instruction", "prompt", "response"})
 
 
 class RowDataViolationError(RuntimeError):
@@ -41,11 +41,21 @@ class LLMContext:
     parts: list[ContextPart] = field(default_factory=list)
 
     def to_messages(self) -> list[dict[str, str]]:
-        """转成 OpenAI chat messages（instruction→system，其余→user）。"""
+        """转成 OpenAI chat messages（instruction→system，最后一个 prompt→user）。"""
         messages: list[dict[str, str]] = []
-        for p in self.parts:
-            role = "system" if p.kind in ("instruction", "prompt") else "user"
-            messages.append({"role": role, "content": p.content})
+        for i, p in enumerate(self.parts):
+            if p.kind == "instruction":
+                messages.append({"role": "system", "content": p.content})
+            elif p.kind == "prompt":
+                # 最后一个 prompt 作为 user 消息
+                if i == len(self.parts) - 1:
+                    messages.append({"role": "user", "content": p.content})
+                else:
+                    messages.append({"role": "system", "content": p.content})
+            elif p.kind == "response":
+                messages.append({"role": "assistant", "content": p.content})
+            else:
+                messages.append({"role": "user", "content": p.content})
         return messages
 
 
@@ -69,6 +79,11 @@ class ContextBuilder:
 
     def add_prompt(self, content: str) -> ContextBuilder:
         self._parts.append(ContextPart(kind="prompt", content=content))
+        return self
+
+    def add_response(self, content: str) -> ContextBuilder:
+        """添加助手回复到上下文。"""
+        self._parts.append(ContextPart(kind="response", content=content))
         return self
 
     def build(self) -> LLMContext:

@@ -417,6 +417,18 @@ class AnomalyReportModel(Base):
     created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
 
 
+class ConversationHistoryModel(Base):
+    """对话历史持久化 — 支撑跨重启的连续对话能力。"""
+
+    __tablename__ = "conversation_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(128), index=True)
+    role: Mapped[str] = mapped_column(String(10))  # user / assistant
+    content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
+
+
 class UserDirectoryModel(Base):
     """用户目录 — 身份与权限。
 

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from importlib.metadata import version
@@ -29,11 +30,18 @@ from dataworks_agent.naming.schedule import (
     HOURLY_SQL_PARAMETERS,
     generate_cron,
 )
-from dataworks_agent.runtime.evaluator import Evaluator
-from dataworks_agent.runtime.loop import (
+from dataworks_agent.runtime.shims import (
+    ConfirmRequest,
+    Evaluator,
+    IntentConfirmGate,
     LoopDecision,
     LoopKernel,
     LoopPolicy,
+    MemoryEntry,
+    MemoryLayeringService,
+    MemoryType,
+    ReflectionEngine,
+    ReflectionResult,
     RepairResult,
     StopReason,
 )
@@ -46,9 +54,37 @@ from dataworks_agent.state import app_state
 logger = logging.getLogger(__name__)
 
 ExecutionMode = Literal["plan", "dev_execute"]
-_MODELING_ACTIONS = {"agent_workflow", "ods_dwd_modeling", "forward_modeling"}
+_MODELING_ACTIONS = {"agent_workflow", "ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
 _FINAL_STATUSES = {"completed", "failed", "cancelled"}
 _WRITE_WORDS = ("创建", "新建", "建好", "执行", "初始化", "生成任务", "落地", "部署开发")
+_CJK_RE = re.compile(r"[一-鿿]+")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ASK_DOMAIN_ALBUM_HINTS: dict[str, int] = {
+    # Curated DataMap album ids that are explicitly tagged for the request.
+    # Order matters: earlier (more specific) hint wins on tie.
+    "订单": 436,        # 订单数据（ods 层）订单
+    "订单信息": 436,
+    "订单明细": 436,
+    "客户订单": 436,
+    "用户订单": 436,
+    "订单模型": 328,    # 模型汇总
+    "订单汇总": 328,
+    "订单汇总模型": 328,
+}
+
+
+def _as_int(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _today_partition_value() -> str:
+    """Return yesterday's date in yyyymmdd (max-safe default sample)."""
+    from datetime import datetime, timedelta
+
+    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
 
 
 class QueryNeedsClarificationError(ValueError):
@@ -106,6 +142,9 @@ class AgentWorkflowService:
         self._metric_query_planner = MetricQueryPlanner(knowledge_base=self._knowledge_base)
         self._outcome_verifier = WorkflowOutcomeVerifier()
         self._evaluator = Evaluator()
+        self._reflection_engine = ReflectionEngine()
+        self._intent_confirm_gate = IntentConfirmGate()
+        self._memory_layering = MemoryLayeringService()
 
     def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
@@ -163,7 +202,7 @@ class AgentWorkflowService:
             decision: LoopDecision,
             iteration: int,
         ) -> RepairResult:
-            return await self._repair_loop(decision, iteration)
+            return await self._repair_loop(result, decision, iteration, message)
 
         outcome = await kernel.run(
             objective=message,
@@ -186,6 +225,20 @@ class AgentWorkflowService:
                 result.errors.append(contract_error)
             if result.message and "不会标记为完成" not in result.message:
                 result.message += " 结果未通过统一 Loop 验收，不会标记为完成。"
+        elif outcome.stop_reason == StopReason.APPROVAL_REQUIRED and not result.success:
+            # Intent confirmation: 对于破坏性操作，拦截并请求用户确认
+            confirm_req = await self._handle_intent_confirmation(
+                outcome=outcome,
+                message=message,
+                routed=routed,
+            )
+            if confirm_req:
+                result.data["confirm_request"] = confirm_req.to_dict()
+                result.message = (
+                    f"⚠️ 意图确认: {confirm_req.description}\n"
+                    f"请求 ID: {confirm_req.request_id}\n"
+                    f"请在 {int(confirm_req.ttl_seconds)} 秒内回复确认或拒绝。"
+                )
         self._finish_loop_event_log(event_log, event_run_id, outcome.success)
         return result
 
@@ -203,7 +256,7 @@ class AgentWorkflowService:
         if routed == "cookie_manage":
             return await self._manage_cookie(message, mode)
         if routed == "ask_data":
-            return await self._ask_data(message, mode, params.get("business_query"))
+            return await self._ask_data(message, mode, params)
         if routed == "reverse_modeling":
             return await self._reverse_model(message, params, mode)
         if routed == "diagnose_issue":
@@ -221,7 +274,7 @@ class AgentWorkflowService:
     def _loop_policy(workflow_type: str, mode: ExecutionMode) -> LoopPolicy:
         if mode == "plan":
             return LoopPolicy(max_iterations=1, max_same_action=1, deadline_seconds=180)
-        if workflow_type == "forward_modeling":
+        if workflow_type in ("forward_modeling", "any_ods_modeling"):
             return LoopPolicy(
                 max_iterations=2,
                 max_same_action=2,
@@ -242,7 +295,14 @@ class AgentWorkflowService:
             deadline_seconds=max(180, settings.ask_data_timeout_seconds * 2),
         )
 
-    async def _repair_loop(self, decision: LoopDecision, iteration: int) -> RepairResult:
+    async def _repair_loop(
+        self,
+        result: WorkflowResult,
+        decision: LoopDecision,
+        iteration: int,
+        objective: str = "",
+    ) -> RepairResult:
+        # 1. 确定性修复（已有逻辑）
         if decision.failure_class == "authentication":
             bff = getattr(app_state, "_bff_client", None)
             if bff is None:
@@ -274,6 +334,49 @@ class AgentWorkflowService:
                 "DWS/DWD reconciliation has a short refresh lag; retry after waiting.",
                 {"retry_delay_seconds": delay},
             )
+
+        # 2. Reflection 修复（Harness Reflection 支柱）
+        # 当确定性修复无法处理时，启动 LLM 反思分析
+        reflection = await self._reflection_engine.reflect(
+            run_id=decision.evidence.get("run_id", f"iter_{iteration}"),
+            iteration=iteration,
+            objective=objective or result.message or "unknown",
+            action_taken=result.workflow_type or "unknown",
+            verification_result={
+                "checks": [
+                    {
+                        "check_name": "loop_decision",
+                        "passed": decision.passed,
+                        "severity": "error" if not decision.passed else "info",
+                        "message": decision.summary,
+                    }
+                ],
+                "score": decision.score,
+                "failure_class": decision.failure_class,
+            },
+            previous_reflections=self._reflection_engine.get_reflection_history(
+                run_id=decision.evidence.get("run_id", ""),
+            ),
+        )
+
+        # 3. 存储到 Episodic 记忆层
+        self.store_episodic_memory(
+            content={
+                "category": reflection.category,
+                "root_cause": reflection.root_cause,
+                "score": decision.score,
+                "adjustment": reflection.strategy_adjustment,
+            },
+            tags=["reflection", reflection.category],
+            source="loop_repair",
+        )
+
+        # 4. 基于反思结果生成修复策略
+        repair_result = self._repair_from_reflection(reflection, decision, iteration)
+        if repair_result.applied:
+            return repair_result
+
+        # 4. 最终回退：无法修复
         return RepairResult(False, "", "没有安全、确定性的自动修复动作。")
 
     @staticmethod
@@ -298,6 +401,184 @@ class AgentWorkflowService:
         except Exception as exc:
             logger.warning("Loop EventLog 初始化失败，继续执行主链路: %s", exc)
             return None, ""
+
+    async def _repair_from_reflection(
+        self,
+        reflection: ReflectionResult,
+        decision: LoopDecision,
+        iteration: int,
+    ) -> RepairResult:
+        """基于 LLM 反思结果生成修复策略。
+
+        参考 Harness Reflection 支柱：
+        - 确定性验证失败后，LLM 分析偏差根因
+        - 生成可执行的策略调整建议
+        - 避免盲目重试，改为有方向的修正
+        """
+        category = reflection.category
+        adjustment = reflection.strategy_adjustment
+
+        # 根据反思类别生成对应的修复动作
+        if category == "insufficient_context":
+            return RepairResult(
+                True,
+                "reflect_insufficient_context",
+                f"上下文不足: {adjustment}",
+                {"reflection": reflection.to_dict(), "needs_clarification": True},
+            )
+        elif category == "wrong_tool":
+            return RepairResult(
+                True,
+                "reflect_wrong_tool",
+                f"工具不当: {adjustment}",
+                {"reflection": reflection.to_dict(), "retry_with_alternative": True},
+            )
+        elif category == "constraint_violation":
+            return RepairResult(
+                False,
+                "reflect_constraint_violation",
+                f"红线违反: {adjustment} — 已阻断，需人工介入",
+                {"reflection": reflection.to_dict(), "blocked": True},
+            )
+        elif category == "strategy_flaw":
+            # 策略缺陷：调整参数后重试
+            delay = min(0.5 * (2 ** max(iteration - 1, 0)), 2.0)
+            return RepairResult(
+                True,
+                "reflect_strategy_retry",
+                f"策略调整: {adjustment}，{delay:.1f}s 后重试",
+                {"reflection": reflection.to_dict(), "retry_delay_seconds": delay},
+            )
+        elif category == "incorrect_input":
+            return RepairResult(
+                True,
+                "reflect_input_correction",
+                f"输入修正: {adjustment}",
+                {"reflection": reflection.to_dict(), "reparse_input": True},
+            )
+
+        # 未知类别：不盲目重试
+        return RepairResult(
+            False,
+            "reflect_unknown",
+            f"未知偏差类别: {category} — {adjustment}",
+            {"reflection": reflection.to_dict(), "manual_intervention": True},
+        )
+
+    async def _llm_reflect(self, prompt: str) -> str:
+        """LLM 反思回调 — 实际使用时注入 LLM 客户端。
+
+        当前为 stub，返回确定性回退结果。
+        子类或外部注入可覆盖此方法。
+        """
+        # TODO: 注入实际 LLM 调用
+        # from dataworks_agent.config import settings
+        # client = OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
+        # response = client.chat.completions.create(...)
+        # return response.choices[0].message.content
+        return "{}"
+
+    async def _handle_intent_confirmation(
+        self,
+        *,
+        outcome: Any,
+        message: str,
+        routed: str,
+    ) -> ConfirmRequest | None:
+        """处理意图确认：当 Loop 因 APPROVAL_REQUIRED 停止时拦截。
+
+        核心逻辑：
+        1. 判断操作是否属于高风险（DROP/DELETE/PUBLISH/DEPLOY）
+        2. 如果是，生成确认请求并返回给用户
+        3. 如果用户已确认，继续执行；否则阻断
+        """
+        # 提取操作信息
+        result_data = outcome.get("result", {}) if isinstance(outcome, dict) else {}
+
+        # 从结果中提取操作类型
+        action = self._extract_action_type(result_data, routed)
+        target = self._extract_action_target(result_data, message)
+
+        if action and IntentConfirmGate().needs_confirmation(action):
+            gate = self._intent_confirm_gate
+            description = f"操作类型: {action}, 目标: {target}"
+            risk = "critical" if action in ("drop_table", "delete_node") else "high"
+
+            confirm_req = await gate.request_confirmation(
+                action=action,
+                target=target or "unknown",
+                description=description,
+                risk_level=risk,
+                payload={"routed": routed, "message": message},
+            )
+            return confirm_req
+
+        return None
+
+    @staticmethod
+    def _extract_action_type(result_data: dict, routed: str) -> str | None:
+        """从结果数据中提取操作类型。"""
+        # 优先从 result_data 中读取
+        action = result_data.get("action_type") or result_data.get("change_type")
+        if action:
+            return action
+
+        # 根据 routed 类型推断
+        type_map = {
+            "drop_table": "drop_table",
+            "delete_node": "delete_node",
+            "publish": "publish",
+            "deploy": "deploy",
+            "execute_ddl": "execute_ddl",
+        }
+        return type_map.get(routed)
+
+    @staticmethod
+    def _extract_action_target(result_data: dict, message: str) -> str:
+        """从结果数据或消息中提取操作目标。"""
+        target = result_data.get("target") or result_data.get("table_name") or result_data.get("node_name")
+        if target:
+            return target
+        # 从消息中提取表名/节点名
+        if "table" in message.lower() or "表" in message:
+            return message[:50]
+        return "unknown"
+
+    def store_episodic_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+        """存储 Episodic 记忆（对话轨迹、执行记录）。"""
+        import uuid
+        entry = MemoryEntry(
+            entry_id=f"ep_{uuid.uuid4().hex[:12]}",
+            memory_type=MemoryType.EPISODIC,
+            content=content,
+            tags=tags or [],
+            source=source,
+        )
+        return self._memory_layering.store(entry)
+
+    def store_semantic_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+        """存储 Semantic 记忆（领域知识、规则）。"""
+        import uuid
+        entry = MemoryEntry(
+            entry_id=f"sm_{uuid.uuid4().hex[:12]}",
+            memory_type=MemoryType.SEMANTIC,
+            content=content,
+            tags=tags or [],
+            source=source,
+        )
+        return self._memory_layering.store(entry)
+
+    def store_procedural_memory(self, content: dict[str, Any], tags: list[str] | None = None, source: str = "") -> MemoryEntry:
+        """存储 Procedural 记忆（工作流模式、修复策略）。"""
+        import uuid
+        entry = MemoryEntry(
+            entry_id=f"pr_{uuid.uuid4().hex[:12]}",
+            memory_type=MemoryType.PROCEDURAL,
+            content=content,
+            tags=tags or [],
+            source=source,
+        )
+        return self._memory_layering.store(entry)
 
     @staticmethod
     def _loop_observer(event_log: Any | None, run_id: str):
@@ -338,7 +619,18 @@ class AgentWorkflowService:
         loop_data: dict[str, Any],
         workflow_type: str,
     ) -> None:
-        result.data["loop"] = loop_data
+        # Never attach raw iteration objects to the chat payload — SSE/JSON must stay plain.
+        safe_loop = {
+            "run_id": loop_data.get("run_id"),
+            "objective": loop_data.get("objective"),
+            "success": loop_data.get("success"),
+            "stop_reason": loop_data.get("stop_reason"),
+            "iteration_count": loop_data.get("iteration_count"),
+            "best_score": loop_data.get("best_score"),
+            "elapsed_ms": loop_data.get("elapsed_ms"),
+            "runtime": loop_data.get("runtime"),
+        }
+        result.data["loop"] = safe_loop
         iterations = int(loop_data.get("iteration_count") or 0)
         success = bool(loop_data.get("success"))
         self._evaluator.record_metric("loop_verified_success", 1.0 if success else 0.0, "ratio")
@@ -352,7 +644,7 @@ class AgentWorkflowService:
                     "workflow_type": workflow_type,
                     "objective": loop_data.get("objective"),
                 },
-                output_data={"loop": loop_data, "errors": result.errors},
+                output_data={"loop": safe_loop, "errors": result.errors},
                 failure_reason=str(loop_data.get("stop_reason") or "verification_failed"),
                 run_id=str(loop_data.get("run_id") or ""),
                 category=f"{workflow_type}_loop",
@@ -406,6 +698,9 @@ class AgentWorkflowService:
             "official_mcp": official.status.to_dict()
             if official
             else {"enabled": False, "connected": False},
+            # Native Cookie/BFF table search + IDA query (inspired by data-mcp tools)
+            "table_search": cookie_bff,
+            "ida_query": cookie_bff,
         }
 
     async def _manage_cookie(self, message: str, mode: ExecutionMode) -> WorkflowResult:
@@ -998,10 +1293,14 @@ class AgentWorkflowService:
         self,
         message: str,
         mode: ExecutionMode,
-        business_query: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> WorkflowResult:
+        params = params or {}
+        business_query = params.get("business_query")
         try:
-            query_plan = await self._build_query_plan(message, business_query)
+            query_plan = await self._build_query_plan(
+                message, business_query, params=params
+            )
         except QueryNeedsClarificationError as clarification:
             return self._query_clarification_result(clarification, mode)
 
@@ -1033,13 +1332,12 @@ class AgentWorkflowService:
 
         errors: list[str] = []
         prefer_cookie = self._prefer_cookie_query(sql)
+        # Cookie/BFF first for production-ish projects and Chinese discovery results;
+        # AK/SK MaxCompute remains the second channel.
         channels = (
             ("cookie_bff", "maxcompute_ak_sk")
             if prefer_cookie
-            else (
-                "maxcompute_ak_sk",
-                "cookie_bff",
-            )
+            else ("maxcompute_ak_sk", "cookie_bff")
         )
         for channel in channels:
             try:
@@ -1050,12 +1348,12 @@ class AgentWorkflowService:
                 return await self._query_success(query_plan, artifacts, columns, rows, channel)
             except Exception as exc:
                 brief = self._brief_error(exc)
-                errors.append(brief)
+                errors.append(f"{channel}: {brief}")
                 logger.warning("%s 问数失败，准备切换下一通道: %s", channel, exc)
 
         return WorkflowResult(
             False,
-            "只读 SQL 已生成，但 AK/SK 与 Cookie BFF 查询通道均未成功执行。",
+            "只读 SQL 已生成，但 Cookie BFF 与 AK/SK 查询通道均未成功执行。",
             "ask_data",
             mode,
             steps=[
@@ -1066,7 +1364,10 @@ class AgentWorkflowService:
             data={
                 "semantic_plan": query_plan.semantic_artifact()["content"],
                 "query": {"sql": sql, "executed": False, "limit": settings.ask_data_default_limit},
-                "next_actions": ["检查 9222 登录态与 Cookie BFF", "核对 MaxCompute 查询权限"],
+                "next_actions": [
+                    "检查 9222 登录态与 Cookie BFF",
+                    "核对 MaxCompute 查询权限",
+                ],
             },
             errors=list(dict.fromkeys(errors)),
         )
@@ -1101,14 +1402,33 @@ class AgentWorkflowService:
 
     @staticmethod
     async def _run_cookie_bff_query_once(bff: Any, sql: str) -> tuple[list[Any], list[Any]]:
-        job_code = await asyncio.wait_for(
-            bff.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
-        )
+        """Run read-only SQL via Cookie BFF.
+
+        Prefer IDA (createExecutorJob4Ida) like data-mcp: broader account access and
+        no resource-group dependency. Fall back to IDE createExecutorJobV3.
+        """
+        job_code = None
+        used_ida = False
+        if hasattr(bff, "execute_sql_ida"):
+            job_code = await asyncio.wait_for(
+                bff.execute_sql_ida(sql), timeout=settings.ask_data_timeout_seconds
+            )
+            used_ida = bool(job_code)
+        if not job_code:
+            job_code = await asyncio.wait_for(
+                bff.execute_sql(sql), timeout=settings.ask_data_timeout_seconds
+            )
         if not job_code:
             raise RuntimeError(getattr(bff, "last_error", None) or "BFF 未返回查询任务")
-        completed = await asyncio.wait_for(
-            bff.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
-        )
+
+        if used_ida and hasattr(bff, "wait_ida_job"):
+            completed = await asyncio.wait_for(
+                bff.wait_ida_job(job_code), timeout=settings.ask_data_timeout_seconds
+            )
+        else:
+            completed = await asyncio.wait_for(
+                bff.wait_job(job_code), timeout=settings.ask_data_timeout_seconds
+            )
         if not completed:
             raise RuntimeError(getattr(bff, "last_error", None) or "BFF 查询任务未成功")
         result = await asyncio.wait_for(
@@ -1126,8 +1446,16 @@ class AgentWorkflowService:
     @staticmethod
     def _prefer_cookie_query(sql: str) -> bool:
         lowered = sql.lower()
-        production_projects = {"giikin_aliyun", settings.dataworks_prod_schema.lower()}
-        return any(f"{project}." in lowered for project in production_projects if project)
+        # Prefer Cookie/IDA for business projects commonly searched via Chinese keywords.
+        preferred_projects = {
+            "giikin_aliyun",
+            "giikin",
+            "giikin_develop",
+            settings.dataworks_prod_schema.lower(),
+            settings.dataworks_dev_schema.lower(),
+            (settings.maxcompute_project or "").lower(),
+        }
+        return any(f"{project}." in lowered for project in preferred_projects if project)
 
     @staticmethod
     def _is_cookie_auth_error(exc: Exception) -> bool:
@@ -1613,23 +1941,39 @@ class AgentWorkflowService:
         return (await self._build_query_plan(message)).sql
 
     async def _build_query_plan(
-        self, message: str, business_query: dict[str, Any] | None = None
+        self,
+        message: str,
+        business_query: dict[str, Any] | None = None,
+        *,
+        params: dict[str, Any] | None = None,
     ) -> MetricQueryPlan:
+        params = params or {}
         fenced = re.search(r"```sql\s*(.*?)```", message, re.I | re.S)
         if fenced:
             return self._ad_hoc_query_plan(fenced.group(1).strip(), "用户提供 SQL")
-        table = self._extractor.extract_table_name(message)
+        table = (
+            params.get("table_name")
+            or params.get("source_table")
+            or self._extractor.extract_table_name(message)
+        )
         if not table:
             raw = re.search(r"(?:查询|统计|查看|表)\s*([A-Za-z][A-Za-z0-9_.]+)", message)
             table = raw.group(1) if raw else None
-        if table:
-            assert_safe_table_name(table.split(".")[-1])
-            sql = (
-                f"SELECT COUNT(*) AS row_count FROM {table}"
-                if any(k in message for k in ("多少条", "行数", "count"))
-                else f"SELECT * FROM {table} LIMIT {settings.ask_data_default_limit}"
-            )
-            return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table)
+
+        # Physical English table names can be queried directly.
+        if table and self._looks_like_physical_table(str(table)):
+            table_name = str(table)
+            assert_safe_table_name(table_name.split(".")[-1])
+            sql = self._build_simple_table_sql(message, table_name)
+            return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table_name)
+
+        # Chinese business keywords (e.g. 订单表) → Cookie BFF search_tables first
+        # (same path data-mcp uses: dma/searchTables + optional ref_count ranking).
+        search_keyword = self._extract_table_search_keyword(message, params)
+        if search_keyword:
+            resolved = await self._resolve_table_via_bff_search(search_keyword, message)
+            if resolved is not None:
+                return resolved
 
         candidate_tables = (
             self._metric_query_planner.candidate_tables_for_query(business_query)
@@ -1681,7 +2025,14 @@ class AgentWorkflowService:
                 missing_contract_fields=knowledge_result.missing_contract_fields,
             )
         if not settings.llm_api_key:
-            raise QueryNeedsClarificationError(message, album_contexts)
+            raise QueryNeedsClarificationError(
+                message,
+                album_contexts,
+                reason=(
+                    f"未在元数据搜表 / 语义层命中“{search_keyword or message}”对应的物理表。"
+                    "请补充英文表名（如 dwd_trade_order_detail），或确认 Cookie BFF 可用。"
+                ),
+            )
 
         from dataworks_agent.llm.context import ContextBuilder
         from dataworks_agent.llm.service import LLMService
@@ -1702,6 +2053,570 @@ class AgentWorkflowService:
             for item in album_contexts
         ]
         return plan
+
+    @staticmethod
+    def _looks_like_physical_table(value: str) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        # Chinese labels like 订单 / 订单表 are search keywords, not physical tables.
+        if re.search(r"[一-鿿]", text):
+            return False
+        return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)?", text))
+
+    @classmethod
+    def _extract_table_search_keyword(
+        cls, message: str, params: dict[str, Any] | None = None
+    ) -> str:
+        params = params or {}
+        for key in ("table_name", "source_table", "keyword"):
+            value = str(params.get(key) or "").strip()
+            if value and not cls._looks_like_physical_table(value):
+                return value.removesuffix("表").strip() or value
+
+        # Strip leading chat verbs so "查询销售表" / "看看广告消耗表" -> bare noun + 表.
+        text = message.strip()
+        text = re.sub(
+            r"^(?:请)?(?:帮我)?(?:查(?:询|看)?|检索|找|看){1,3}(?:一下|一|下)?",
+            "",
+            text,
+        )
+        match = re.search(r"([一-龥A-Za-z0-9_]{1,24})表", text)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r"([一-龥A-Za-z0-9_]{1,24})表", message)
+        if match:
+            return match.group(1).strip()
+        return ""
+
+    @staticmethod
+    def _user_wants_non_ods(message: str) -> bool:
+        """Return True when the user is asking about the business layer.
+
+        Default = True (Chinese business wording like 订单表 / 销售表 maps to
+        DWS/DWD/DIM, not ODS). Opt out via ODS / 贴源 / 原始 / 同步 wording
+        so the full candidate list stays available.
+        """
+        text = (message or "").lower()
+        ods_markers = (
+            "ods",
+            "贴源",
+            "原始",
+            "同步表",
+            "同步层",
+            "dataworks层",
+        )
+        return not any(marker in text for marker in ods_markers)
+
+    @staticmethod
+    def _build_simple_table_sql(message: str, table: str) -> str:
+        if any(k in message for k in ("多少条", "行数", "count", "数量")):
+            return f"SELECT COUNT(*) AS row_count FROM {table}"
+        return f"SELECT * FROM {table} LIMIT {settings.ask_data_default_limit}"
+
+    @staticmethod
+    def _project_of(table: str) -> str:
+        return table.split(".", 1)[0].lower() if "." in table else ""
+
+    @staticmethod
+    def _partition_columns_for(table: str) -> tuple[str, ...]:
+        """Resolve partition columns per dataworks-agent / data-mcp knowledge.
+
+        Project rules (dataworks_agent.standards.steering.data-warehouse-standards):
+        - giikin_aliyun uses ``pt`` (single daily partition).
+        - giikin / giikin_develop use ``dt`` (+ optional ``ht``).
+        - Tables whose name ends in ``_hour`` / ``_hourly`` need ``dt + ht``.
+
+        Returns an ordered tuple suitable for ``WHERE pk='X' AND pk='Y'``.
+        """
+        proj = AgentWorkflowService._project_of(table)
+        name = table.split(".")[-1].lower()
+        if proj == "giikin_aliyun":
+            return ("pt",)
+        if name.endswith(("_hour", "_hourly")):
+            return ("dt", "ht")
+        if proj.startswith("giikin"):
+            return ("dt",)
+        return ("dt",)
+
+    @staticmethod
+    def _partition_sample_value(col: str) -> str:
+        """Static placeholder partition value when no live evidence exists.
+
+        Follows data-mcp's ``submit_query`` guidance + project spec:
+        - For ``pt`` / ``dt`` use yesterday in yyyymmdd.
+        - For ``ht`` use 00 (zero hour) so a query never silently
+          over-fetches another day's data; the platform re-binds these
+          via ``${workspace.hour_last1h}`` at scheduling time.
+        """
+        if col == "ht":
+            return "00"
+        return _today_partition_value()
+
+    async def _partition_filter_clause(
+        self, table: str
+    ) -> tuple[str, str | None]:
+        """Pick ``WHERE ...`` clause and a sample partition value (or None).
+
+        Strategy:
+        1. Try ``bff.get_table_ddl`` for the project's PARTITIONED BY clause
+           (single source of truth — same lookup data-mcp describes).
+        2. Fall back to the project + name-suffix rules above.
+        Sample value comes from the most recent upstream task's parameter
+        values when available, otherwise stays ``None`` so callers know it
+        was a static rule-based guess.
+        """
+        bff = getattr(app_state, "_bff_client", None)
+        cols: tuple[str, ...] = ()
+        sample_value: str | None = None
+        partition_source = "static_rule"
+        if bff is not None:
+            try:
+                ddl = await bff.get_creation_ddl(f"odps.{table}")
+            except Exception as exc:
+                logger.warning("get_creation_ddl(%s) 失败: %s", table, exc)
+                ddl = None
+            if isinstance(ddl, str) and ddl:
+                parsed = self._parse_partition_columns_from_ddl(ddl)
+                if parsed:
+                    cols = parsed
+                    partition_source = "table_ddl"
+        if not cols:
+            cols = self._partition_columns_for(table)
+        # Try to fetch a recent business date hint (e.g. dt=20260701).
+        if bff is not None and any(c in {"dt", "pt"} for c in cols):
+            try:
+                params = await bff.get_node_params  # type: ignore[attr-defined]
+            except Exception:
+                params = None
+            if not params:
+                sample_value = None
+        clause = self._format_partition_clause(cols, sample_value)
+        return clause, partition_source
+
+    @staticmethod
+    def _parse_partition_columns_from_ddl(ddl: str) -> tuple[str, ...]:
+        match = re.search(
+            r"PARTITIONED\s+BY\s*\(([^)]*)\)",
+            ddl,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return ()
+        cols: list[str] = []
+        for raw in match.group(1).split(","):
+            name = raw.strip().split()[0].strip("`\"'[]")
+            if name:
+                cols.append(name)
+        return tuple(cols)
+
+    @staticmethod
+    def _format_partition_clause(
+        cols: tuple[str, ...], sample_value: str | None
+    ) -> str:
+        if not cols:
+            return ""
+        parts: list[str] = []
+        for col in cols:
+            value = sample_value or AgentWorkflowService._partition_sample_value(col)
+            parts.append(f"{col}='{value}'")
+        return " WHERE " + " AND ".join(parts)
+
+    @staticmethod
+    def _build_table_sql(
+        message: str,
+        table: str,
+        partition_clause: str,
+        *,
+        alias: str | None = None,
+    ) -> str:
+        if any(k in message for k in ("多少条", "行数", "count", "数量")):
+            base = f"SELECT COUNT(*) AS row_count FROM {table}{partition_clause}"
+        else:
+            base = f"SELECT * FROM {table}{partition_clause} LIMIT {settings.ask_data_default_limit}"
+        return base
+
+    async def _resolve_table_via_bff_search(
+        self, keyword: str, message: str
+    ) -> MetricQueryPlan | None:
+        """Resolve Chinese keywords to physical tables via Cookie BFF search.
+
+        Pipeline (inspired by data-mcp list_tables + the project's data-album
+        scorer in semantic/album_context.py):
+
+        1. Resolve the **business-domain album** first (e.g. 订单数据 / 订单信息 /
+           社交电商模型汇总). The album id is cached per-conversation-style
+           keyword so the same hot-keyword doesn't pay the album-list cost
+           twice.
+        2. Pull that album's entities (``list_meta_album_entities``) — these
+           are the strongest candidates because DataMap explicitly tagged
+           them as belonging to the requested business domain.
+        3. Augment with ``bff.search_tables(keyword)`` for long-tail hits
+           that the album may not yet cover.
+        4. Best-effort ``get_upstream_tasks`` for ``ref_count`` popularity.
+        5. Score = (album hit, ref_count). Album hit always wins ties.
+        """
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            return None
+
+        # 1. Resolve the most relevant business-domain album for this keyword.
+        album = await self._resolve_keyword_album(keyword)
+        album_entities: list[dict[str, Any]] = []
+        if album is not None:
+            try:
+                album_entities = await bff.list_meta_album_entities(
+                    album["album_id"], page_size=500
+                )
+            except Exception as exc:
+                logger.warning("list_meta_album_entities(%s) 失败: %s", album, exc)
+                album_entities = []
+
+        # 2. Free-text BFF search for the rest.
+        try:
+            tables = await bff.search_tables(keyword)
+        except Exception as exc:
+            if self._is_cookie_auth_error(exc):
+                refresh = await self._refresh_cookie_auth(bff)
+                if refresh.get("status") in {"success", "refreshed", "extracted_unverified"}:
+                    try:
+                        tables = await bff.search_tables(keyword)
+                    except Exception as retry_exc:
+                        logger.warning(
+                            "BFF search_tables(%s) 刷新后仍失败: %s", keyword, retry_exc
+                        )
+                        tables = []
+                else:
+                    logger.warning("BFF search_tables(%s) Cookie 失效: %s", keyword, exc)
+                    tables = []
+            else:
+                logger.warning("BFF search_tables(%s) 失败: %s", keyword, exc)
+                tables = []
+
+        # 3. Merge album entities (priority) with BFF search results.
+        # Filter out entries whose table_name is empty, contains "*" (BFF
+        # sometimes returns redacted project / table names) or fails the
+        # identifier whitelist — these would crash assert_safe_table_name.
+        def _clean_name(raw_name: object) -> str:
+            text = str(raw_name or "").strip()
+            if not text or "*" in text:
+                return ""
+            if not _IDENTIFIER_RE.match(text.split(".")[-1]):
+                return ""
+            return text
+
+        merged: dict[str, dict[str, Any]] = {}
+        for item in album_entities:
+            if not isinstance(item, dict):
+                continue
+            name = _clean_name(item.get("table_name") or item.get("name"))
+            project = _clean_name(item.get("project") or item.get("databaseName"))
+            if not name:
+                continue
+            full_name = f"{project}.{name}" if project else name
+            guid = str(item.get("entity_guid") or item.get("entityGuid") or "")
+            if not guid and project and name:
+                guid = f"odps.{project}.{name}"
+            merged[full_name.lower()] = {
+                "project": project,
+                "table_name": name,
+                "full_name": full_name,
+                "comment": item.get("comment") or "",
+                "entity_guid": guid,
+                "ref_count": 0,
+                "album_hit": True,
+                "album_id": album["album_id"] if album else None,
+                "album_name": album["name"] if album else "",
+                "album_category": str(item.get("remark") or ""),
+            }
+        for item in tables or []:
+            if not isinstance(item, dict):
+                continue
+            name = _clean_name(item.get("table_name") or item.get("name"))
+            project = _clean_name(item.get("project") or item.get("databaseName"))
+            if not name:
+                continue
+            full_name = f"{project}.{name}" if project else name
+            guid = str(item.get("entity_guid") or item.get("entityGuid") or "")
+            if not guid and project and name:
+                guid = f"odps.{project}.{name}"
+            key = full_name.lower()
+            row = merged.setdefault(
+                key,
+                {
+                    "project": project,
+                    "table_name": name,
+                    "full_name": full_name,
+                    "comment": item.get("comment") or "",
+                    "entity_guid": guid,
+                    "ref_count": int(item.get("ref_count") or 0),
+                    "album_hit": False,
+                    "album_id": None,
+                    "album_name": "",
+                    "album_category": "",
+                },
+            )
+            if not row.get("comment") and item.get("comment"):
+                row["comment"] = item.get("comment") or ""
+
+        normalized = list(merged.values())
+        if not normalized:
+            raise QueryNeedsClarificationError(
+                message,
+                [],
+                reason=(
+                    f"元数据搜表未命中“{keyword}”对应的 MaxCompute 表。"
+                    "请换更具体的关键词，或直接给出英文物理表名。"
+                ),
+                clarifying_questions=[
+                    "目标表的英文名是什么？例如 dwd_trade_order_detail",
+                    "表所在项目/空间是什么？例如 giikin / giikin_aliyun",
+                ],
+            )
+
+        # 4.5. Default to "business-facing" layers (DWS / DWD / DIM / DMR).
+        # Chinese business keywords like 订单表 normally mean the served
+        # layer, not the ODS layer. Let the user explicitly opt in via
+        # ODS-shaped phrasing before falling back.
+        prefer_non_ods = self._user_wants_non_ods(message)
+        if prefer_non_ods:
+            business = [
+                item
+                for item in normalized
+                if not str(item.get("table_name") or "").lower().startswith(
+                    ("ods_", "tb_ods_")
+                )
+            ]
+            if business:
+                normalized = business
+
+        # 5. ref_count popularity ranking for BFF-only candidates.
+        bff_only = [item for item in normalized if not item.get("album_hit")]
+        if bff_only and any(item.get("entity_guid") for item in bff_only):
+            await self._enrich_table_ref_counts(bff, bff_only)
+
+        # 6. Sort: album hit first, then ref_count desc.
+        normalized.sort(
+            key=lambda item: (
+                1 if item.get("album_hit") else 0,
+                int(item.get("ref_count") or 0),
+            ),
+            reverse=True,
+        )
+
+        top = normalized[0]
+        unique_names = {item["full_name"] for item in normalized}
+
+        # Album-anchored single hit is always a strong-rank hit.
+        if top.get("album_hit") and len(normalized) == 1:
+            return self._plan_single_hit(message, keyword, top)
+        if top.get("album_hit") and len(normalized) > 1:
+            runner_up_score = (
+                0
+                if not normalized[1].get("album_hit")
+                else int(normalized[1].get("ref_count") or 0)
+            )
+            top_key = int(top.get("ref_count") or 0)
+            # Album hit already beats non-album; only demote if a same-album
+            # candidate dominates ref_count by a wide margin.
+            if runner_up_score == 0 or top_key >= runner_up_score + 5:
+                return self._plan_single_hit(message, keyword, top)
+
+        # Single BFF-search hit with no album candidates: trust it as a
+        # unique result. This preserves the original behaviour of returning
+        # the candidate when metadata search yields exactly one table.
+        if len(normalized) == 1 and not top.get("album_hit"):
+            return self._plan_single_hit(message, keyword, top)
+        if len(unique_names) == 1 and len(normalized) > 1:
+            return self._plan_single_hit(message, keyword, top)
+
+        candidates = [
+            {
+                "table": item["full_name"],
+                "comment": item.get("comment") or "",
+                "ref_count": item.get("ref_count") or 0,
+                "album_hit": bool(item.get("album_hit")),
+                "album": item.get("album_name") or "",
+                "category": item.get("album_category") or "",
+                "entity_guid": item.get("entity_guid") or "",
+            }
+            for item in normalized[:10]
+        ]
+        album_label = top.get("album_name") or "未命中专辑"
+        raise QueryNeedsClarificationError(
+            message,
+            [],
+            reason=(
+                f"元数据搜表为“{keyword}”找到 {len(normalized)} 张候选表，"
+                f"建议专辑：{album_label}。请选择一张后再查询。"
+            ),
+            knowledge_matches=candidates,
+            clarifying_questions=[
+                "请从候选表中选择一张，或直接回复完整表名（project.table）。",
+                "如果目标是统计行数，也可以说：查 giikin.xxx 有多少条。",
+            ],
+        )
+
+    def _plan_single_hit(
+        self, message: str, keyword: str, item: dict[str, Any]
+    ) -> MetricQueryPlan:
+        table = item["full_name"]
+        bare = table.split(".")[-1] if "." in table else table
+        assert_safe_table_name(bare)
+        partition_clause, partition_source = (
+            self._build_table_partition_clause_sync(table)
+        )
+        sql = self._build_table_sql(message, table, partition_clause)
+        plan = self._ad_hoc_query_plan(
+            sql,
+            f"Cookie BFF + 业务域专辑命中：{keyword} → {table}",
+            table=table,
+        )
+        plan.selection_evidence.append(
+            f"album={item.get('album_name') or '-'} "
+            f"album_hit={int(bool(item.get('album_hit')))} "
+            f"ref_count={item.get('ref_count')} "
+            f"partition={partition_clause or 'none'} "
+            f"source={partition_source}"
+        )
+        return plan
+
+    @staticmethod
+    def _build_table_partition_clause_sync(table: str) -> tuple[str, str]:
+        """Best-effort partition filter when running synchronously."""
+        cols = AgentWorkflowService._partition_columns_for(table)
+        if not cols:
+            return "", "static_rule_no_partition"
+        return (
+            AgentWorkflowService._format_partition_clause(cols, None),
+            "static_rule",
+        )
+
+    @staticmethod
+    async def _enrich_table_ref_counts(
+        bff: Any, tables: list[dict[str, Any]], *, concurrency: int = 8
+    ) -> None:
+        """Attach popularity ranking using upstream task counts when available."""
+        if not tables:
+            return
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _one(item: dict[str, Any]) -> None:
+            guid = str(item.get("entity_guid") or "")
+            if not guid:
+                return
+            try:
+                async with semaphore:
+                    upstream = await bff.get_upstream_tasks(guid)
+                item["ref_count"] = len(upstream or [])
+            except Exception:
+                # Keep zero; ranking still works with partial data.
+                return
+
+        await asyncio.gather(*[_one(item) for item in tables])
+
+    async def _resolve_keyword_album(self, keyword: str) -> dict[str, Any] | None:
+        """Find the best matching DataMap album for a Chinese keyword.
+
+        Priority:
+        1. Curated album id in ``_ASK_DOMAIN_ALBUM_HINTS`` (the user-confirmed
+           authoritative album, e.g. 订单 → 订单数据（ods 层）订单 id=436).
+        2. Best-effort DataMap album list scan, scored by name/description
+           match + business tags (订单 / 模型汇总 / 汇总 / 社交电商).
+        """
+        bff = getattr(app_state, "_bff_client", None)
+        if bff is None:
+            return None
+        normalized = (keyword or "").strip()
+        if not normalized:
+            return None
+
+        # 1. Curated hint lookup first.
+        hinted_id = _ASK_DOMAIN_ALBUM_HINTS.get(normalized)
+        for tag, album_id in _ASK_DOMAIN_ALBUM_HINTS.items():
+            if tag and tag in normalized and album_id:
+                hinted_id = album_id
+                break
+        if hinted_id:
+            cache: dict[str, tuple[float, dict[str, Any] | None]] = getattr(
+                app_state, "_album_keyword_cache", {}
+            )
+            cached = cache.get(normalized)
+            now = time.monotonic()
+            if cached is not None and now - cached[0] < settings.ask_data_album_cache_seconds:
+                return cached[1]
+            try:
+                detail = await bff.get_meta_album(hinted_id)
+            except Exception as exc:
+                logger.warning("get_meta_album(%s) 失败: %s", hinted_id, exc)
+                detail = None
+            if isinstance(detail, dict):
+                hint = {
+                    "album_id": hinted_id,
+                    "name": str(detail.get("albumName") or detail.get("name") or ""),
+                    "description": str(
+                        detail.get("albumDesc") or detail.get("description") or ""
+                    ),
+                    "score": 100.0,
+                }
+                cache[normalized] = (now, hint)
+                app_state._album_keyword_cache = cache
+                return hint
+
+        # 2. Fallback: scan the album list.
+        cache = getattr(app_state, "_album_keyword_cache", {})
+        now = time.monotonic()
+        cached = cache.get(normalized)
+        if cached is not None and now - cached[0] < settings.ask_data_album_cache_seconds:
+            return cached[1]
+        try:
+            albums = await bff.list_meta_albums(page_size=100)
+        except Exception as exc:
+            logger.warning("list_meta_albums 失败: %s", exc)
+            cache[normalized] = (now, None)
+            app_state._album_keyword_cache = cache
+            return None
+        if not isinstance(albums, list) or not albums:
+            cache[normalized] = (now, None)
+            app_state._album_keyword_cache = cache
+            return None
+
+        best: dict[str, Any] | None = None
+        best_score = -1.0
+        for album in albums:
+            name = str(album.get("albumName") or album.get("name") or "").strip()
+            desc = str(album.get("albumDesc") or album.get("description") or "").strip()
+            score = 0.0
+            if name == normalized:
+                score += 20.0
+            if normalized and normalized in name:
+                score += 8.0
+            if name:
+                for token in _CJK_RE.findall(name):
+                    if token and token in normalized:
+                        score += 3.0
+            if normalized and normalized in desc:
+                score += 1.5
+            for tag, bonus in (
+                ("订单", 4.0),
+                ("模型汇总", 4.0),
+                ("汇总", 2.0),
+                ("社交电商", 1.0),
+            ):
+                if tag in name:
+                    score += bonus
+            if score > best_score:
+                best_score = score
+                best = {
+                    "album_id": _as_int(album.get("id") or album.get("albumId")),
+                    "name": name,
+                    "description": desc,
+                    "score": score,
+                }
+        result = best if best and best_score >= 4.0 else None
+        cache[normalized] = (now, result)
+        app_state._album_keyword_cache = cache
+        return result
 
     @staticmethod
     def _ad_hoc_query_plan(sql: str, evidence: str, *, table: str = "") -> MetricQueryPlan:

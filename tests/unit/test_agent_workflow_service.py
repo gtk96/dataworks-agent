@@ -12,7 +12,7 @@ from dataworks_agent.governance.closed_loop_verifier import (
     VerificationResult,
     VerificationStatus,
 )
-from dataworks_agent.runtime.loop import RepairResult
+from dataworks_agent.runtime.shims import RepairResult
 from dataworks_agent.semantic.album_context import AlbumTable, DataAlbumContext
 from dataworks_agent.semantic.query_planner import MetricQueryPlan
 from dataworks_agent.state import app_state

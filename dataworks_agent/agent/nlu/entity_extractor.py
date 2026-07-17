@@ -424,6 +424,44 @@ class EntityExtractor:
         )
         return match.group(1) if match else None
 
+
+    def extract_holo_schema(self, text: str) -> str | None:
+        """Extract Hologres schema name."""
+        match = re.search(
+            r"(?:holo[_\s]?schema|holo\s+schema|holo\s+\.?)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z][a-zA-Z0-9_]*)",
+            text, re.IGNORECASE
+        )
+        if match:
+            return match.group(1)
+        # Also match holo_schema.xxx pattern
+        match = re.search(r"holo[_\s]?schema[_\s]*[:\uff1a]\s*([a-zA-Z][a-zA-Z0-9_]*)", text, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    def extract_database(self, text: str) -> str | None:
+        """Extract database name for MySQL/PG."""
+        match = re.search(
+            r"(?:database|\u5e93|db)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z][a-zA-Z0-9_]*)",
+            text, re.IGNORECASE
+        )
+        return match.group(1) if match else None
+
+    def extract_sync_mode(self, text: str) -> str | None:
+        """Extract sync mode (full/incremental)."""
+        lowered = text.lower()
+        if any(k in lowered for k in ("增量", "incremental", "incr")):
+            return "incremental"
+        if any(k in lowered for k in ("全量", "full")):
+            return "full"
+        return None
+
+    def extract_incremental_column(self, text: str) -> str | None:
+        """Extract incremental sync column."""
+        match = re.search(
+            r"(?:增量\u5b57\u6bb5|incremental\s*column|\u589e\u91cf\u5217)\s*(?:\u4e3a|\u662f|[:\uff1a])?\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+            text, re.IGNORECASE
+        )
+        return match.group(1) if match else None
+
     def extract_params(self, text: str, template: dict[str, Any]) -> dict[str, Any]:
         """Extract params required by an intent template."""
         params: dict[str, Any] = {}
@@ -524,6 +562,22 @@ class EntityExtractor:
             prod_schema = self.extract_prod_schema(text)
             if prod_schema:
                 params["prod_schema"] = prod_schema
+        if "holo_schema" in wanted:
+            holo_schema = self.extract_holo_schema(text)
+            if holo_schema:
+                params["holo_schema"] = holo_schema
+        if "database" in wanted:
+            database = self.extract_database(text)
+            if database:
+                params["database"] = database
+        if "sync_mode" in wanted:
+            sync_mode = self.extract_sync_mode(text)
+            if sync_mode:
+                params["sync_mode"] = sync_mode
+        if "incremental_column" in wanted:
+            incremental_column = self.extract_incremental_column(text)
+            if incremental_column:
+                params["incremental_column"] = incremental_column
         if "goal" in wanted:
             params["goal"] = text.strip()
         return params

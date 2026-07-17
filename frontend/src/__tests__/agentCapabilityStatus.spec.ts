@@ -9,6 +9,8 @@ describe('Agent capability status', () => {
     cookie_bff: true,
     cdp_9222: true,
     official_mcp: { connected: true },
+    table_search: true,
+    ida_query: true,
   }
 
   it('shows LangGraph as the primary Agent runtime', () => {
@@ -23,18 +25,26 @@ describe('Agent capability status', () => {
   it('does not report an expired cookie as online', () => {
     const badges = buildCapabilityBadges({ ...base, cookie_health: 'expired' })
     expect(badges.find((item) => item.label.startsWith('Cookie'))).toEqual({ label: 'Cookie(过期)', online: false })
+    // AK/SK OpenAPI MaxCompute 9222 官方MCP = 5; Cookie/搜表/问数 offline
     expect(badges.filter((item) => item.online)).toHaveLength(5)
   })
 
   it.each(['healthy', 'warning'])('accepts %s cookie health as usable', (cookie_health) => {
     const badges = buildCapabilityBadges({ ...base, cookie_health })
     expect(badges.find((item) => item.label === 'Cookie')).toEqual({ label: 'Cookie', online: true })
-    expect(badges.filter((item) => item.online)).toHaveLength(6)
+    // + Cookie + 中文搜表 + IDA 问数
+    expect(badges.filter((item) => item.online)).toHaveLength(8)
   })
 
   it('shows partial degradation while keeping the Cookie fallback usable', () => {
     const badges = buildCapabilityBadges({ ...base, cookie_health: 'degraded' })
     expect(badges.find((item) => item.label.startsWith('Cookie'))).toEqual({ label: 'Cookie(部分降级)', online: true })
-    expect(badges.filter((item) => item.online)).toHaveLength(6)
+    expect(badges.filter((item) => item.online)).toHaveLength(8)
+  })
+
+  it('exposes native Chinese search and IDA query badges', () => {
+    const badges = buildCapabilityBadges({ ...base, cookie_health: 'healthy' })
+    expect(badges.find((item) => item.label === '中文搜表')).toEqual({ label: '中文搜表', online: true })
+    expect(badges.find((item) => item.label === 'IDA 问数')).toEqual({ label: 'IDA 问数', online: true })
   })
 })

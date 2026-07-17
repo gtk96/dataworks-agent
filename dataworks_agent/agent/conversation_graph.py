@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import aiosqlite
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 
@@ -22,13 +23,24 @@ class ConversationState(TypedDict, total=False):
 class ConversationGraph:
     """Keep structured workflow context in LangGraph checkpoints keyed by conversation id."""
 
-    def __init__(self) -> None:
-        builder = StateGraph(ConversationState)
-        builder.add_node("resolve_context", self._resolve_context)
-        builder.add_edge(START, "resolve_context")
-        builder.add_edge("resolve_context", END)
-        self._checkpointer = InMemorySaver()
-        self._graph = builder.compile(checkpointer=self._checkpointer)
+    def __init__(self, db_path: str = "data/conversation_checkpoints.db") -> None:
+        self._db_path = db_path
+        self._checkpointer: AsyncSqliteSaver | None = None
+        self._graph = None
+        self._initialized = False
+
+    async def _ensure_initialized(self) -> None:
+        """确保 checkpointer 已初始化。"""
+        if not self._initialized:
+            conn = await aiosqlite.connect(self._db_path)
+            self._checkpointer = AsyncSqliteSaver(conn)
+            await self._checkpointer.setup()
+            builder = StateGraph(ConversationState)
+            builder.add_node("resolve_context", self._resolve_context)
+            builder.add_edge(START, "resolve_context")
+            builder.add_edge("resolve_context", END)
+            self._graph = builder.compile(checkpointer=self._checkpointer)
+            self._initialized = True
 
     @staticmethod
     def _resolve_context(state: ConversationState) -> dict[str, Any]:
@@ -74,6 +86,7 @@ class ConversationGraph:
     ) -> str:
         if not conversation_id:
             return message
+        self._ensure_initialized()
         state = await self._graph.ainvoke(
             {"incoming_message": message, "context_updates": context_updates or {}},
             config=self._config(conversation_id),
@@ -83,6 +96,7 @@ class ConversationGraph:
     async def context(self, conversation_id: str | None) -> dict[str, Any]:
         if not conversation_id:
             return {}
+        await self._ensure_initialized()
         snapshot = await self._graph.aget_state(self._config(conversation_id))
         values = dict(snapshot.values or {})
         return {
@@ -105,6 +119,7 @@ class ConversationGraph:
     ) -> None:
         if not conversation_id:
             return
+        self._ensure_initialized()
         current = await self.context(conversation_id)
         root_objective = str(current.get("objective") or objective)
         await self._graph.aupdate_state(
@@ -116,6 +131,7 @@ class ConversationGraph:
                 "params": dict(params or current.get("params") or {}),
                 "workflow_state": dict(workflow_state or current.get("workflow_state") or {}),
             },
+            as_node="resolve_context",
         )
 
     async def pending_objective(self, conversation_id: str) -> str:

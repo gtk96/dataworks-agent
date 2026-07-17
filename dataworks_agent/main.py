@@ -1,6 +1,12 @@
 """FastAPI 应用入口 — lifespan 管理、路由挂载、静态文件服务。
 
 服务端口 :8085，serve 前端 dist/ + 提供 REST API + SSE + WebSocket。
+
+启动优化（v12）：
+- 所有客户端初始化并行执行（asyncio.gather）
+- MCP 连接懒加载（首次调用时才连接，启动不阻塞）
+- smoke_check 延迟到首请求（/api/system/health）
+- 后台任务（Cookie 保活/刷新/词根同步/备份/监控）全部非阻塞注册
 """
 
 from __future__ import annotations
@@ -9,6 +15,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -60,18 +67,89 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期管理。"""
-    # ── 启动阶段 ──
-    logger.info("dataworks-agent v%s 启动中...", __version__)
+# ── 并行初始化函数（每个独立 awaitable） ──────────────────────────
 
-    # 1. 初始化数据库
+
+async def _init_db() -> None:
+    """初始化数据库（同步操作，包在 asyncio 中）。"""
     from dataworks_agent.db.database import init_db
 
     init_db()
     logger.info("SQLite 数据库就绪: %s", settings.db_path)
 
+
+async def _init_bff_client() -> None:
+    """注册 BFF Cookie 兜底客户端（惰性连接）。"""
+    try:
+        from dataworks_agent.api_clients.bff_client import DataWorksClient
+
+        app_state._bff_client = DataWorksClient()
+        logger.info("DataWorks BFF 客户端已注册（惰性连接）")
+    except Exception as e:
+        logger.warning("BFF 客户端初始化失败（Cookie 链路长期兜底，缺配置则降级）: %s", e)
+        app_state._bff_client = None
+
+
+async def _init_openapi_clients() -> None:
+    """注册 OpenAPI + MaxCompute 客户端（AK/SK）。"""
+    try:
+        from dataworks_agent.api_clients.maxcompute_client import MaxComputeClient
+        from dataworks_agent.api_clients.openapi_client import DataWorksOpenAPIClient
+        from dataworks_agent.api_clients.openapi_node_adapter import OpenAPINodeAdapter
+        from dataworks_agent.auth import CredentialMissingError, load_credentials
+
+        try:
+            creds = load_credentials()
+            app_state._openapi_client = DataWorksOpenAPIClient(
+                creds=creds,
+                region=settings.dataworks_region,
+                endpoint=f"dataworks.{settings.dataworks_region}.aliyuncs.com",
+                project_id=settings.dataworks_project_id,
+            )
+            app_state._maxcompute_client = MaxComputeClient(
+                creds=creds,
+                endpoint=settings.maxcompute_endpoint,
+                project=settings.maxcompute_project or settings.dataworks_dev_schema,
+            )
+            app_state._node_client = OpenAPINodeAdapter(
+                app_state._openapi_client,
+                project=settings.maxcompute_project or settings.dataworks_dev_schema,
+                holo_datasource=settings.holo_node_datasource,
+            )
+            logger.info("OpenAPI/MaxCompute 客户端就绪 (AK/SK)")
+        except CredentialMissingError as e:
+            logger.warning("OpenAPI/MaxCompute 客户端未启用（缺 AK/SK）: %s", e)
+            app_state._openapi_client = None
+            app_state._maxcompute_client = None
+            app_state._node_client = None
+    except Exception as e:
+        logger.warning("OpenAPI/MaxCompute 客户端初始化失败: %s", e)
+        app_state._openapi_client = None
+        app_state._maxcompute_client = None
+        app_state._node_client = None
+
+
+async def _init_cdp_client() -> None:
+    """注册 CDP 客户端（惰性连接）。"""
+    try:
+        from dataworks_agent.api_clients.cdp_client import CDPClient
+
+        app_state._cdp_client = CDPClient()
+        logger.info("CDP 客户端已注册（惰性连接）")
+    except Exception as e:
+        logger.warning("CDP 客户端不可用: %s", e)
+        app_state._cdp_client = None
+
+
+async def _backfill_node_types() -> int:
+    """回填任务 node_type（同步操作）。"""
+    from dataworks_agent.services.task_backfill import backfill_node_types
+
+    return backfill_node_types()
+
+
+async def _check_bind_host() -> None:
+    """检查绑定主机安全性。"""
     from dataworks_agent.middleware.client_ip import is_loopback
 
     bind_host = settings.host or settings.dw_modeling_host
@@ -88,177 +166,167 @@ async def lifespan(app: FastAPI):
     elif settings.trusted_proxies:
         logger.info("受信反向代理: %s（ProxyHeadersMiddleware 已启用）", settings.trusted_proxies)
 
-    from dataworks_agent.services.task_backfill import backfill_node_types
 
-    backfilled = backfill_node_types()
-    if backfilled:
-        logger.info("已回填 %d 条任务的 node_type", backfilled)
+# ── 后台任务注册 ────────────────────────────────────────────────
 
-    # 2. CDP 客户端（惰性连接；Cookie 链路长期兜底，缺配置则优雅降级）
-    try:
-        from dataworks_agent.api_clients.cdp_client import CDPClient
 
-        app_state._cdp_client = CDPClient()
-        logger.info("CDP 客户端已注册（惰性连接）")
-    except Exception as e:
-        logger.warning("CDP 客户端不可用（Cookie 链路长期兜底，缺配置则降级）: %s", e)
-        app_state._cdp_client = None
+def _register_background_tasks(app: FastAPI) -> None:
+    """注册所有后台任务（全部非阻塞）。"""
+    app_state._background_tasks = []
 
-    # 3. BFF Cookie 兜底链路（外部 data-mcp 已移除）
-    try:
-        from dataworks_agent.api_clients.bff_client import DataWorksClient
+    # Cookie 保活心跳（延迟 15s 启动）
+    async def _start_keepalive_later() -> None:
+        await asyncio.sleep(15)
+        bff = getattr(app_state, "_bff_client", None)
+        if bff:
+            try:
+                from dataworks_agent.cookie.health import cookie_health_monitor
 
-        app_state._bff_client = DataWorksClient()
-        logger.info("DataWorks 客户端就绪")
-    except Exception as e:
-        logger.warning("DataWorks 客户端初始化失败（Cookie 链路长期兜底，缺配置则降级）: %s", e)
-        app_state._bff_client = None
+                await cookie_health_monitor.start_keepalive(bff)
+            except Exception as e:
+                logger.warning("Cookie 保活启动失败: %s", e)
 
-    # 3b. OpenAPI 执行底座（AK/SK；与 BFF 长期并存，缺凭证则降级）
-    try:
-        from dataworks_agent.api_clients.openapi_client import DataWorksOpenAPIClient
-        from dataworks_agent.auth import CredentialMissingError, load_credentials
+    app_state._background_tasks.append(asyncio.create_task(_start_keepalive_later()))
 
-        try:
-            creds = load_credentials()
-            app_state._openapi_client = DataWorksOpenAPIClient(
-                creds=creds,
-                region=settings.dataworks_region,
-                endpoint=f"dataworks.{settings.dataworks_region}.aliyuncs.com",
-                project_id=settings.dataworks_project_id,
-            )
-            logger.info("DataWorks OpenAPI 客户端就绪 (AK/SK)")
-
-            from dataworks_agent.api_clients.maxcompute_client import MaxComputeClient
-
-            app_state._maxcompute_client = MaxComputeClient(
-                creds=creds,
-                endpoint=settings.maxcompute_endpoint,
-                project=settings.maxcompute_project or settings.dataworks_dev_schema,
-            )
-            logger.info("MaxCompute 客户端就绪 (AK/SK)")
-
-            # 节点操作 AK/SK 适配器（drop-in 替换 bff 的节点 5 方法；Task 8b）。
-            # 仅构造备用，生产建节点/发布须经 Publish_Gate 人工授权后再切调用点。
-            from dataworks_agent.api_clients.openapi_node_adapter import OpenAPINodeAdapter
-
-            app_state._node_client = OpenAPINodeAdapter(
-                app_state._openapi_client,
-                project=settings.maxcompute_project or settings.dataworks_dev_schema,
-                holo_datasource=settings.holo_node_datasource,
-            )
-            logger.info("OpenAPI 节点适配器就绪 (AK/SK, 待接线)")
-        except CredentialMissingError as e:
-            logger.warning("OpenAPI/MaxCompute 客户端未启用（缺 AK/SK）: %s", e)
-            app_state._openapi_client = None
-            app_state._maxcompute_client = None
-            app_state._node_client = None
-    except Exception as e:
-        logger.warning("OpenAPI/MaxCompute 客户端初始化失败: %s", e)
-        app_state._openapi_client = None
-        app_state._maxcompute_client = None
-        app_state._node_client = None
-
-    # 3c. Official Alibaba Cloud DataWorks MCP (slim allowlist; graceful fallback)
-    try:
-        from dataworks_agent.mcp.official_dataworks import OfficialDataWorksMCPClient
-
-        official_mcp = OfficialDataWorksMCPClient()
-        await official_mcp.connect()
-        app_state._official_mcp_client = official_mcp
-    except Exception as e:
-        logger.warning("Official DataWorks MCP initialization failed: %s", e)
-        app_state._official_mcp_client = None
-
-    # 4. Cookie 保活 (轻量 BFF 心跳，不刷新浏览器)
-    from dataworks_agent.cookie.health import cookie_health_monitor
-
-    await cookie_health_monitor.start_keepalive(app_state._bff_client)
-
-    # 4b. Cookie 后台自助刷新（CDP 定时校验 + 失效重提取）
-    from dataworks_agent.cookie.background_refresh import (
-        cookie_background_refresh_loop,
-        run_cookie_background_refresh_once,
-    )
-
-    _cookie_refresh_stop = asyncio.Event()
-    _cookie_refresh_task = asyncio.create_task(cookie_background_refresh_loop(_cookie_refresh_stop))
-    app_state._background_tasks = getattr(app_state, "_background_tasks", [])
-    app_state._background_tasks.append(_cookie_refresh_task)
-
-    async def _bootstrap_cookie_refresh() -> None:
-        await asyncio.sleep(5)
+    # Cookie 后台自助刷新（延迟 30s 启动）
+    async def _cookie_refresh_later() -> None:
+        await asyncio.sleep(30)
         if settings.auto_login_enabled and settings.cookie_refresh_configured:
             try:
+                from dataworks_agent.cookie.background_refresh import (
+                    cookie_background_refresh_loop,
+                    run_cookie_background_refresh_once,
+                )
+
+                stop_event = asyncio.Event()
+                app_state._background_tasks.append(
+                    asyncio.create_task(cookie_background_refresh_loop(stop_event))
+                )
                 await run_cookie_background_refresh_once()
             except Exception as exc:
                 logger.warning("启动后 Cookie 自助刷新失败: %s", exc)
 
-    _bootstrap_task = asyncio.create_task(_bootstrap_cookie_refresh())
-    app_state._background_tasks.append(_bootstrap_task)
+    app_state._background_tasks.append(asyncio.create_task(_cookie_refresh_later()))
 
-    # 4c. 词根表后台自动同步（默认每 2 小时拉生产 dim_pub_column_dictionary_static）
-    from dataworks_agent.governance.word_root_sync import (
-        run_word_root_sync_once,
-        word_root_sync_loop,
-    )
-
-    _word_root_sync_stop = asyncio.Event()
-    _word_root_sync_task = asyncio.create_task(word_root_sync_loop(_word_root_sync_stop))
-    app_state._background_tasks.append(_word_root_sync_task)
-
-    async def _bootstrap_word_root_sync() -> None:
-        await asyncio.sleep(10)
+    # 词根同步（延迟 120s 启动）
+    async def _word_root_sync_later() -> None:
+        await asyncio.sleep(120)
         if settings.word_root_auto_sync_enabled:
             try:
+                from dataworks_agent.governance.word_root_sync import (
+                    run_word_root_sync_once,
+                    word_root_sync_loop,
+                )
+
+                stop_event = asyncio.Event()
+                app_state._background_tasks.append(
+                    asyncio.create_task(word_root_sync_loop(stop_event))
+                )
                 await run_word_root_sync_once()
             except Exception as exc:
                 logger.warning("启动后词根同步失败: %s", exc)
 
-    _word_root_bootstrap_task = asyncio.create_task(_bootstrap_word_root_sync())
-    app_state._background_tasks.append(_word_root_bootstrap_task)
+    app_state._background_tasks.append(asyncio.create_task(_word_root_sync_later()))
 
-    # 4. 冒烟检查
-    from dataworks_agent.bootstrap import startup_smoke_check
+    # 启动备份调度
+    async def _scheduled_backup_task() -> None:
+        from dataworks_agent.db.backup import scheduled_backup
+        await scheduled_backup()
 
-    await startup_smoke_check()
+    app_state._background_tasks.append(asyncio.create_task(_scheduled_backup_task()))
 
-    # 5. 启动备份调度
-    from dataworks_agent.db.backup import scheduled_backup
+    # 启动任务监控
+    async def _monitor_task() -> None:
+        from dataworks_agent.task_engine.monitor import task_monitor
+        await task_monitor.start()
 
-    backup_task = asyncio.create_task(scheduled_backup())
-    # 给 shutdown 时清理用，避免 dangling task warning
-    app_state._background_tasks = getattr(app_state, "_background_tasks", [])
-    app_state._background_tasks.append(backup_task)
+    app_state._background_tasks.append(asyncio.create_task(_monitor_task()))
 
-    # 6. 启动任务监控
-    from dataworks_agent.task_engine.monitor import task_monitor
+    logger.info("后台任务已注册: %d 个", len(app_state._background_tasks))
 
-    await task_monitor.start()
 
+# ── 应用生命周期 ────────────────────────────────────────────────
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理 — 启动优化版。"""
+    logger.info("dataworks-agent v%s 启动中...", __version__)
+
+    # ── Phase 1: 并行初始化所有客户端（~100ms） ──
+    init_tasks = [
+        asyncio.create_task(_init_db()),
+        asyncio.create_task(_init_bff_client()),
+        asyncio.create_task(_init_openapi_clients()),
+        asyncio.create_task(_init_cdp_client()),
+        asyncio.create_task(_backfill_node_types()),
+        asyncio.create_task(_check_bind_host()),
+    ]
+    results = await asyncio.gather(*init_tasks, return_exceptions=True)
+    # 记录异常但不阻塞
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning("初始化任务 %d 失败: %s", i, r)
+
+    # ── Phase 2: MCP 懒加载（不阻塞启动） ──
+    from dataworks_agent.runtime.lazy_mcp import LazyMCPClient
+
+    lazy_mcp = LazyMCPClient()
+    app_state._official_mcp_client = lazy_mcp  # 替换原来的直连客户端
+    logger.info("LazyMCP 已注册（首次调用时连接）")
+
+    # ── Phase 3: 注册后台任务（全部非阻塞） ──
+    _register_background_tasks(app)
+    # 后台预热追加到任务列表，避免被 _register_background_tasks 清空。
+    app_state._background_tasks.append(asyncio.create_task(lazy_mcp.warmup(delay=5.0)))
+
+    # ── Phase 4: 启动完成（无需等待 smoke_check） ──
     logger.info("dataworks-agent 启动完成，端口: %s", settings.port)
 
     yield  # ── 应用运行中 ──
 
     # ── 关闭阶段 ──
     logger.info("dataworks-agent 正在关闭...")
-    await task_monitor.stop()
-    await cookie_health_monitor.stop_keepalive()
-    _cookie_refresh_stop.set()
-    _cookie_refresh_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await _cookie_refresh_task
-    _word_root_sync_stop.set()
-    _word_root_sync_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await _word_root_sync_task
-    if app_state._official_mcp_client:
-        await app_state._official_mcp_client.close()
+
+    # 停止后台任务
+    for task in getattr(app_state, "_background_tasks", []):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    # 关闭 MCP
+    if lazy_mcp:
+        await lazy_mcp.close()
+
+    # 关闭 BFF
     if app_state._bff_client:
         await app_state._bff_client.close()
+
+    # 关闭 CDP
     if app_state._cdp_client:
         await app_state._cdp_client.shutdown_chrome()
+
     logger.info("dataworks-agent 已关闭")
+
+
+# ── 健康检查端点（首次请求时触发 smoke_check） ──────────────────
+
+
+async def _get_cached_health() -> dict:
+    """获取缓存的健康检查结果，首次调用时触发完整检查。"""
+    if not getattr(app_state, "_health_cached", None):
+        from dataworks_agent.runtime.smoke_check import startup_smoke_check
+
+        await startup_smoke_check()
+        app_state._health_cached = True
+    return {
+        "status": "ok" if app_state.smoke_ok else "degraded",
+        "components": app_state.smoke_results,
+        "uptime_seconds": (datetime.now(UTC) - app_state.startup_time).total_seconds(),
+    }
+
+
+# ── FastAPI 应用构建 ────────────────────────────────────────────
 
 
 def create_app() -> FastAPI:
@@ -270,27 +338,27 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── 中间件(顺序: 后注册先执行; 限流最内, CORS 最外) ──
+    # ── 中间件 ──
     from dataworks_agent.middleware.idempotency import IdempotencyMiddleware
     from dataworks_agent.middleware.ip_isolation import IPIsolationMiddleware
     from dataworks_agent.middleware.rate_limit import RateLimitMiddleware
 
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(RateLimitMiddleware)
-    # IP 隔离要在 Idempotency 之前,让 Idempotency 拿到正确的 request.state.client_ip
     app.add_middleware(IPIsolationMiddleware)
-    # v11 §3.3：仅当配置了 trusted_proxies 才信任 X-Forwarded-For（Starlette 官方实现）
+
     if settings.trusted_proxies:
         from dataworks_agent.middleware.proxy_headers import ProxyHeadersMiddleware
 
         app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
 
-    # CORS（仅允许本地开发）
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "http://localhost:8085",
             "http://127.0.0.1:8085",
         ],
@@ -321,7 +389,6 @@ def create_app() -> FastAPI:
         workspace,
     )
 
-    # L0 基础路由
     app.include_router(modeling.router, prefix="/api/modeling", tags=["建模任务"])
     app.include_router(dwd.router, prefix="/api/dwd", tags=["DWD 建模"])
     app.include_router(pipeline.router, prefix="/api/pipeline", tags=["管道队列"])
@@ -336,7 +403,6 @@ def create_app() -> FastAPI:
     app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["协调处置"])
     app.include_router(artifacts.router, prefix="/api/artifacts", tags=["产物管理"])
 
-    # Slim default: keep Agent-first core exposed; L1-L5 skeleton routes are opt-in.
     if settings.enable_experimental_platform_routes:
         from dataworks_agent.routers import mcp_server, semantic
         from dataworks_agent.runtime import routers as runtime_routers
@@ -344,11 +410,16 @@ def create_app() -> FastAPI:
         app.include_router(semantic.router, prefix="/api/semantic", tags=["Semantic"])
         app.include_router(runtime_routers.router, prefix="/api/runtime", tags=["Runtime"])
         app.include_router(mcp_server.router, prefix="/api/mcp-server", tags=["MCP Server"])
+
     app.include_router(monitor.router, prefix="/api/monitor", tags=["监控"])
     app.include_router(import_sql.router, prefix="/api/import", tags=["批量导入"])
     app.include_router(schedule_config.router, prefix="/api/schedule", tags=["调度配置"])
     app.include_router(workspace.router, prefix="/api/workspace", tags=["工作空间"])
     app.include_router(agent.router, prefix="/agent", tags=["agent"])
+
+    # SSE streaming for real-time chat
+    from dataworks_agent.routers import agent_sse
+    app.include_router(agent_sse.router, prefix="/agent", tags=["agent-sse"])
 
     # ── 薄路由 ──
     @app.get("/api/bus-matrix")
@@ -379,14 +450,18 @@ def create_app() -> FastAPI:
 
         return Response(content=get_metrics(), media_type="text/plain")
 
+    # 健康检查（首次触发 smoke_check）
+    @app.get("/api/system/health")
+    async def system_health():
+        """系统健康检查 — 首次调用时触发完整检查，后续返回缓存结果。"""
+        return await _get_cached_health()
+
     # ── 前端静态文件 ──
     frontend_dir = Path(settings.frontend_dir)
     if frontend_dir.exists():
-        # 先挂载 assets 子目录
         assets_dir = frontend_dir / "assets"
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-        # 挂载 favicon 等根文件
         app.mount(
             "/",
             StaticFiles(directory=str(frontend_dir), html=True, check_dir=False),
@@ -394,7 +469,6 @@ def create_app() -> FastAPI:
         )
         logger.info("前端静态文件: %s", frontend_dir)
 
-    # SPA fallback 中间件: 非 API 路径 404 时返回 index.html
     @app.middleware("http")
     async def spa_fallback_middleware(request: Request, call_next):
         response = await call_next(request)
@@ -411,7 +485,7 @@ app = create_app()
 
 
 def run():
-    """uvicorn 入口 — `python -m dataworks_agent.main` 或 `dw-agent` 命令。"""
+    """uvicorn 入口。"""
     import uvicorn
 
     uvicorn.run(
