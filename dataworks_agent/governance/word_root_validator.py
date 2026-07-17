@@ -26,7 +26,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from dataworks_agent.config import settings
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import WordRootCacheModel
 from dataworks_agent.standards.loader import load_word_root_entries

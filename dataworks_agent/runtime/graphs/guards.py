@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from dataworks_agent.runtime.graphs.shared_state import WorkflowState
 
 

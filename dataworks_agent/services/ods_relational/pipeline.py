@@ -11,7 +11,11 @@ import logging
 from typing import Any
 
 from dataworks_agent.config import settings
-from dataworks_agent.modeling.data_source import DataSourceConfig, DataSourceType, FileFormat, SyncMode
+from dataworks_agent.modeling.data_source import (
+    DataSourceConfig,
+    DataSourceType,
+    SyncMode,
+)
 from dataworks_agent.naming import generate_node_path
 from dataworks_agent.naming.schedule import (
     DAILY_SQL_PARAMETERS,

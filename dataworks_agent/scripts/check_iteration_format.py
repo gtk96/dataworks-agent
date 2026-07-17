@@ -1,4 +1,5 @@
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 async def main():
     from dataworks_agent.agent.core import ChatAgent
@@ -20,4 +21,5 @@ async def main():
             print(f"result attrs: {list(res.__dict__.keys())[:10]}")
 
 import asyncio
+
 asyncio.run(main())

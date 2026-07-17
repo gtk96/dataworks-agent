@@ -2,29 +2,30 @@
 import asyncio
 import json
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 async def main():
     from dataworks_agent.agent.core import ChatAgent
-    
+
     agent = ChatAgent()
     r = await agent.chat(
         "forward model DWD and DWS",
         execution_mode="plan",
         initialize_data=False,
     )
-    
+
     data = r.data
     print(f"data keys: {list(data.keys())}")
-    
+
     def find_circular(obj, path="", seen=None, depth=0, max_depth=8):
         if seen is None:
             seen = set()
         if depth > max_depth:
             return
-        
+
         obj_id = id(obj)
-        
+
         if isinstance(obj, dict):
             if obj_id in seen:
                 print(f"CIRCULAR at {path} (id={obj_id})")
@@ -46,9 +47,9 @@ async def main():
             seen.add(obj_id)
             for k, v in obj.__dict__.items():
                 find_circular(v, f"{path}.{k}", seen, depth + 1)
-    
+
     find_circular(data)
-    
+
     # Also try json.dumps with default=str to see what fails
     print("\nTrying json.dumps with default=str...")
     try:
@@ -56,7 +57,7 @@ async def main():
         print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
-    
+
     # Check the 'loop' key specifically (it sounds suspicious)
     print("\nChecking 'loop' key:")
     loop = data.get('loop')

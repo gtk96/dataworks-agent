@@ -7,7 +7,7 @@ import json
 import logging
 import uuid
 from collections import deque
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -51,7 +51,7 @@ _stream_buffers: dict[str, StreamBuffer] = {}
 
 def _json_default(obj: object) -> object:
     """Best-effort fallback for non-JSON objects in SSE payloads."""
-    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
         try:
             return obj.to_dict()  # type: ignore[no-any-return]
         except Exception:

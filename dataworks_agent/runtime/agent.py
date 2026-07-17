@@ -353,7 +353,6 @@ class GovernanceAgent:
 
     async def _validate_proposal(self, request: AgentRequest) -> AgentResponse:
         """执行提案校验。"""
-        from dataworks_agent.semantic.guard import ValidationResult
 
         result: dict[str, Any] = {"checks": [], "overall_passed": True}
         all_errors: list[str] = []
@@ -482,9 +481,6 @@ class DiagnosisAgent:
         """处理诊断请求。"""
         try:
             from dataworks_agent.runtime.self_heal import (
-                HealAction,
-                HealProposal,
-                HealResult,
                 IssueReport,
                 IssueType,
             )

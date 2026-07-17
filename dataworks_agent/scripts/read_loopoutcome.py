@@ -1,6 +1,7 @@
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
-with open('dataworks_agent/runtime/shims.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/runtime/shims.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):

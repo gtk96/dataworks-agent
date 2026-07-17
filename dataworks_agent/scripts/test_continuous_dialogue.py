@@ -1,5 +1,4 @@
 """Test continuous dialogue capability — simplified."""
-import asyncio
 import json
 import sys
 import urllib.request

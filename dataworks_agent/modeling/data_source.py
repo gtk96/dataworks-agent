@@ -12,7 +12,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ── 枚举 ──────────────────────────────────────────────────────────
 
 class DataSourceType(str, Enum):
@@ -230,15 +229,14 @@ class DataSourceResolver:
 
     async def _resolve_oss(self, config: DataSourceConfig) -> SourceSchema:
         """解析 OSS 外部表元数据。"""
+        from dataworks_agent.services.ods_oss.config import parse_oss_path
+        from dataworks_agent.services.ods_oss.external_table import (
+            ExternalTableSpec,
+            source_name_from_location,
+        )
         from dataworks_agent.services.ods_oss.managed_discovery import (
             discover_managed_oss_schema,
         )
-        from dataworks_agent.services.ods_oss.external_table import (
-            ExternalTableSpec,
-            build_external_table_ddl,
-            source_name_from_location,
-        )
-        from dataworks_agent.services.ods_oss.config import parse_oss_path
 
         location = parse_oss_path(config.oss_path or "")
         source_name = source_name_from_location(location)

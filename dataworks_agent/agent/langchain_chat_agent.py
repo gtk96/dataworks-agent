@@ -8,16 +8,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 from sqlalchemy import select
 
-from dataworks_agent.config import settings
 from dataworks_agent.agent.llm_intent_classifier import LLMIntentClassifier
-from dataworks_agent.llm.service import LLMService
+from dataworks_agent.config import settings
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ConversationHistoryModel
+from dataworks_agent.llm.service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +100,10 @@ class LangChainChatAgent:
         try:
             # 保存用户消息到数据库
             self._save_message(conversation_id, "user", message)
-            
+
             # 1. 先尝试 LLM 意图分类
             intent = await self._intent_classifier.classify(message)
-            
+
             # 2. 根据意图决定下一步
             if intent.action == "greeting":
                 response = self._handle_greeting(intent)
@@ -130,11 +128,11 @@ class LangChainChatAgent:
             else:
                 # 3. 如果意图不明，直接让 LLM 决定
                 return await self._handle_unknown_intent(message, conversation_id)
-                
+
         except Exception as e:
             logger.error("LangChain ChatAgent 处理失败: %s", e, exc_info=True)
             return {
-                "message": f"处理失败：{str(e)}",
+                "message": f"处理失败：{e!s}",
                 "success": False,
                 "error": str(e),
             }
@@ -193,32 +191,32 @@ class LangChainChatAgent:
             # 使用现有的 LLM 服务
             from dataworks_agent.llm.context import ContextBuilder
             from dataworks_agent.llm.service import LLMKeyMissingError
-            
+
             # 获取历史消息
             history = self._get_history(conversation_id, limit=20)
-            
+
             # 构建 LLM 上下文
             builder = ContextBuilder()
             builder.add_instruction("你是一个数据仓库 Agent。")
-            
+
             # 添加历史消息到上下文
             for msg in history:
                 if msg["role"] == "user":
                     builder.add_prompt(msg["content"])
                 elif msg["role"] == "assistant":
                     builder.add_response(msg["content"])
-            
+
             # 添加当前消息
             builder.add_prompt(message)
-            
+
             context = builder.build()
-            
+
             # 调用 LLM
             response = await self._llm_service.complete(context, "light")
-            
+
             # 保存助手消息到数据库
             self._save_message(conversation_id, "assistant", response.content)
-            
+
             return {
                 "message": response.content,
                 "success": True,

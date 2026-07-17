@@ -1,5 +1,6 @@
 import asyncio
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 async def main():

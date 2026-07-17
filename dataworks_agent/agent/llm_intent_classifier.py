@@ -9,9 +9,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from dataworks_agent.config import settings
 
@@ -77,10 +77,10 @@ class LLMIntentClassifier:
             response = await self._llm.ainvoke(
                 self._prompt.format_messages(user_input=text)
             )
-            
+
             # 解析 JSON 响应
             result = self._parser.parse(response.content)
-            
+
             return LLMIntent(
                 action=result.get("action", "unknown"),
                 confidence=result.get("confidence", 0.0),
@@ -96,5 +96,5 @@ class LLMIntentClassifier:
                 action="unknown",
                 confidence=0.0,
                 raw_text=text,
-                reasoning=f"LLM 调用失败: {str(e)}",
+                reasoning=f"LLM 调用失败: {e!s}",
             )
