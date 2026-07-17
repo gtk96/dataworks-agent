@@ -22,6 +22,7 @@ Skill 文件格式:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -78,8 +79,12 @@ class SkillRegistry:
                 skill = self._parse(md_file)
                 if skill:
                     self._skills[skill.name] = skill
-                    logger.info("Loaded skill: %s (priority=%d, triggers=%d)",
-                                skill.name, skill.priority, len(skill.triggers))
+                    logger.info(
+                        "Loaded skill: %s (priority=%d, triggers=%d)",
+                        skill.name,
+                        skill.priority,
+                        len(skill.triggers),
+                    )
             except Exception as e:
                 logger.warning("Failed to load skill %s: %s", md_file.name, e)
 
@@ -88,7 +93,7 @@ class SkillRegistry:
         content = path.read_text(encoding="utf-8")
 
         # 解析 YAML frontmatter
-        fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)$', content, re.DOTALL)
+        fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
         if fm_match:
             fm_text = fm_match.group(1)
             body = fm_match.group(2)
@@ -104,31 +109,35 @@ class SkillRegistry:
         priority = 5
         category = "general"
 
-        for line in fm_text.strip().split('\n'):
+        for line in fm_text.strip().split("\n"):
             line = line.strip()
-            if line.startswith('name:'):
-                name = line.split(':', 1)[1].strip().strip('"').strip("'")
-            elif line.startswith('description:'):
-                description = line.split(':', 1)[1].strip().strip('"').strip("'")
-            elif line.startswith('triggers:'):
-                raw = line.split(':', 1)[1].strip()
-                triggers = [t.strip().strip('"').strip("'") for t in re.findall(r'"([^"]+)"', raw)
-                           if '"' in raw]
+            if line.startswith("name:"):
+                name = line.split(":", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("description:"):
+                description = line.split(":", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("triggers:"):
+                raw = line.split(":", 1)[1].strip()
+                triggers = [
+                    t.strip().strip('"').strip("'")
+                    for t in re.findall(r'"([^"]+)"', raw)
+                    if '"' in raw
+                ]
                 if not triggers:
-                    triggers = [t.strip() for t in raw.strip('[]').split(',') if t.strip()]
-            elif line.startswith('tools:'):
-                raw = line.split(':', 1)[1].strip()
-                tools = [t.strip().strip('"').strip("'") for t in re.findall(r'"([^"]+)"', raw)
-                        if '"' in raw]
+                    triggers = [t.strip() for t in raw.strip("[]").split(",") if t.strip()]
+            elif line.startswith("tools:"):
+                raw = line.split(":", 1)[1].strip()
+                tools = [
+                    t.strip().strip('"').strip("'")
+                    for t in re.findall(r'"([^"]+)"', raw)
+                    if '"' in raw
+                ]
                 if not tools:
-                    tools = [t.strip() for t in raw.strip('[]').split(',') if t.strip()]
-            elif line.startswith('priority:'):
-                try:
-                    priority = int(line.split(':', 1)[1].strip())
-                except ValueError:
-                    pass
-            elif line.startswith('category:'):
-                category = line.split(':', 1)[1].strip().strip('"').strip("'")
+                    tools = [t.strip() for t in raw.strip("[]").split(",") if t.strip()]
+            elif line.startswith("priority:"):
+                with contextlib.suppress(ValueError):
+                    priority = int(line.split(":", 1)[1].strip())
+            elif line.startswith("category:"):
+                category = line.split(":", 1)[1].strip().strip('"').strip("'")
 
         if not name:
             name = path.stem
@@ -149,10 +158,27 @@ class SkillRegistry:
             Skill(
                 name="modeling",
                 description="全链路数仓建模：ODS→DWD→DIM→DWS 分层建表、SQL 生成、调度配置",
-                triggers=["建模", "建表", "create", "建模", "ods", "dwd", "dim", "dws",
-                          "forward_modeling", "reverse_modeling", "ods_dwd"],
-                tools=["create_table", "generate_ddl", "generate_dml", "create_node",
-                       "configure_schedule", "deploy_node"],
+                triggers=[
+                    "建模",
+                    "建表",
+                    "create",
+                    "建模",
+                    "ods",
+                    "dwd",
+                    "dim",
+                    "dws",
+                    "forward_modeling",
+                    "reverse_modeling",
+                    "ods_dwd",
+                ],
+                tools=[
+                    "create_table",
+                    "generate_ddl",
+                    "generate_dml",
+                    "create_node",
+                    "configure_schedule",
+                    "deploy_node",
+                ],
                 priority=8,
                 category="modeling",
                 content="# 建模 Skill\n全链路数仓建模，支持正向和逆向。",
@@ -160,8 +186,19 @@ class SkillRegistry:
             Skill(
                 name="query",
                 description="智能问数：自然语言查询指标，自动解析口径、生成 SQL、返回图表",
-                triggers=["查询", "指标", "GMV", "订单量", "ask_data", "query",
-                          "查询指标", "数据查询", "看数据", "有多少", "统计"],
+                triggers=[
+                    "查询",
+                    "指标",
+                    "GMV",
+                    "订单量",
+                    "ask_data",
+                    "query",
+                    "查询指标",
+                    "数据查询",
+                    "看数据",
+                    "有多少",
+                    "统计",
+                ],
                 tools=["query_metric", "generate_chart", "clarify_caliber", "execute_query"],
                 priority=7,
                 category="query",
@@ -170,8 +207,18 @@ class SkillRegistry:
             Skill(
                 name="diagnosis",
                 description="异常排查：任务失败诊断、血缘影响面分析、根因定位",
-                triggers=["诊断", "排查", "失败", "异常", "diagnose", "报错",
-                          "为什么失败", "影响范围", "根因", "trace"],
+                triggers=[
+                    "诊断",
+                    "排查",
+                    "失败",
+                    "异常",
+                    "diagnose",
+                    "报错",
+                    "为什么失败",
+                    "影响范围",
+                    "根因",
+                    "trace",
+                ],
                 tools=["diagnose_task", "get_lineage", "get_upstream_tasks", "query_logs"],
                 priority=7,
                 category="diagnosis",
@@ -180,8 +227,18 @@ class SkillRegistry:
             Skill(
                 name="governance",
                 description="数仓治理：词根校验、命名规范、DDL 检查、血缘管理",
-                triggers=["治理", "词根", "规范", "命名", "governance", "校验",
-                          "DDL 检查", "血缘", "bus_matrix", "word_root"],
+                triggers=[
+                    "治理",
+                    "词根",
+                    "规范",
+                    "命名",
+                    "governance",
+                    "校验",
+                    "DDL 检查",
+                    "血缘",
+                    "bus_matrix",
+                    "word_root",
+                ],
                 tools=["check_ddl", "check_word_root", "get_lineage", "get_bus_matrix"],
                 priority=6,
                 category="governance",
@@ -210,7 +267,7 @@ class SkillRegistry:
             return []
 
         scored: list[tuple[int, Skill]] = []
-        for name, skill in self._skills.items():
+        for _name, skill in self._skills.items():
             score = skill.match_keywords(user_input)
             if score > 0:
                 scored.append((score, skill))

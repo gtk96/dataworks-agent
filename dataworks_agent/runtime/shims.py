@@ -11,7 +11,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ class LoopDecision:
         self.failure_class = failure_class
         self._extra = kwargs
 
+
 @dataclass
 class RepairResult:
     """Result of a repair step."""
@@ -96,7 +97,7 @@ class StopReason(StrEnum):
     SUCCESS = "verified_success"
 
 
-class LoopOutcome(Generic[T]):
+class LoopOutcome[T]:
     """Result envelope returned by ``LoopKernel.run``.
 
     Mirrors the shape previously defined in the deleted ``runtime/loop.py``
@@ -142,9 +143,7 @@ class LoopOutcome(Generic[T]):
             if res is None:
                 safe_it["result"] = None
             elif isinstance(res, dict):
-                safe_it["result"] = {
-                    k: v for k, v in res.items() if k != "loop"
-                }
+                safe_it["result"] = {k: v for k, v in res.items() if k != "loop"}
             else:
                 # WorkflowResult (or similar): only keep lightweight fields.
                 data = getattr(res, "data", None)
@@ -205,7 +204,7 @@ class LoopOutcome(Generic[T]):
         }
 
 
-class LoopKernel(Generic[T]):
+class LoopKernel[T]:
     """LangGraph-compatible loop kernel (replaces deleted runtime/loop.py).
 
     同时支持两套调用约定（向后兼容 + 新接口）：
@@ -248,9 +247,7 @@ class LoopKernel(Generic[T]):
         import uuid
 
         # Resolve call shape: prefer keyword args (HEAD interface) when present.
-        use_keyword = any(
-            arg is not None for arg in (objective, action, verify, repair)
-        )
+        use_keyword = any(arg is not None for arg in (objective, action, verify, repair))
         if use_keyword:
             act_fn = action or execute_fn
             ver_fn = verify or verify_fn
@@ -298,9 +295,7 @@ class LoopKernel(Generic[T]):
                 result = await self._invoke(act_fn, state, self._iteration + 1)
                 last_result = result
                 decision_value = ver_fn(result, self._iteration + 1) if ver_fn is not None else None
-                decision = (
-                    await decision_value if _is_awaitable(decision_value) else decision_value
-                )
+                decision = await decision_value if _is_awaitable(decision_value) else decision_value
                 elapsed_ms = int((time.time() - iteration_started) * 1000)
                 iterations.append(
                     {
@@ -317,13 +312,18 @@ class LoopKernel(Generic[T]):
                     best_score = float(score)
 
                 # Decision routing.
-                action_name = getattr(decision, "action", "stop") if decision is not None else "stop"
+                action_name = (
+                    getattr(decision, "action", "stop") if decision is not None else "stop"
+                )
                 if (
-                    decision is not None
-                    and getattr(decision, "passed", False)
+                    decision is not None and getattr(decision, "passed", False)
                 ) or action_name == "stop":
-                    success = bool(getattr(decision, "passed", False)) if decision is not None else True
-                    stop_reason = StopReason.VERIFIED_SUCCESS if success else StopReason.NON_RETRYABLE
+                    success = (
+                        bool(getattr(decision, "passed", False)) if decision is not None else True
+                    )
+                    stop_reason = (
+                        StopReason.VERIFIED_SUCCESS if success else StopReason.NON_RETRYABLE
+                    )
                     break
 
                 if getattr(decision, "needs_context", False):
@@ -360,9 +360,7 @@ class LoopKernel(Generic[T]):
                     break
 
                 repair_value = rep_fn(state, result, decision, self._iteration + 1)
-                repair_obj = (
-                    await repair_value if _is_awaitable(repair_value) else repair_value
-                )
+                repair_obj = await repair_value if _is_awaitable(repair_value) else repair_value
                 # Attach repair outcome to the current iteration entry so callers
                 # reading ``iterations[i]['repair']`` see what was applied (matches
                 # HEAD ``LoopIteration.repair`` shape).
@@ -396,7 +394,8 @@ class LoopKernel(Generic[T]):
         if isinstance(repair_obj, dict):
             return dict(repair_obj)
         return {
-            "action": getattr(repair_obj, "action_taken", None) or getattr(repair_obj, "action", None),
+            "action": getattr(repair_obj, "action_taken", None)
+            or getattr(repair_obj, "action", None),
             "applied": bool(getattr(repair_obj, "success", False)),
             "action_taken": getattr(repair_obj, "action_taken", None),
             "message": getattr(repair_obj, "message", ""),
@@ -436,7 +435,11 @@ class LoopKernel(Generic[T]):
 
 
 def _is_awaitable(value: Any) -> bool:
-    return hasattr(value, "__await__") or asyncio.iscoroutinefunction(value) or asyncio.iscoroutine(value)
+    return (
+        hasattr(value, "__await__")
+        or asyncio.iscoroutinefunction(value)
+        or asyncio.iscoroutine(value)
+    )
 
 
 # ── Replacement for IntentConfirmGate ───────────────────────────
@@ -466,8 +469,13 @@ class IntentConfirmGate:
     """
 
     DESTRUCTIVE_ACTIONS = {
-        "create_table", "delete_table", "deploy", "publish",
-        "create_deployment", "offline_node", "drop_node",
+        "create_table",
+        "delete_table",
+        "deploy",
+        "publish",
+        "create_deployment",
+        "offline_node",
+        "drop_node",
     }
 
     @staticmethod
@@ -534,9 +542,9 @@ class MemoryLayeringService:
 
     def query(self, memory_type: str, tags: list[str] | None = None) -> list[MemoryEntry]:
         return [
-            e for e in self._entries.values()
-            if e.memory_type == memory_type and
-            (not tags or any(t in e.tags for t in tags))
+            e
+            for e in self._entries.values()
+            if e.memory_type == memory_type and (not tags or any(t in e.tags for t in tags))
         ]
 
     def cleanup_expired(self) -> int:

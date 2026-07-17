@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 import re
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 # ── 枚举 ──────────────────────────────────────────────────────────
 
-class DataSourceType(str, Enum):
+
+class DataSourceType(StrEnum):
     """支持的数据源类型。"""
 
     OSS = "oss"
@@ -25,7 +26,7 @@ class DataSourceType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class FileFormat(str, Enum):
+class FileFormat(StrEnum):
     """OSS 文件存储格式。"""
 
     JSON = "json"
@@ -36,7 +37,7 @@ class FileFormat(str, Enum):
     TEXT = "text"
 
 
-class SyncMode(str, Enum):
+class SyncMode(StrEnum):
     """关系型数据源同步模式。"""
 
     FULL = "full"
@@ -44,6 +45,7 @@ class SyncMode(str, Enum):
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────
+
 
 class FieldMeta(BaseModel):
     """字段元数据。"""
@@ -143,7 +145,10 @@ class DataSourceConfig(BaseModel):
                 errors.append(f"{self.type.value} 数据源必须提供 database")
             if not self.table_name:
                 errors.append(f"{self.type.value} 数据源必须提供 table_name")
-            if self.extra_params.get("sync_mode") == SyncMode.INCREMENTAL and not self.incremental_column:
+            if (
+                self.extra_params.get("sync_mode") == SyncMode.INCREMENTAL
+                and not self.incremental_column
+            ):
                 errors.append("增量同步必须指定 incremental_column")
 
         return errors
@@ -151,7 +156,8 @@ class DataSourceConfig(BaseModel):
 
 # ── 目标表配置 ────────────────────────────────────────────────────
 
-class TargetLayer(str, Enum):
+
+class TargetLayer(StrEnum):
     """数据仓库分层。"""
 
     ODS = "ods"
@@ -197,6 +203,7 @@ class TargetConfig(BaseModel):
 
 
 # ── 解析器 ─────────────────────────────────────────────────────────
+
 
 class DataSourceResolver:
     """
@@ -246,7 +253,9 @@ class DataSourceResolver:
             managed = await discover_managed_oss_schema(
                 self._bff,
                 config.oss_path or "",
-                config.file_format.value if isinstance(config.file_format, FileFormat) else config.file_format,
+                config.file_format.value
+                if isinstance(config.file_format, FileFormat)
+                else config.file_format,
                 include_registration=True,
             )
             if isinstance(managed, dict) and managed.get("success"):
@@ -277,7 +286,9 @@ class DataSourceResolver:
             table=source_name,
             columns=tuple((c.name, c.data_type) for c in columns),
             partition_columns=(partition_col,),
-            file_format=config.file_format.value if isinstance(config.file_format, FileFormat) else config.file_format,
+            file_format=config.file_format.value
+            if isinstance(config.file_format, FileFormat)
+            else config.file_format,
             location=str(location.get("location_uri", "")),
         )
         return SourceSchema(
@@ -339,7 +350,9 @@ class DataSourceResolver:
         try:
             # 尝试通过 BFF 获取表结构
             ds_name = config.name or config.database or ""
-            tables_resp = await self._bff.list_datasource_tables(ds_name) if hasattr(self._bff, "list_datasource_tables") else {}
+            await self._bff.list_datasource_tables(ds_name) if hasattr(
+                self._bff, "list_datasource_tables"
+            ) else {}
             columns = []
 
             # 尝试通过 JDBC 查询表结构（如果 MCP 池可用）
@@ -400,7 +413,10 @@ def infer_data_source_type(text: str) -> DataSourceType:
     text_lower = text.lower().strip()
 
     # OSS
-    if any(kw in text_lower for kw in ["oss://", "oss_path", "对象存储", ".json", ".csv", ".parquet", ".orc"]):
+    if any(
+        kw in text_lower
+        for kw in ["oss://", "oss_path", "对象存储", ".json", ".csv", ".parquet", ".orc"]
+    ):
         return DataSourceType.OSS
 
     # Hologres
@@ -408,7 +424,10 @@ def infer_data_source_type(text: str) -> DataSourceType:
         return DataSourceType.HOLO
 
     # MySQL/PG
-    if any(kw in text_lower for kw in ["mysql", "polardb", "postgres", "关系型", "jdbc:mysql", "jdbc:postgresql"]):
+    if any(
+        kw in text_lower
+        for kw in ["mysql", "polardb", "postgres", "关系型", "jdbc:mysql", "jdbc:postgresql"]
+    ):
         for dt in (DataSourceType.MYSQL, DataSourceType.POLARDB, DataSourceType.POSTGRES):
             if dt.value in text_lower:
                 return dt
@@ -417,7 +436,9 @@ def infer_data_source_type(text: str) -> DataSourceType:
     return DataSourceType.UNKNOWN
 
 
-def build_datasource_config_from_text(text: str, existing: DataSourceConfig | None = None) -> DataSourceConfig:
+def build_datasource_config_from_text(
+    text: str, existing: DataSourceConfig | None = None
+) -> DataSourceConfig:
     """
     从用户输入文本构建 DataSourceConfig。
 

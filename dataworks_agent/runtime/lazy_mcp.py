@@ -44,12 +44,14 @@ class LazyMCPClient:
         """兼容 app_state._official_mcp_client.status 的只读属性。"""
         if self._client:
             return self._client.status
+
         # 未连接时返回一个临时 status 对象
         class _Status:
             connected = False
             error = "lazy-init: not yet connected"
             tool_count = 0
             tools = []
+
             def to_dict(self) -> dict:
                 return {
                     "enabled": True,
@@ -60,13 +62,8 @@ class LazyMCPClient:
                     "tools": [],
                     "error": "lazy-init: not yet connected",
                 }
+
         return _Status()
-
-    @property
-    def connected(self) -> bool:
-        """快捷属性，兼容 system.py 的 `official_mcp.connected` 检查。"""
-        return self._client is not None
-
 
     async def connect(self) -> bool:
         """连接 MCP（线程安全，只连一次）。"""
