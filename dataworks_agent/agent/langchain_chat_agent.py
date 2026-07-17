@@ -9,7 +9,7 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from sqlalchemy import select
 
-from dataworks_agent.agent.llm_intent_classifier import LLMIntentClassifier
+from dataworks_agent.agent.llm_intent_classifier import LLMIntent, LLMIntentClassifier
 from dataworks_agent.config import settings
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ConversationHistoryModel
