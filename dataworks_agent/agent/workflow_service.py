@@ -2072,7 +2072,9 @@ class AgentWorkflowService:
         for key in ("table_name", "source_table", "keyword"):
             value = str(params.get(key) or "").strip()
             if value and not cls._looks_like_physical_table(value):
-                return value.removesuffix("表").strip() or value
+                candidate = value.removesuffix("表").strip() or value
+                if len(candidate) >= 2:
+                    return candidate
 
         # Strip leading chat verbs so "查询销售表" / "看看广告消耗表" -> bare noun + 表.
         text = message.strip()
@@ -2081,13 +2083,26 @@ class AgentWorkflowService:
             "",
             text,
         )
-        match = re.search(r"([一-龥A-Za-z0-9_]{1,24})表", text)
+        match = re.search(r"([一-龥A-Za-z0-9_]{2,24})表", text)
         if match:
             return match.group(1).strip()
-        match = re.search(r"([一-龥A-Za-z0-9_]{1,24})表", message)
+        match = re.search(r"([一-龥A-Za-z0-9_]{2,24})表", message)
         if match:
             return match.group(1).strip()
         return ""
+
+    @staticmethod
+    def _table_layer(name: str) -> str:
+        lowered = str(name or "").lower()
+        match = re.search(r"(?:^|_)(ods|dwd|dim|dws|dmr|rp)(?:_|$)", lowered)
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _extract_layer_filter(message: str) -> str:
+        """Pick a single layer token from a follow-up message like "只要 dwd"."""
+        text = (message or "").lower()
+        match = re.search(r"\b(ods|dwd|dim|dws|dmr|rp)\b", text)
+        return match.group(1) if match else ""
 
     @staticmethod
     def _user_wants_non_ods(message: str) -> bool:
@@ -2138,6 +2153,12 @@ class AgentWorkflowService:
         if proj.startswith("giikin"):
             return ("dt",)
         return ("dt",)
+
+    @staticmethod
+    def _table_layer(name: str) -> str:
+        lowered = str(name or "").lower()
+        match = re.search(r"(?:^|_)(ods|dwd|dim|dws|dmr|rp)(?:_|$)", lowered)
+        return match.group(1) if match else ""
 
     @staticmethod
     def _partition_sample_value(col: str) -> str:
@@ -2305,6 +2326,20 @@ class AgentWorkflowService:
                 return ""
             return text
 
+        # Filter BFF-search candidates that don't actually mention the
+        # keyword anywhere (table name / comment). ``搜索单车`` returning
+        # 订单/物料 tables is noise; reject those up front.
+        def _matches_keyword(item: dict[str, Any]) -> bool:
+            if not keyword:
+                return True
+            key = keyword.lower()
+            haystack_parts = [
+                str(item.get("table_name") or "").lower(),
+                str(item.get("comment") or "").lower(),
+                str(item.get("remark") or "").lower(),
+            ]
+            return any(key in part for part in haystack_parts if part)
+
         merged: dict[str, dict[str, Any]] = {}
         for item in album_entities:
             if not isinstance(item, dict):
@@ -2331,6 +2366,8 @@ class AgentWorkflowService:
             }
         for item in tables or []:
             if not isinstance(item, dict):
+                continue
+            if not _matches_keyword(item):
                 continue
             name = _clean_name(item.get("table_name") or item.get("name"))
             project = _clean_name(item.get("project") or item.get("databaseName"))
@@ -2361,18 +2398,30 @@ class AgentWorkflowService:
 
         normalized = list(merged.values())
         if not normalized:
-            raise QueryNeedsClarificationError(
-                message,
-                [],
-                reason=(
-                    f"元数据搜表未命中“{keyword}”对应的 MaxCompute 表。"
-                    "请换更具体的关键词，或直接给出英文物理表名。"
-                ),
-                clarifying_questions=[
-                    "目标表的英文名是什么？例如 dwd_trade_order_detail",
-                    "表所在项目/空间是什么？例如 giikin / giikin_aliyun",
-                ],
+            # Both album and BFF search came back empty after keyword
+            # filtering — don't fabricate candidates. Let the caller fall
+            # through to the semantic / LLM path so we either ask for
+            # clarification on real data or generate SQL with context.
+            logger.info(
+                "bff_search no hit for keyword=%s (album=%s, raw_bff=%d)",
+                keyword,
+                album.get("name") if album else None,
+                len(tables or []),
             )
+            return None
+        if album is None and not any(item.get("album_hit") for item in normalized) and len(normalized) > 1:
+            # No business-domain album matched: only trust BFF-search
+            # results when there is exactly one candidate. Many candidates
+            # without album evidence usually means the keyword is too
+            # noisy (e.g. 查一下单车 matched against 物料 tables), so
+            # defer to the semantic / LLM layer instead of dumping the
+            # list to the user.
+            logger.info(
+                "bff_search weak hit (%d) for keyword=%s without album, deferring to semantic layer",
+                len(normalized),
+                keyword,
+            )
+            return None
 
         # 4.5. Default to "business-facing" layers (DWS / DWD / DIM / DMR).
         # Chinese business keywords like 订单表 normally mean the served
@@ -2389,6 +2438,17 @@ class AgentWorkflowService:
             ]
             if business:
                 normalized = business
+        # Layer filter from follow-up hints (e.g. "只要 dwd", "看 dws").
+        requested_layer = self._extract_layer_filter(message)
+        if requested_layer:
+            layered = [
+                item
+                for item in normalized
+                if AgentWorkflowService._table_layer(item.get("table_name") or "")
+                == requested_layer
+            ]
+            if layered:
+                normalized = layered
 
         # 5. ref_count popularity ranking for BFF-only candidates.
         bff_only = [item for item in normalized if not item.get("album_hit")]
@@ -2417,9 +2477,14 @@ class AgentWorkflowService:
                 else int(normalized[1].get("ref_count") or 0)
             )
             top_key = int(top.get("ref_count") or 0)
-            # Album hit already beats non-album; only demote if a same-album
-            # candidate dominates ref_count by a wide margin.
-            if runner_up_score == 0 or top_key >= runner_up_score + 5:
+            # Demote auto-pick when the top candidate has no real evidence
+            # (ref_count == 0) and the runner-up is also an album hit:
+            # surface the candidates so the user can choose rather than
+            # silently picking the first one in iteration order.
+            if (
+                top_key > 0
+                and (runner_up_score == 0 or top_key >= runner_up_score + 5)
+            ):
                 return self._plan_single_hit(message, keyword, top)
 
         # Single BFF-search hit with no album candidates: trust it as a
@@ -2430,6 +2495,12 @@ class AgentWorkflowService:
         if len(unique_names) == 1 and len(normalized) > 1:
             return self._plan_single_hit(message, keyword, top)
 
+        # Many candidates: always show the top 10 (album-anchored first)
+        # so the user can pick. We deliberately do NOT auto-pick one just
+        # because it's in the album — 30 unrelated tables in 订单域 would
+        # still confuse the user, but 10 with their layer annotated is
+        # actually useful.
+
         candidates = [
             {
                 "table": item["full_name"],
@@ -2438,22 +2509,40 @@ class AgentWorkflowService:
                 "album_hit": bool(item.get("album_hit")),
                 "album": item.get("album_name") or "",
                 "category": item.get("album_category") or "",
+                "layer": AgentWorkflowService._table_layer(item.get("table_name") or ""),
                 "entity_guid": item.get("entity_guid") or "",
             }
             for item in normalized[:10]
         ]
         album_label = top.get("album_name") or "未命中专辑"
+        # Show layer summary so the user can drill down ("DWS only" /
+        # "跳过 ODS" etc.) instead of eyeballing 30 candidates.
+        layer_counts: dict[str, int] = {}
+        for item in normalized:
+            layer = AgentWorkflowService._table_layer(item.get("table_name") or "")
+            if layer:
+                layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        layer_hint = (
+            "候选层级：" + " / ".join(
+                f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts
+            )
+            if layer_counts
+            else ""
+        )
         raise QueryNeedsClarificationError(
             message,
             [],
             reason=(
                 f"元数据搜表为“{keyword}”找到 {len(normalized)} 张候选表，"
-                f"建议专辑：{album_label}。请选择一张后再查询。"
+                f"建议专辑：{album_label}。"
+                + (f" {layer_hint}。" if layer_hint else " 请选择一张后再查询。")
+                + " 可回复 \"只要 dwd\" 或具体表名进一步收敛。"
             ),
             knowledge_matches=candidates,
             clarifying_questions=[
                 "请从候选表中选择一张，或直接回复完整表名（project.table）。",
                 "如果目标是统计行数，也可以说：查 giikin.xxx 有多少条。",
+                "回复 \"只要 dws / dwd / ods\" 可以只看对应分层。",
             ],
         )
 
