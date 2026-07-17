@@ -167,6 +167,10 @@ class ChatAgent:
                     merged_context_updates, resolved_answer
                 )
                 custom_text = str(resolved_answer.get("custom_text") or "").strip()
+                if custom_text:
+                    params_update = dict(merged_context_updates.get("params") or {})
+                    params_update["custom_text"] = custom_text
+                    merged_context_updates["params"] = params_update
                 objective = str(
                     previous_context.get("pending_objective")
                     or previous_context.get("objective")

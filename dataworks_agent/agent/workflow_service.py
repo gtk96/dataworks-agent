@@ -1334,6 +1334,43 @@ class AgentWorkflowService:
                 next_params.pop("interaction_purpose", None)
                 next_params.pop("table_action", None)
                 return await self._ask_data(f"preview {table_name}", mode, next_params)
+            if table_action in {"generate_ods_node", "generate_dwd_node"}:
+                layer = "ODS" if table_action == "generate_ods_node" else "DWD"
+                return await self._prepare_node_write_confirmation(table_name, layer, params, mode)
+        if interaction_purpose == "confirm_node_write":
+            table_action = str(params.get("table_action") or "")
+            if table_action == "confirm_node_write":
+                return await self._execute_confirmed_node_write(
+                    dict(params.get("node_write_plan") or {}), mode
+                )
+            if table_action == "cancel_node_write":
+                return WorkflowResult(
+                    True,
+                    "已取消节点写入；未创建目录、未写节点、未发布。",
+                    "ask_data",
+                    mode,
+                    data={"cancelled": True, "published": False},
+                )
+            if table_action == "modify_node_name":
+                return WorkflowResult(
+                    True,
+                    "请输入新的节点名称；服务端会重新校验名称、目录和同路径节点。",
+                    "ask_data",
+                    mode,
+                    data={
+                        "needs_clarification": True,
+                        "interaction": {
+                            "type": "free_text",
+                            "purpose": "modify_node_name",
+                            "prompt": "请输入新的节点名称。",
+                            "options": [],
+                            "allow_custom_input": True,
+                            "custom_input_placeholder": "例如：tb_dwd_order_v2",
+                        },
+                    },
+                )
+        if interaction_purpose == "modify_node_name":
+            return await self._prepare_modified_node_confirmation(params, mode)
         business_query = params.get("business_query")
         try:
             query_plan = await self._build_query_plan(message, business_query, params=params)
@@ -1605,6 +1642,423 @@ class AgentWorkflowService:
             "select_table",
             "请选择目标表。",
             [*normalized, free_text],
+        )
+
+    @staticmethod
+    def _node_name_for_layer(table_name: str, layer: str) -> str:
+        base = table_name.rsplit(".", 1)[-1]
+        parts = base.split("_")
+        target = layer.lower()
+        for index, part in enumerate(parts):
+            if part.lower() in {"ods", "dim", "dwd", "dws", "dmr", "ads"}:
+                parts[index] = target
+                return "_".join(parts)
+        return f"{target}_{base}"
+
+    async def _prepare_modified_node_confirmation(
+        self, params: dict[str, Any], mode: ExecutionMode
+    ) -> WorkflowResult:
+        from dataworks_agent.state import app_state
+
+        plan = dict(params.get("node_write_plan") or {})
+        new_name = str(params.get("custom_text") or "").strip()
+        try:
+            assert_safe_table_name(new_name)
+        except ValueError as exc:
+            return WorkflowResult(
+                False,
+                f"节点名称不安全，已停止：{exc}",
+                "ask_data",
+                mode,
+                errors=[str(exc)],
+            )
+        parent_path = str(plan.get("parent_path") or "")
+        if not parent_path:
+            return WorkflowResult(
+                False,
+                "节点写入计划已失效，请重新选择生成节点。",
+                "ask_data",
+                mode,
+            )
+        node_path = f"{parent_path}/{new_name}"
+        nodes = getattr(app_state, "_node_client", None)
+        lookup = getattr(nodes, "get_node_uuid_by_path", None)
+        if not callable(lookup):
+            return WorkflowResult(False, "节点精确查询通道未就绪，已停止。", "ask_data", mode)
+        existing_uuid = await lookup(node_path)
+        plan.update(
+            {
+                "node_name": new_name,
+                "node_path": node_path,
+                "operation": "update" if existing_uuid else "create",
+                "existing_uuid": str(existing_uuid or ""),
+                "publish": False,
+            }
+        )
+        return WorkflowResult(
+            True,
+            f"节点名称已更新，请确认开发草稿写入：{node_path}。",
+            "ask_data",
+            mode,
+            data={
+                "needs_clarification": True,
+                "node_write_plan": plan,
+                "directory_creation_attempted": False,
+                "interaction": {
+                    "type": "confirm",
+                    "purpose": "confirm_node_write",
+                    "prompt": (
+                        f"节点：{new_name}\n父目录：{parent_path}\n"
+                        f"完整路径：{node_path}\n操作：{plan['operation']}\n"
+                        "不创建目录，只写开发草稿，不自动发布。"
+                    ),
+                    "options": [
+                        {
+                            "id": "confirm_node_write",
+                            "label": "确认写入草稿",
+                            "value": "confirm",
+                            "payload": {
+                                "params": {
+                                    "table_name": plan["source_table"],
+                                    "table_action": "confirm_node_write",
+                                    "node_write_plan": plan,
+                                }
+                            },
+                        },
+                        {
+                            "id": "cancel_node_write",
+                            "label": "取消",
+                            "value": "cancel",
+                            "payload": {
+                                "params": {
+                                    "table_action": "cancel_node_write",
+                                    "node_write_plan": plan,
+                                }
+                            },
+                        },
+                    ],
+                    "allow_custom_input": True,
+                    "custom_input_placeholder": "继续输入新的节点名称或修改要求",
+                },
+            },
+        )
+
+    async def _prepare_node_write_confirmation(
+        self,
+        table_name: str,
+        layer: str,
+        params: dict[str, Any],
+        mode: ExecutionMode,
+    ) -> WorkflowResult:
+        from dataclasses import asdict
+
+        from dataworks_agent.modeling.node_placement import (
+            NodePlacementPolicy,
+            NodePlacementRequest,
+        )
+        from dataworks_agent.state import app_state
+
+        try:
+            for identifier in table_name.split("."):
+                assert_safe_table_name(identifier)
+        except ValueError as exc:
+            return WorkflowResult(False, str(exc), "ask_data", mode, errors=[str(exc)])
+        bff = getattr(app_state, "_bff_client", None)
+        reader = getattr(bff, "check_existing_directory", None)
+        if not callable(reader):
+            return WorkflowResult(
+                False,
+                "无法只读确认 DataWorks 目录，已停止。",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+                errors=["directory evidence unavailable"],
+            )
+        candidates = params.get("node_directory_candidates") or ()
+        if isinstance(candidates, str):
+            candidates = (candidates,)
+        request = NodePlacementRequest(
+            environment=str(params.get("environment") or "production"),
+            layer=layer,
+            business_domain=str(params.get("business_domain") or "106_广告报告"),
+            requested_path=str(params.get("requested_node_directory") or ""),
+            candidate_paths=tuple(str(item) for item in candidates),
+        )
+        decision = await NodePlacementPolicy().resolve(request, reader)
+        if decision.status != "resolved":
+            data: dict[str, Any] = {
+                "placement": asdict(decision),
+                "directory_creation_attempted": False,
+            }
+            if decision.status == "needs_context":
+                data.update(
+                    {
+                        "needs_clarification": True,
+                        "interaction": {
+                            "type": "single_select",
+                            "purpose": "select_node_directory",
+                            "prompt": "请选择已在线确认的目录。",
+                            "options": [
+                                {
+                                    "id": f"directory_{index}",
+                                    "label": path,
+                                    "value": path,
+                                    "payload": {
+                                        "params": {
+                                            "environment": request.environment,
+                                            "table_name": table_name,
+                                            "table_action": f"generate_{layer.lower()}_node",
+                                            "requested_node_directory": path,
+                                        }
+                                    },
+                                }
+                                for index, path in enumerate(decision.candidates)
+                            ],
+                            "allow_custom_input": True,
+                        },
+                    }
+                )
+                return WorkflowResult(True, decision.reason, "ask_data", mode, data=data)
+            return WorkflowResult(
+                False, decision.reason, "ask_data", mode, data=data, errors=[decision.reason]
+            )
+
+        parent_path = decision.selected_path
+        node_name = self._node_name_for_layer(table_name, layer)
+        assert_safe_table_name(node_name)
+        node_path = f"{parent_path}/{node_name}"
+        nodes = getattr(app_state, "_node_client", None)
+        lookup = getattr(nodes, "get_node_uuid_by_path", None)
+        if not callable(lookup):
+            return WorkflowResult(
+                False,
+                "节点精确查询通道未就绪，已停止。",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+            )
+        try:
+            existing_uuid = await lookup(node_path)
+        except Exception as exc:
+            return WorkflowResult(
+                False,
+                f"exact node lookup failed: {exc}",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+                errors=[str(exc)],
+            )
+        script_content = (
+            "-- Agent draft only; production publish requires Publish Gate.\n"
+            f"SELECT *\nFROM {table_name};"
+        )
+        plan = {
+            "decision_id": decision.decision_id,
+            "environment": request.environment,
+            "layer": layer,
+            "source_table": table_name,
+            "node_name": node_name,
+            "parent_path": parent_path,
+            "node_path": node_path,
+            "language": "odps-sql",
+            "script_content": script_content,
+            "operation": "update" if existing_uuid else "create",
+            "existing_uuid": str(existing_uuid or ""),
+            "publish": False,
+        }
+        return WorkflowResult(
+            True,
+            f"请确认 {layer} 节点开发草稿写入：{node_path}。",
+            "ask_data",
+            mode,
+            data={
+                "needs_clarification": True,
+                "node_write_plan": plan,
+                "directory_creation_attempted": False,
+                "interaction": {
+                    "type": "confirm",
+                    "purpose": "confirm_node_write",
+                    "prompt": (
+                        f"节点：{node_name}\n父目录：{parent_path}\n"
+                        f"完整路径：{node_path}\n操作：{plan['operation']}\n"
+                        "不创建目录，只写开发草稿，不自动发布。"
+                    ),
+                    "options": [
+                        {
+                            "id": "confirm_node_write",
+                            "label": "确认写入草稿",
+                            "value": "confirm",
+                            "payload": {
+                                "params": {
+                                    "table_name": table_name,
+                                    "table_action": "confirm_node_write",
+                                    "node_write_plan": plan,
+                                },
+                                "selected_resources": {"table": table_name},
+                            },
+                        },
+                        {
+                            "id": "modify_node_name",
+                            "label": "修改节点名",
+                            "value": "modify",
+                            "payload": {
+                                "params": {
+                                    "table_action": "modify_node_name",
+                                    "node_write_plan": plan,
+                                }
+                            },
+                        },
+                        {
+                            "id": "cancel_node_write",
+                            "label": "取消",
+                            "value": "cancel",
+                            "payload": {
+                                "params": {
+                                    "table_action": "cancel_node_write",
+                                    "node_write_plan": plan,
+                                }
+                            },
+                        },
+                    ],
+                    "allow_custom_input": True,
+                    "custom_input_placeholder": "输入新节点名或修改要求",
+                },
+            },
+        )
+
+    async def _execute_confirmed_node_write(
+        self, plan: dict[str, Any], mode: ExecutionMode
+    ) -> WorkflowResult:
+        from dataworks_agent.services.ods_oss.directory_guard import (
+            normalize_node_path,
+            parent_node_path,
+        )
+        from dataworks_agent.state import app_state
+
+        required = (
+            "decision_id",
+            "layer",
+            "source_table",
+            "node_name",
+            "parent_path",
+            "node_path",
+            "language",
+            "script_content",
+        )
+        missing = [key for key in required if not plan.get(key)]
+        node_path = normalize_node_path(str(plan.get("node_path") or ""))
+        parent_path = normalize_node_path(str(plan.get("parent_path") or ""))
+        if missing or parent_node_path(node_path) != parent_path or plan.get("publish") is True:
+            return WorkflowResult(
+                False,
+                "节点写入计划校验失败，已停止。",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+                errors=[f"invalid node plan: {', '.join(missing)}"],
+            )
+        bff = getattr(app_state, "_bff_client", None)
+        reader = getattr(bff, "check_existing_directory", None)
+        if not callable(reader):
+            evidence = None
+        else:
+            evidence = await reader(parent_path)
+        if (
+            evidence is None
+            or not evidence.confirmed
+            or not evidence.is_fresh()
+            or normalize_node_path(evidence.path) != parent_path
+        ):
+            return WorkflowResult(
+                False,
+                "写入前目录重检失败，已停止且不会创建目录。",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+                errors=["directory evidence recheck failed"],
+            )
+        nodes = getattr(app_state, "_node_client", None)
+        api = getattr(app_state, "_openapi_client", None)
+        if nodes is None or api is None:
+            return WorkflowResult(
+                False,
+                "node write channel unavailable",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+            )
+        try:
+            existing_uuid = await nodes.get_node_uuid_by_path(node_path)
+        except Exception as exc:
+            return WorkflowResult(
+                False,
+                f"exact node lookup failed: {exc}",
+                "ask_data",
+                mode,
+                data={"directory_creation_attempted": False},
+                errors=[str(exc)],
+            )
+        operation = "update" if existing_uuid else "create"
+        node_uuid = str(existing_uuid or "")
+        if not node_uuid:
+            node_uuid = str(
+                await nodes.create_node(
+                    str(plan["node_name"]),
+                    node_path,
+                    language=str(plan["language"]),
+                    directory_evidence=evidence,
+                )
+                or ""
+            )
+        if not node_uuid:
+            error = str(getattr(nodes, "last_error", "node create failed"))
+            return WorkflowResult(False, error, "ask_data", mode, errors=[error])
+        content = str(plan["script_content"])
+        if not await nodes.update_node(node_uuid, content):
+            error = str(getattr(nodes, "last_error", "node update failed"))
+            return WorkflowResult(False, error, "ask_data", mode, errors=[error])
+        body = await api.get_node(node_uuid)
+        mapped = body.to_map() if hasattr(body, "to_map") else body
+        node = (mapped or {}).get("Node") or {}
+        raw_spec = node.get("Spec") or "{}"
+        spec = json.loads(raw_spec) if isinstance(raw_spec, str) else raw_spec
+        spec_node = (((spec or {}).get("spec") or {}).get("nodes") or [{}])[0]
+        script = spec_node.get("script") or {}
+        checks = {
+            "uuid": str(node.get("Id") or node_uuid) == node_uuid,
+            "path": normalize_node_path(str(script.get("path") or "")) == node_path,
+            "name": str(node.get("Name") or spec_node.get("name") or "") == str(plan["node_name"]),
+            "language": str(script.get("language") or "") == str(plan["language"]),
+            "script": str(script.get("content") or "") == content,
+        }
+        if not all(checks.values()):
+            return WorkflowResult(
+                False,
+                "节点写入后回读校验失败，未发布。",
+                "ask_data",
+                mode,
+                data={
+                    "node_uuid": node_uuid,
+                    "node_path": node_path,
+                    "verification": checks,
+                    "published": False,
+                    "directory_creation_attempted": False,
+                },
+                errors=["node readback verification failed"],
+            )
+        return WorkflowResult(
+            True,
+            f"节点开发草稿已{('更新' if operation == 'update' else '创建')}并回读校验通过：{node_path}。未创建目录，未自动发布。",
+            "ask_data",
+            mode,
+            data={
+                "node_uuid": node_uuid,
+                "node_path": node_path,
+                "operation": operation,
+                "verification": checks,
+                "published": False,
+                "directory_creation_attempted": False,
+            },
         )
 
     @staticmethod

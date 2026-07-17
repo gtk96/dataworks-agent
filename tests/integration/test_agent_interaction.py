@@ -504,3 +504,224 @@ def test_selected_table_returns_follow_up_actions_with_same_identifier() -> None
     assert all(
         option["payload"]["params"]["table_name"] == full_name for option in actions.values()
     )
+
+
+@pytest.mark.asyncio
+async def test_generate_node_action_returns_confirmation_without_writing(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "????/106_????/MaxCompute/????/02_DWD"
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value=None)
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock()
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+
+    result = await AgentWorkflowService()._prepare_node_write_confirmation(
+        "giikin_aliyun.tb_dwd_order",
+        "DWD",
+        {"environment": "test"},
+        "dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["interaction"]["purpose"] == "confirm_node_write"
+    plan = next(
+        option["payload"]["params"]["node_write_plan"]
+        for option in result.data["interaction"]["options"]
+        if option["id"] == "confirm_node_write"
+    )
+    assert plan["parent_path"] == parent
+    assert plan["node_path"].startswith(parent + "/")
+    assert plan["operation"] == "create"
+    assert plan["publish"] is False
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_rechecks_and_updates_existing_uuid(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "????/106_????/MaxCompute/????/02_DWD"
+    node_name = "tb_dwd_order"
+    node_path = f"{parent}/{node_name}"
+    script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
+    plan = {
+        "decision_id": "placement-1",
+        "environment": "test",
+        "layer": "DWD",
+        "source_table": "giikin_aliyun.tb_dwd_order",
+        "node_name": node_name,
+        "parent_path": parent,
+        "node_path": node_path,
+        "language": "odps-sql",
+        "script_content": script,
+        "operation": "update",
+        "existing_uuid": "node-existing",
+        "publish": False,
+    }
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value="node-existing")
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock(return_value=True)
+    api = MagicMock()
+    api.get_node = AsyncMock(
+        return_value={
+            "Node": {
+                "Id": "node-existing",
+                "Name": node_name,
+                "Spec": json.dumps(
+                    {
+                        "spec": {
+                            "nodes": [
+                                {
+                                    "name": node_name,
+                                    "script": {
+                                        "path": node_path,
+                                        "language": "odps-sql",
+                                        "content": script,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ),
+            }
+        }
+    )
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+    monkeypatch.setattr(app_state, "_openapi_client", api)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(plan, "dev_execute")
+
+    assert result.success is True
+    assert result.data["node_uuid"] == "node-existing"
+    assert result.data["operation"] == "update"
+    assert result.data["published"] is False
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_awaited_once_with("node-existing", script)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_creates_draft_with_fresh_evidence(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "????/106_????/MaxCompute/????/00_ODS"
+    node_name = "tb_ods_order"
+    node_path = f"{parent}/{node_name}"
+    script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
+    plan = {
+        "decision_id": "placement-1",
+        "environment": "test",
+        "layer": "ODS",
+        "source_table": "giikin_aliyun.tb_dwd_order",
+        "node_name": node_name,
+        "parent_path": parent,
+        "node_path": node_path,
+        "language": "odps-sql",
+        "script_content": script,
+        "operation": "create",
+        "existing_uuid": "",
+        "publish": False,
+    }
+    evidence = ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(return_value=evidence)
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value=None)
+    nodes.create_node = AsyncMock(return_value="node-new")
+    nodes.update_node = AsyncMock(return_value=True)
+    api = MagicMock()
+    api.get_node = AsyncMock(
+        return_value={
+            "Node": {
+                "Id": "node-new",
+                "Name": node_name,
+                "Spec": json.dumps(
+                    {
+                        "spec": {
+                            "nodes": [
+                                {
+                                    "name": node_name,
+                                    "script": {
+                                        "path": node_path,
+                                        "language": "odps-sql",
+                                        "content": script,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ),
+            }
+        }
+    )
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+    monkeypatch.setattr(app_state, "_openapi_client", api)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(plan, "dev_execute")
+
+    assert result.success is True
+    nodes.create_node.assert_awaited_once()
+    assert nodes.create_node.await_args.kwargs["directory_evidence"] == evidence
+    nodes.update_node.assert_awaited_once_with("node-new", script)
+    assert result.data["published"] is False
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_blocks_when_directory_recheck_fails(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "????/106_????/MaxCompute/????/02_DWD"
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "no_positive_evidence", False)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock()
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock()
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(
+        {
+            "decision_id": "placement-1",
+            "environment": "test",
+            "layer": "DWD",
+            "source_table": "giikin_aliyun.tb_dwd_order",
+            "node_name": "tb_dwd_order",
+            "parent_path": parent,
+            "node_path": f"{parent}/tb_dwd_order",
+            "language": "odps-sql",
+            "script_content": "SELECT 1;",
+            "publish": False,
+        },
+        "dev_execute",
+    )
+
+    assert result.success is False
+    assert result.data["directory_creation_attempted"] is False
+    nodes.get_node_uuid_by_path.assert_not_awaited()
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_not_awaited()
