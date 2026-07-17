@@ -15,6 +15,11 @@ from typing import Any, Literal
 import sqlglot
 from sqlglot import exp
 
+from dataworks_agent.agent.context import (
+    HistoryProvider,
+    MetadataProvider,
+    MetadataQueryResult,
+)
 from dataworks_agent.agent.nlu.entity_extractor import EntityExtractor
 from dataworks_agent.agent.nlu.templates import BUSINESS_QUERY_PATTERNS
 from dataworks_agent.agent.outcome_verifier import WorkflowOutcomeVerifier
@@ -99,6 +104,7 @@ class QueryNeedsClarificationError(ValueError):
         knowledge_matches: list[dict[str, Any]] | None = None,
         clarifying_questions: list[str] | None = None,
         missing_contract_fields: list[str] | None = None,
+        option_chips: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(question)
         self.question = question
@@ -107,6 +113,7 @@ class QueryNeedsClarificationError(ValueError):
         self.knowledge_matches = knowledge_matches or []
         self.clarifying_questions = clarifying_questions or []
         self.missing_contract_fields = missing_contract_fields or []
+        self.option_chips = option_chips or []
 
 
 @dataclass
@@ -145,6 +152,8 @@ class AgentWorkflowService:
         self._reflection_engine = ReflectionEngine()
         self._intent_confirm_gate = IntentConfirmGate()
         self._memory_layering = MemoryLayeringService()
+        self._metadata_provider = MetadataProvider()
+        self._history_provider = HistoryProvider()
 
     def infer_mode(self, message: str, requested: str, action: str = "") -> ExecutionMode:
         if requested == "plan":
@@ -1512,6 +1521,38 @@ class AgentWorkflowService:
         ]
         has_candidates = bool(candidates)
         knowledge_matches = clarification.knowledge_matches
+        # Newer metadata path injects prebuilt option chips on the
+        # exception itself so the frontend can render pick_table rows
+        # without re-deriving them. Older paths still produce plain
+        # knowledge_matches only.
+        option_chips = getattr(clarification, "option_chips", None)
+        if not option_chips:
+            option_chips = []
+            for idx, cand in enumerate(knowledge_matches[:10]):
+                if not isinstance(cand, dict):
+                    continue
+                option_chips.append(
+                    {
+                        "type": "pick_table",
+                        "id": f"opt_{idx}",
+                        "label": cand.get("table")
+                        or cand.get("full_name")
+                        or "",
+                        "subtitle": cand.get("comment") or "",
+                        "layer": cand.get("layer"),
+                        "value": cand.get("table")
+                        or cand.get("full_name")
+                        or "",
+                    }
+                )
+            option_chips.append(
+                {
+                    "type": "free_text",
+                    "id": "opt_custom",
+                    "label": "输入其它表名或完整 SQL",
+                    "placeholder": "project.table 或 SELECT ...",
+                }
+            )
         message = clarification.reason or (
             "该问题尚未命中已验证的指标口径。我已从数据专辑筛出候选表；"
             "请确认指标定义或过滤条件，我不会猜测生产口径。"
@@ -1559,6 +1600,7 @@ class AgentWorkflowService:
                     "应使用哪个数据专辑或目标表？",
                     "时间范围、统计粒度和分组维度是什么？",
                 ],
+                "option_chips": option_chips,
                 "query": {"executed": False},
             },
         )
@@ -1967,13 +2009,20 @@ class AgentWorkflowService:
             sql = self._build_simple_table_sql(message, table_name)
             return self._ad_hoc_query_plan(sql, "用户明确指定表", table=table_name)
 
-        # Chinese business keywords (e.g. 订单表) → Cookie BFF search_tables first
-        # (same path data-mcp uses: dma/searchTables + optional ref_count ranking).
+        # Chinese business keywords (e.g. 订单表) → MetadataProvider first
+        # (cookie/bff search + data-album ranking) before falling through
+        # to the semantic / LLM layer.
         search_keyword = self._extract_table_search_keyword(message, params)
         if search_keyword:
-            resolved = await self._resolve_table_via_bff_search(search_keyword, message)
-            if resolved is not None:
-                return resolved
+            metadata_result = await self._metadata_provider.search_table(
+                search_keyword, message
+            )
+            if metadata_result is not None:
+                resolved = await self._build_plan_from_metadata(
+                    message, search_keyword, metadata_result
+                )
+                if resolved is not None:
+                    return resolved
 
         candidate_tables = (
             self._metric_query_planner.candidate_tables_for_query(business_query)
@@ -2569,6 +2618,198 @@ class AgentWorkflowService:
             f"source={partition_source}"
         )
         return plan
+
+    async def _build_plan_from_metadata(
+        self,
+        message: str,
+        keyword: str,
+        result: MetadataQueryResult,
+    ) -> MetricQueryPlan | None:
+        """Bridge ``MetadataProvider.search_table`` into the planner flow.
+
+        The provider returns raw candidates; this helper applies the
+        same layer + album + ref_count scoring we already encode for the
+        legacy inline path so the rule-based planner can continue
+        producing single-hit plans / clarification errors.
+        """
+        normalized = await self._shape_metadata_candidates(message, keyword, result)
+        if not normalized:
+            return None
+
+        top = normalized[0]
+        unique_names = {item["full_name"] for item in normalized}
+
+        if top.get("album_hit") and len(normalized) == 1:
+            return self._plan_single_hit(message, keyword, top)
+        if top.get("album_hit") and len(normalized) > 1:
+            runner_up_score = (
+                0
+                if not normalized[1].get("album_hit")
+                else int(normalized[1].get("ref_count") or 0)
+            )
+            top_key = int(top.get("ref_count") or 0)
+            if (
+                top_key > 0
+                and (runner_up_score == 0 or top_key >= runner_up_score + 5)
+            ):
+                return self._plan_single_hit(message, keyword, top)
+
+        if len(normalized) == 1 and not top.get("album_hit"):
+            return self._plan_single_hit(message, keyword, top)
+        if len(unique_names) == 1 and len(normalized) > 1:
+            return self._plan_single_hit(message, keyword, top)
+
+        return self._raise_metadata_clarification(
+            message, keyword, result, normalized
+        )
+
+    async def _shape_metadata_candidates(
+        self,
+        message: str,
+        keyword: str,
+        result: MetadataQueryResult,
+    ) -> list[dict[str, Any]]:
+        """Apply layer filter + ranking + prefer-non-ODS to provider output."""
+        normalized = list(result.candidates)
+
+        prefer_non_ods = self._user_wants_non_ods(message)
+        if prefer_non_ods:
+            business = [
+                item
+                for item in normalized
+                if not str(item.get("table_name") or "").lower().startswith(
+                    ("ods_", "tb_ods_")
+                )
+            ]
+            if business:
+                normalized = business
+
+        requested_layer = self._extract_layer_filter(message)
+        if requested_layer:
+            layered = [
+                item
+                for item in normalized
+                if self._table_layer(item.get("table_name") or "") == requested_layer
+            ]
+            if layered:
+                normalized = layered
+
+        bff = getattr(app_state, "_bff_client", None)
+        bff_only = [item for item in normalized if not item.get("album_hit")]
+        if bff is not None and bff_only and any(
+            item.get("entity_guid") for item in bff_only
+        ):
+            await self._enrich_table_ref_counts(bff, bff_only)
+
+        for item in normalized:
+            if not item.get("layer"):
+                item["layer"] = self._table_layer(item.get("table_name") or "")
+        normalized.sort(
+            key=lambda item: (
+                1 if item.get("album_hit") else 0,
+                int(item.get("ref_count") or 0),
+            ),
+            reverse=True,
+        )
+        return normalized
+
+    def _raise_metadata_clarification(
+        self,
+        message: str,
+        keyword: str,
+        result: MetadataQueryResult,
+        normalized: list[dict[str, Any]],
+    ) -> MetricQueryPlan | None:
+        """Reuse the existing clarification path but with provider output."""
+        candidates = [
+            {
+                "table": item["full_name"],
+                "comment": item.get("comment") or "",
+                "ref_count": item.get("ref_count") or 0,
+                "album_hit": bool(item.get("album_hit")),
+                "album": item.get("album_name") or "",
+                "category": item.get("album_category") or "",
+                "layer": self._table_layer(item.get("table_name") or ""),
+                "entity_guid": item.get("entity_guid") or "",
+            }
+            for item in normalized[:10]
+        ]
+        # Structured option chips for the frontend: a top-pick + the
+        # top-9 album / ref_count ranked candidates + a free-text
+        # fallback. The frontend renders ``type="pick_table"`` chips as
+        # clickable options and always shows the free-text fallback.
+        option_chips: list[dict[str, Any]] = []
+        for idx, cand in enumerate(candidates):
+            option_chips.append(
+                {
+                    "type": "pick_table",
+                    "id": f"opt_{idx}",
+                    "label": cand["table"],
+                    "subtitle": cand.get("comment") or "",
+                    "layer": cand.get("layer"),
+                    "value": cand["table"],
+                }
+            )
+        option_chips.append(
+            {
+                "type": "free_text",
+                "id": "opt_custom",
+                "label": "输入其它表名或完整 SQL",
+                "placeholder": "project.table 或 SELECT ...",
+            }
+        )
+        album_label = (
+            (result.album or {}).get("name") if result.album else None
+        ) or "未命中专辑"
+        layer_counts: dict[str, int] = {}
+        for item in normalized:
+            layer = self._table_layer(item.get("table_name") or "")
+            if layer:
+                layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        layer_hint = (
+            "候选层级：" + " / ".join(
+                f"{layer.upper()}={layer_counts[layer]}" for layer in layer_counts
+            )
+            if layer_counts
+            else ""
+        )
+        option_chips: list[dict[str, Any]] = []
+        for idx, cand in enumerate(candidates[:10]):
+            option_chips.append(
+                {
+                    "type": "pick_table",
+                    "id": f"opt_{idx}",
+                    "label": cand["table"],
+                    "subtitle": cand.get("comment") or "",
+                    "layer": cand.get("layer"),
+                    "value": cand["table"],
+                }
+            )
+        option_chips.append(
+            {
+                "type": "free_text",
+                "id": "opt_custom",
+                "label": "输入其它表名或完整 SQL",
+                "placeholder": "project.table 或 SELECT ...",
+            }
+        )
+        raise QueryNeedsClarificationError(
+            message,
+            [],
+            reason=(
+                f"元数据搜表为“{keyword}”找到 {len(normalized)} 张候选表，"
+                f"建议专辑：{album_label}。"
+                + (f" {layer_hint}。" if layer_hint else " 请选择一张后再查询。")
+                + " 可点选候选表，或点\"输入其它\"自定义回复。"
+            ),
+            knowledge_matches=candidates,
+            clarifying_questions=[
+                "请从候选表中选择一张，或直接回复完整表名（project.table）。",
+                "如果目标是统计行数，也可以说：查 giikin.xxx 有多少条。",
+                "回复 \"只要 dws / dwd / ods\" 可以只看对应分层。",
+            ],
+            option_chips=option_chips,
+        )
 
     @staticmethod
     def _build_table_partition_clause_sync(table: str) -> tuple[str, str]:

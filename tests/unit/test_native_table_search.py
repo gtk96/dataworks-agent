@@ -118,7 +118,9 @@ def test_build_simple_table_sql_preview() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_table_via_bff_search_single_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Single BFF candidate with no album evidence → single-hit plan."""
     service = AgentWorkflowService()
+    provider = service._metadata_provider
 
     class _Bff:
         async def search_tables(self, keyword: str):
@@ -144,7 +146,9 @@ async def test_resolve_table_via_bff_search_single_hit(monkeypatch: pytest.Monke
     from dataworks_agent.state import app_state
 
     monkeypatch.setattr(app_state, "_bff_client", _Bff())
-    plan = await service._resolve_table_via_bff_search("订单", "查一下订单表")
+    result = await provider.search_table("订单", "查一下订单表")
+    assert result is not None
+    plan = await service._build_plan_from_metadata("查一下订单表", "订单", result)
     assert plan is not None
     assert plan.table == "giikin.dwd_trade_order_detail"
     assert "dwd_trade_order_detail" in plan.sql
@@ -154,7 +158,9 @@ async def test_resolve_table_via_bff_search_single_hit(monkeypatch: pytest.Monke
 async def test_resolve_table_via_bff_search_multiple_candidates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """No album + multiple BFF candidates → defer to semantic layer (None)."""
     service = AgentWorkflowService()
+    provider = service._metadata_provider
 
     class _Bff:
         async def search_tables(self, keyword: str):
@@ -182,14 +188,11 @@ async def test_resolve_table_via_bff_search_multiple_candidates(
         async def get_meta_album(self, album_id: int):
             return None
 
-    # Without album evidence, two BFF candidates mean the keyword matches
-    # loosely. The resolver now defers to the semantic layer instead of
-    # auto-picking; expect None so the upstream planner can take over.
     from dataworks_agent.state import app_state
 
     monkeypatch.setattr(app_state, "_bff_client", _Bff())
-    plan = await service._resolve_table_via_bff_search("订单", "查一下订单表")
-    assert plan is None
+    result = await provider.search_table("订单", "查一下订单表")
+    assert result is None  # defers to semantic layer (no album + multi)
 
 
 @pytest.mark.asyncio
