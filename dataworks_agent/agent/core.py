@@ -135,6 +135,17 @@ class ChatAgent:
                 else None,
             )
             previous_context = await self._conversation_graph.context(conversation_id)
+            if (
+                answer is None
+                and previous_context.get("pending_interaction")
+                and not self._is_conversation_reset(incoming_message)
+            ):
+                pending = previous_context["pending_interaction"]
+                answer = InteractionAnswer(
+                    interaction_id=str(pending.get("interaction_id") or ""),
+                    custom_text=incoming_message,
+                    state_version=int(pending.get("state_version") or 0),
+                )
             resolved_answer: dict[str, Any] = {}
             merged_context_updates = dict(context_updates or {})
             if answer is not None:
@@ -155,11 +166,16 @@ class ChatAgent:
                 merged_context_updates = self._merge_context_updates(
                     merged_context_updates, resolved_answer
                 )
-                message = str(
-                    resolved_answer.get("custom_text")
-                    or previous_context.get("pending_objective")
+                custom_text = str(resolved_answer.get("custom_text") or "").strip()
+                objective = str(
+                    previous_context.get("pending_objective")
                     or previous_context.get("objective")
-                    or incoming_message
+                    or ""
+                ).strip()
+                message = (
+                    f"{objective}\n补充信息：{custom_text}"
+                    if custom_text and objective and custom_text != objective
+                    else custom_text or objective or incoming_message
                 )
             message = await self._conversation_graph.resolve(
                 message,
@@ -173,6 +189,9 @@ class ChatAgent:
                 merged_context_updates.get("params") or {},
             )
             intent.params.setdefault("conversation_id", conversation_id)
+            pending_interaction = previous_context.get("pending_interaction") or {}
+            if answer is not None and pending_interaction.get("purpose"):
+                intent.params["interaction_purpose"] = str(pending_interaction["purpose"])
             intent.params["goal"] = (
                 intent.params.get("goal") or previous_context.get("objective") or incoming_message
             )
@@ -309,6 +328,11 @@ class ChatAgent:
         except Exception as e:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
+
+    @staticmethod
+    def _is_conversation_reset(message: str) -> bool:
+        text = message.lower()
+        return any(marker in text for marker in ("??", "????", "???", "cancel", "reset"))
 
     @staticmethod
     def _is_context_summary_request(message: str, context: dict[str, Any]) -> bool:

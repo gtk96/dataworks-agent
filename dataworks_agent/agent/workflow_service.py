@@ -1318,6 +1318,22 @@ class AgentWorkflowService:
         params: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         params = params or {}
+        interaction_purpose = str(params.get("interaction_purpose") or "")
+        table_name = str(params.get("table_name") or "").strip()
+        if interaction_purpose == "select_table" and table_name:
+            return self._selected_table_action_result(table_name, mode)
+        if interaction_purpose == "select_action" and table_name:
+            table_action = str(params.get("table_action") or "")
+            if table_action in {"view_columns", "view_partitions", "view_lineage"}:
+                result = await self._reverse_model(table_name, {"table_name": table_name}, mode)
+                result.data["selected_table"] = table_name
+                result.data["table_action"] = table_action
+                return result
+            if table_action == "preview_data":
+                next_params = dict(params)
+                next_params.pop("interaction_purpose", None)
+                next_params.pop("table_action", None)
+                return await self._ask_data(f"preview {table_name}", mode, next_params)
         business_query = params.get("business_query")
         try:
             query_plan = await self._build_query_plan(message, business_query, params=params)
@@ -1508,6 +1524,132 @@ class AgentWorkflowService:
             bff._csrf_time = 0
         return outcome
 
+    @staticmethod
+    def _table_layer(option: dict[str, Any]) -> str:
+        explicit = str(option.get("layer") or "").strip().lower()
+        if explicit:
+            return explicit
+        table = str(option.get("value") or option.get("label") or "").lower()
+        base = table.rsplit(".", 1)[-1]
+        for layer in ("ods", "dim", "dwd", "dws", "dmr", "ads"):
+            if base.startswith(layer + "_") or ("_" + layer + "_") in base:
+                return layer
+        return "other"
+
+    @classmethod
+    def _normalize_table_options(
+        cls, option_chips: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], str, str, list[dict[str, Any]]]:
+        table_options = [
+            dict(option)
+            for option in option_chips
+            if isinstance(option, dict)
+            and option.get("type") == "pick_table"
+            and str(option.get("value") or option.get("label") or "").strip()
+        ]
+        free_text = next(
+            (
+                dict(option)
+                for option in option_chips
+                if isinstance(option, dict) and option.get("type") == "free_text"
+            ),
+            {
+                "type": "free_text",
+                "id": "opt_custom",
+                "label": "输入其它表名或筛选条件",
+                "placeholder": "project.table 或继续描述筛选条件",
+            },
+        )
+        if len(table_options) > 8:
+            counts: dict[str, int] = {}
+            for option in table_options:
+                layer = cls._table_layer(option)
+                counts[layer] = counts.get(layer, 0) + 1
+            grouped = [
+                {
+                    "type": "pick_layer",
+                    "id": f"layer_{layer}",
+                    "label": layer.upper(),
+                    "subtitle": f"{count} 张候选表",
+                    "description": f"仅查看 {layer.upper()} 层候选表",
+                    "value": layer,
+                    "layer": layer,
+                    "payload": {"params": {"layer": layer}},
+                }
+                for layer, count in sorted(counts.items())
+            ]
+            return (
+                grouped,
+                "select_layer",
+                "候选表较多，请先选择数仓分层。",
+                [*grouped, free_text],
+            )
+        normalized: list[dict[str, Any]] = []
+        for index, option in enumerate(table_options[:8]):
+            full_name = str(option.get("value") or option.get("label") or "").strip()
+            normalized.append(
+                {
+                    **option,
+                    "id": str(option.get("id") or f"table_{index}"),
+                    "label": str(option.get("label") or full_name),
+                    "value": full_name,
+                    "layer": cls._table_layer(option),
+                    "payload": {
+                        "params": {"table_name": full_name},
+                        "selected_resources": {"table": full_name},
+                    },
+                }
+            )
+        return (
+            normalized,
+            "select_table",
+            "请选择目标表。",
+            [*normalized, free_text],
+        )
+
+    @staticmethod
+    def _selected_table_action_result(table_name: str, mode: ExecutionMode) -> WorkflowResult:
+        actions = (
+            ("view_columns", "查看字段"),
+            ("preview_data", "预览数据"),
+            ("view_partitions", "查看分区"),
+            ("view_lineage", "查看血缘"),
+            ("generate_ods_node", "生成 ODS 节点"),
+            ("generate_dwd_node", "生成 DWD 节点"),
+        )
+        options = [
+            {
+                "id": action,
+                "label": label,
+                "value": action,
+                "payload": {
+                    "params": {"table_name": table_name, "table_action": action},
+                    "selected_resources": {"table": table_name},
+                },
+            }
+            for action, label in actions
+        ]
+        return WorkflowResult(
+            True,
+            f"已选择 {table_name}，请选择下一步操作。",
+            "ask_data",
+            mode,
+            steps=[{"step": "select_table", "status": "completed"}],
+            data={
+                "selected_table": table_name,
+                "needs_clarification": True,
+                "interaction_purpose": "select_action",
+                "interaction": {
+                    "type": "single_select",
+                    "purpose": "select_action",
+                    "prompt": f"你希望如何处理 {table_name}？",
+                    "options": options,
+                    "allow_custom_input": True,
+                    "custom_input_placeholder": "输入其他操作或补充要求",
+                },
+            },
+        )
+
     def _query_clarification_result(
         self, clarification: QueryNeedsClarificationError, mode: ExecutionMode
     ) -> WorkflowResult:
@@ -1560,6 +1702,9 @@ class AgentWorkflowService:
                     "placeholder": "project.table 或 SELECT ...",
                 }
             )
+        interaction_options, interaction_purpose, interaction_prompt, option_chips = (
+            self._normalize_table_options(option_chips)
+        )
         message = clarification.reason or (
             "该问题尚未命中已验证的指标口径。我已从数据专辑筛出候选表；"
             "请确认指标定义或过滤条件，我不会猜测生产口径。"
@@ -1608,6 +1753,15 @@ class AgentWorkflowService:
                     "时间范围、统计粒度和分组维度是什么？",
                 ],
                 "option_chips": option_chips,
+                "interaction_purpose": interaction_purpose,
+                "interaction": {
+                    "type": "single_select" if interaction_options else "free_text",
+                    "purpose": interaction_purpose,
+                    "prompt": interaction_prompt,
+                    "options": interaction_options,
+                    "allow_custom_input": True,
+                    "custom_input_placeholder": "输入其他表名或进一步描述筛选条件",
+                },
                 "query": {"executed": False},
             },
         )

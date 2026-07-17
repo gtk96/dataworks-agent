@@ -324,6 +324,7 @@ async def test_chat_resolves_structured_answer_before_nlu() -> None:
     assert execute["action"] == "ask_data"
     assert execute["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
     assert execute["params"]["keyword"] == "order"
+    assert execute["params"]["interaction_purpose"] == "select_table"
 
 
 @pytest.mark.asyncio
@@ -411,3 +412,95 @@ def test_history_loading_parses_payload_json(monkeypatch) -> None:
             "payload": {"interaction": {"interaction_id": "int-1"}},
         }
     ]
+
+
+def test_table_clarification_groups_large_candidate_sets_by_layer() -> None:
+    from dataworks_agent.agent.workflow_service import (
+        AgentWorkflowService,
+        QueryNeedsClarificationError,
+    )
+
+    chips = [
+        {
+            "type": "pick_table",
+            "id": f"opt-{index}",
+            "label": f"project.tb_{layer}_orders_{index}",
+            "value": f"project.tb_{layer}_orders_{index}",
+            "layer": layer,
+        }
+        for index, layer in enumerate(
+            ["ods", "ods", "dwd", "dwd", "dwd", "dws", "dws", "dmr", "dmr"]
+        )
+    ]
+    result = AgentWorkflowService()._query_clarification_result(
+        QueryNeedsClarificationError("orders", [], option_chips=chips),
+        "dev_execute",
+    )
+
+    interaction = result.data["interaction"]
+    assert interaction["purpose"] == "select_layer"
+    assert {option["value"] for option in interaction["options"]} == {
+        "ods",
+        "dwd",
+        "dws",
+        "dmr",
+    }
+    assert result.data["option_chips"][-1]["type"] == "free_text"
+
+
+def test_table_clarification_keeps_full_identifiers_for_small_sets() -> None:
+    from dataworks_agent.agent.workflow_service import (
+        AgentWorkflowService,
+        QueryNeedsClarificationError,
+    )
+
+    full_name = "giikin_aliyun.tb_dwd_order"
+    result = AgentWorkflowService()._query_clarification_result(
+        QueryNeedsClarificationError(
+            "orders",
+            [],
+            option_chips=[
+                {
+                    "type": "pick_table",
+                    "id": "table-1",
+                    "label": full_name,
+                    "value": full_name,
+                    "layer": "dwd",
+                }
+            ],
+        ),
+        "dev_execute",
+    )
+
+    interaction = result.data["interaction"]
+    assert interaction["purpose"] == "select_table"
+    assert interaction["options"][0]["value"] == full_name
+    assert interaction["options"][0]["payload"] == {
+        "params": {"table_name": full_name},
+        "selected_resources": {"table": full_name},
+    }
+
+
+def test_selected_table_returns_follow_up_actions_with_same_identifier() -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+
+    full_name = "giikin_aliyun.tb_dwd_order"
+    result = AgentWorkflowService()._selected_table_action_result(full_name, "dev_execute")
+
+    assert result.data["selected_table"] == full_name
+    assert result.data["interaction"]["purpose"] == "select_action"
+    actions = {
+        option["payload"]["params"]["table_action"]: option
+        for option in result.data["interaction"]["options"]
+    }
+    assert set(actions) == {
+        "view_columns",
+        "preview_data",
+        "view_partitions",
+        "view_lineage",
+        "generate_ods_node",
+        "generate_dwd_node",
+    }
+    assert all(
+        option["payload"]["params"]["table_name"] == full_name for option in actions.values()
+    )
