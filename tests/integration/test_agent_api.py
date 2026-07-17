@@ -28,6 +28,8 @@ def client():
             data={"task_id": "test-123"},
         )
     )
+    mock_agent.get_conversation_history.return_value = []
+    mock_agent.get_conversation_context = AsyncMock(return_value={})
 
     import dataworks_agent.routers.agent as agent_module
 
@@ -93,6 +95,91 @@ def test_chat_endpoint_message_forwarded(client):
         json={"message": "测试消息"},
     )
     assert response.status_code == 200
-    mock_agent.chat.assert_called_once_with(
-        "测试消息", execution_mode="plan", conversation_id=None
+    mock_agent.chat.assert_called_once_with("测试消息", execution_mode="plan", conversation_id=None)
+
+
+def test_structured_interaction_answer_forwarded(client):
+    test_client, mock_agent = client
+    answer = {
+        "interaction_id": "int-1",
+        "option_id": "table-1",
+        "state_version": 2,
+    }
+
+    response = test_client.post(
+        "/agent/chat",
+        json={
+            "message": "订单表",
+            "conversation_id": "conv-1",
+            "interaction_answer": answer,
+        },
     )
+
+    assert response.status_code == 200
+    call = mock_agent.chat.await_args
+    assert call.args == ("订单表",)
+    assert call.kwargs["execution_mode"] == "plan"
+    assert call.kwargs["conversation_id"] == "conv-1"
+    assert call.kwargs["interaction_answer"].model_dump(exclude_none=True) == answer
+
+
+def test_websocket_structured_interaction_answer_forwarded(client):
+    test_client, mock_agent = client
+    answer = {
+        "interaction_id": "int-1",
+        "custom_text": "只看退款金额表",
+        "state_version": 2,
+    }
+
+    with test_client.websocket_connect("/agent/ws") as websocket:
+        websocket.send_json(
+            {
+                "message": "只看退款金额表",
+                "conversation_id": "conv-1",
+                "interaction_answer": answer,
+            }
+        )
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "response"
+    call = mock_agent.chat.await_args
+    assert call.args == ("只看退款金额表",)
+    assert call.kwargs["conversation_id"] == "conv-1"
+    assert call.kwargs["interaction_answer"].model_dump(exclude_none=True) == answer
+
+
+def test_messages_returns_active_interaction_and_state_version(client):
+    test_client, mock_agent = client
+    interaction = {
+        "interaction_id": "int-1",
+        "type": "single_select",
+        "purpose": "select_table",
+        "prompt": "请选择表",
+        "options": [],
+        "allow_custom_input": True,
+        "custom_input_placeholder": "",
+        "status": "pending",
+        "state_version": 3,
+    }
+    mock_agent.get_conversation_history.return_value = [
+        {
+            "role": "assistant",
+            "content": "请选择表",
+            "timestamp": "2026-07-17T00:00:00+00:00",
+            "payload": {"interaction": interaction},
+        }
+    ]
+    mock_agent.get_conversation_context.return_value = {
+        "pending_interaction": interaction,
+        "state_version": 3,
+    }
+
+    response = test_client.get("/agent/messages", params={"conversation_id": "conv-1"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "messages": mock_agent.get_conversation_history.return_value,
+        "active_interaction": interaction,
+        "state_version": 3,
+    }
+    mock_agent.get_conversation_context.assert_awaited_once_with("conv-1")

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 from dataworks_agent.agent.core import ChatAgent
+from dataworks_agent.agent.interaction import InteractionAnswer
 from dataworks_agent.runtime.publish_gate import PublishGate, PublishRequest
 from dataworks_agent.state import app_state
 
@@ -50,6 +51,7 @@ class ChatRequest(BaseModel):
     initialize_data: bool = True
     publish: bool = False
     conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    interaction_answer: InteractionAnswer | None = None
     context_updates: dict[str, Any] | None = Field(
         default=None, description="Structured answer from a clarification action"
     )
@@ -107,19 +109,16 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         {"execution_mode", "initialize_data", "publish"} & payload.model_fields_set
     )
     if not workflow_options_explicit:
+        kwargs: dict[str, Any] = {
+            "execution_mode": "plan",
+            "conversation_id": payload.conversation_id,
+        }
+        if payload.interaction_answer is not None:
+            kwargs["interaction_answer"] = payload.interaction_answer
         if payload.request_type is None:
-            response = await _agent.chat(
-                payload.message,
-                execution_mode="plan",
-                conversation_id=payload.conversation_id,
-            )
+            response = await _agent.chat(payload.message, **kwargs)
         else:
-            response = await _agent.chat(
-                payload.message,
-                payload.request_type,
-                execution_mode="plan",
-                conversation_id=payload.conversation_id,
-            )
+            response = await _agent.chat(payload.message, payload.request_type, **kwargs)
     else:
         kwargs: dict[str, Any] = {
             "execution_mode": payload.execution_mode,
@@ -130,6 +129,8 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         }
         if payload.context_updates is not None:
             kwargs["context_updates"] = payload.context_updates
+        if payload.interaction_answer is not None:
+            kwargs["interaction_answer"] = payload.interaction_answer
         response = await _agent.chat(payload.message, payload.request_type, **kwargs)
     logger.info("Chat response: success=%s", response.success)
     return ChatResponse(
@@ -150,7 +151,12 @@ async def capabilities() -> dict[str, Any]:
 async def get_messages(conversation_id: str, limit: int = 50) -> dict[str, Any]:
     """获取对话历史消息。"""
     messages = _agent.get_conversation_history(conversation_id, limit)
-    return {"messages": messages}
+    context = await _agent.get_conversation_context(conversation_id)
+    return {
+        "messages": messages,
+        "active_interaction": context.get("pending_interaction") or None,
+        "state_version": int(context.get("state_version") or 0),
+    }
 
 
 @router.get("/publish-gate/requests")
@@ -254,11 +260,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             publish = bool(data.get("publish", False))
             request_type = data.get("request_type")
             conversation_id = data.get("conversation_id")
+            interaction_answer = (
+                InteractionAnswer.model_validate(data["interaction_answer"])
+                if data.get("interaction_answer") is not None
+                else None
+            )
             workflow_options_explicit = any(
                 key in data for key in ("execution_mode", "initialize_data", "publish")
             )
             if not workflow_options_explicit and request_type is None:
-                response = await _agent.chat(message, conversation_id=conversation_id)
+                kwargs = {"conversation_id": conversation_id}
+                if interaction_answer is not None:
+                    kwargs["interaction_answer"] = interaction_answer
+                response = await _agent.chat(message, **kwargs)
             else:
                 kwargs: dict[str, Any] = {
                     "execution_mode": execution_mode,
@@ -269,6 +283,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 }
                 if data.get("context_updates") is not None:
                     kwargs["context_updates"] = data["context_updates"]
+                if interaction_answer is not None:
+                    kwargs["interaction_answer"] = interaction_answer
                 response = await _agent.chat(message, request_type, **kwargs)
             payload = {
                 "message": response.message,
