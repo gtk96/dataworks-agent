@@ -58,11 +58,7 @@ def _json_default(obj: object) -> object:
             pass
     if hasattr(obj, "__dict__"):
         try:
-            return {
-                k: v
-                for k, v in vars(obj).items()
-                if not k.startswith("_") and not callable(v)
-            }
+            return {k: v for k, v in vars(obj).items() if not k.startswith("_") and not callable(v)}
         except Exception:
             pass
     return str(obj)

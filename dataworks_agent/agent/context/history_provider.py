@@ -48,9 +48,7 @@ class HistoryProvider:
     # Public API
     # ------------------------------------------------------------------
 
-    async def recent_tables(
-        self, conversation_id: str | None, *, limit: int = 3
-    ) -> list[str]:
+    async def recent_tables(self, conversation_id: str | None, *, limit: int = 3) -> list[str]:
         """Return up to ``limit`` physical tables mentioned in recent turns.
 
         Order: most recent first. Empty list when no conversation or no
@@ -94,9 +92,7 @@ class HistoryProvider:
         recent_tables = await self.recent_tables(conversation_id)
         lines = ["## 最近对话"]
         if recent_tables:
-            lines.append(
-                "- 最近引用表: " + " / ".join(recent_tables)
-            )
+            lines.append("- 最近引用表: " + " / ".join(recent_tables))
         for row in rows[-max_turns:]:
             role = "用户" if row.get("role") == "user" else "Agent"
             content = self._unwrap_history_payload(row.get("content") or "")[:400]
@@ -155,10 +151,7 @@ class HistoryProvider:
                 .limit(limit)
             )
             rows = list(session.execute(stmt).scalars().all())
-            return [
-                {"role": msg.role, "content": msg.content}
-                for msg in reversed(rows)
-            ]
+            return [{"role": msg.role, "content": msg.content} for msg in reversed(rows)]
         except Exception as exc:
             logger.warning("history load failed: %s", exc)
             return []

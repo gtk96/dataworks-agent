@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 PartKind = Literal["schema", "metadata", "instruction", "prompt", "response", "data_row"]
 
 # 允许出境的片段类型（不含 data_row）
-_ALLOWED_KINDS: frozenset[str] = frozenset({"schema", "metadata", "instruction", "prompt", "response"})
+_ALLOWED_KINDS: frozenset[str] = frozenset(
+    {"schema", "metadata", "instruction", "prompt", "response"}
+)
 
 
 class RowDataViolationError(RuntimeError):

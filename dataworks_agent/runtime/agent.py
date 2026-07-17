@@ -380,9 +380,7 @@ class GovernanceAgent:
         target_table = request.context.get("target_table", "")
         target_layer = request.context.get("target_layer", "")
         if source_table and target_table and target_layer:
-            layer_result = self.proposal_guard.check_layer_dependency(
-                target_layer, [source_table]
-            )
+            layer_result = self.proposal_guard.check_layer_dependency(target_layer, [source_table])
             result["checks"].append({"name": "layer", "passed": layer_result.passed})
             if not layer_result.passed:
                 all_errors.extend(layer_result.errors)

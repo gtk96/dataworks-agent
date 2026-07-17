@@ -45,7 +45,6 @@ class ProjectProvider:
             "region": settings.dataworks_region,
             "dev_schema": settings.dataworks_dev_schema,
             "prod_schema": settings.dataworks_prod_schema,
-            "maxcompute_project": settings.maxcompute_project
-            or settings.dataworks_dev_schema,
+            "maxcompute_project": settings.maxcompute_project or settings.dataworks_dev_schema,
             "cookie_health": getattr(app_state, "cookie_health", "unknown"),
         }

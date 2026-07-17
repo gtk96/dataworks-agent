@@ -1,8 +1,10 @@
 """Debug: test ChatAgent.chat() directly."""
+
 import asyncio
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
+
 
 async def main():
     from dataworks_agent.agent.core import ChatAgent
@@ -42,6 +44,7 @@ async def main():
     if result.error:
         print(f"  error: {result.error[:200]}")
     print()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

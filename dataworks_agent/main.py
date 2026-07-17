@@ -231,6 +231,7 @@ def _register_background_tasks(app: FastAPI) -> None:
     # 启动备份调度
     async def _scheduled_backup_task() -> None:
         from dataworks_agent.db.backup import scheduled_backup
+
         await scheduled_backup()
 
     app_state._background_tasks.append(asyncio.create_task(_scheduled_backup_task()))
@@ -238,6 +239,7 @@ def _register_background_tasks(app: FastAPI) -> None:
     # 启动任务监控
     async def _monitor_task() -> None:
         from dataworks_agent.task_engine.monitor import task_monitor
+
         await task_monitor.start()
 
     app_state._background_tasks.append(asyncio.create_task(_monitor_task()))
@@ -419,6 +421,7 @@ def create_app() -> FastAPI:
 
     # SSE streaming for real-time chat
     from dataworks_agent.routers import agent_sse
+
     app.include_router(agent_sse.router, prefix="/agent", tags=["agent-sse"])
 
     # ── 薄路由 ──

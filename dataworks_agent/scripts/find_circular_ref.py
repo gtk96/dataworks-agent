@@ -1,9 +1,11 @@
 """Find the circular reference — drill deeper."""
+
 import asyncio
 import json
 import sys
 
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding="utf-8")
+
 
 async def main():
     from dataworks_agent.agent.core import ChatAgent
@@ -40,7 +42,7 @@ async def main():
             seen.add(obj_id)
             for i, item in enumerate(obj):
                 find_circular(item, f"{path}[{i}]", seen, depth + 1)
-        elif hasattr(obj, '__dict__'):
+        elif hasattr(obj, "__dict__"):
             if obj_id in seen:
                 print(f"CIRCULAR at {path} -> {type(obj).__name__} (id={obj_id})")
                 return
@@ -60,14 +62,15 @@ async def main():
 
     # Check the 'loop' key specifically (it sounds suspicious)
     print("\nChecking 'loop' key:")
-    loop = data.get('loop')
+    loop = data.get("loop")
     if loop:
         print(f"  type: {type(loop)}")
-        if hasattr(loop, '__dict__'):
+        if hasattr(loop, "__dict__"):
             print(f"  attrs: {list(loop.__dict__.keys())}")
             for k, v in loop.__dict__.items():
                 print(f"    {k}: {type(v).__name__} = {str(v)[:100]}")
-                if hasattr(v, '__dict__'):
+                if hasattr(v, "__dict__"):
                     print(f"      sub-attrs: {list(v.__dict__.keys())}")
+
 
 asyncio.run(main())

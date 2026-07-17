@@ -1,6 +1,7 @@
 """LangChain-based chat agent for DataWorks.
 Replaces regex-based intent parsing with LLM-driven decision making.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,13 +17,17 @@ from dataworks_agent.db.models import ConversationHistoryModel
 from dataworks_agent.llm.service import LLMService
 
 logger = logging.getLogger(__name__)
+
+
 class LangChainChatAgent:
     """基于 LangChain 的聊天 Agent。"""
+
     def __init__(self) -> None:
         # 使用现有的 LLM 服务
         self._llm_service = LLMService.from_settings(settings)
         self._intent_classifier = LLMIntentClassifier()
         self._prompt = self._create_prompt()
+
     def _save_message(self, conversation_id: str | None, role: str, content: str) -> None:
         """保存对话消息到数据库。"""
         if not conversation_id or not content:
@@ -41,6 +46,7 @@ class LangChainChatAgent:
                 session.close()
         except Exception as e:
             logger.warning("保存对话消息失败: %s", e)
+
     def _get_history(self, conversation_id: str | None, limit: int = 20) -> list[dict[str, str]]:
         """获取对话历史消息。"""
         if not conversation_id:
@@ -56,19 +62,20 @@ class LangChainChatAgent:
                 )
                 result = session.execute(stmt)
                 messages = result.scalars().all()
-                return [
-                    {"role": msg.role, "content": msg.content}
-                    for msg in reversed(messages)
-                ]
+                return [{"role": msg.role, "content": msg.content} for msg in reversed(messages)]
             finally:
                 session.close()
         except Exception as e:
             logger.warning("获取对话历史失败: %s", e)
             return []
+
     def _create_prompt(self) -> ChatPromptTemplate:
         """创建聊天 prompt。"""
-        return ChatPromptTemplate.from_messages([
-            ("system", """你是一个数据仓库 Agent。
+        return ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """你是一个数据仓库 Agent。
             你的职责是帮助用户完成数仓建模、任务诊断、血缘分析、指标归因等工作。
             能力范围：
             - 数据建模：帮助用户设计 ODS/DWD/DWS/DIM 表结构
@@ -80,10 +87,13 @@ class LangChainChatAgent:
             1. 不要猜测生产口径，必须引用已定义的指标
             2. 涉及写操作时必须经过人工确认
             3. 对于模糊请求，先澄清再执行
-            4. 保持专业、友好的语气"""),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}"),
-        ])
+            4. 保持专业、友好的语气""",
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}"),
+            ]
+        )
+
     async def chat(self, message: str, conversation_id: str | None = None) -> dict[str, Any]:
         """处理聊天消息。"""
         try:
@@ -122,6 +132,7 @@ class LangChainChatAgent:
                 "success": False,
                 "error": str(e),
             }
+
     def _handle_greeting(self, intent: LLMIntent) -> dict[str, Any]:
         """处理问候语。"""
         return {
@@ -130,6 +141,7 @@ class LangChainChatAgent:
             "agent_mode": "greeting",
             "intent": intent,
         }
+
     def _handle_clarification(self, intent: LLMIntent) -> dict[str, Any]:
         """处理澄清请求。"""
         return {
@@ -138,6 +150,7 @@ class LangChainChatAgent:
             "agent_mode": "needs_context",
             "intent": intent,
         }
+
     async def _handle_ask_data(self, intent: LLMIntent) -> dict[str, Any]:
         """处理数据查询请求。"""
         # TODO: 集成现有的 ask_data 工作流
@@ -147,6 +160,7 @@ class LangChainChatAgent:
             "agent_mode": "ask_data",
             "intent": intent,
         }
+
     async def _handle_modeling(self, intent: LLMIntent) -> dict[str, Any]:
         """处理建模请求。"""
         # TODO: 集成现有的 modeling 工作流
@@ -156,6 +170,7 @@ class LangChainChatAgent:
             "agent_mode": "modeling",
             "intent": intent,
         }
+
     async def _handle_diagnosis(self, intent: LLMIntent) -> dict[str, Any]:
         """处理诊断请求。"""
         # TODO: 集成现有的 diagnosis 工作流
@@ -165,12 +180,16 @@ class LangChainChatAgent:
             "agent_mode": "diagnosis",
             "intent": intent,
         }
-    async def _handle_unknown_intent(self, message: str, conversation_id: str | None = None) -> dict[str, Any]:
+
+    async def _handle_unknown_intent(
+        self, message: str, conversation_id: str | None = None
+    ) -> dict[str, Any]:
         """处理未知意图 — 让 LLM 决定下一步。"""
         try:
             # 使用现有的 LLM 服务
             from dataworks_agent.llm.context import ContextBuilder
             from dataworks_agent.llm.service import LLMKeyMissingError
+
             # 获取历史消息
             history = self._get_history(conversation_id, limit=20)
             # 构建 LLM 上下文

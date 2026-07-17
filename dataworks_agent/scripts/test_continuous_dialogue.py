@@ -1,4 +1,5 @@
 """Test continuous dialogue capability — simplified."""
+
 import json
 import sys
 import urllib.request
@@ -8,14 +9,18 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = "http://127.0.0.1:8085"
 
 
-def post_chat(message: str, conversation_id: str | None = None, execution_mode: str = "auto") -> dict:
-    body = json.dumps({
-        "message": message,
-        "execution_mode": execution_mode,
-        "initialize_data": False,
-        "publish": False,
-        "conversation_id": conversation_id,
-    }).encode("utf-8")
+def post_chat(
+    message: str, conversation_id: str | None = None, execution_mode: str = "auto"
+) -> dict:
+    body = json.dumps(
+        {
+            "message": message,
+            "execution_mode": execution_mode,
+            "initialize_data": False,
+            "publish": False,
+            "conversation_id": conversation_id,
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         f"{BASE}/agent/chat",
         data=body,

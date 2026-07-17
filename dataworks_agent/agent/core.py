@@ -168,7 +168,8 @@ class ChatAgent:
             if intent.action == "ask_data" and execution_mode is None:
                 execution_mode = "auto"
             if intent.action in workflow_actions and (
-                execution_mode is not None or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
+                execution_mode is not None
+                or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
             ):
                 workflow = await self._workflow_service.execute(
                     message=message,
@@ -223,9 +224,7 @@ class ChatAgent:
                 # can find recent tables in follow-up turns.
                 history_payload = {
                     "message": workflow.message,
-                    "option_chips": (workflow.to_data() or {}).get("data", {}).get(
-                        "option_chips"
-                    )
+                    "option_chips": (workflow.to_data() or {}).get("data", {}).get("option_chips")
                     or [],
                 }
                 self._save_conversation_message(
@@ -493,7 +492,11 @@ class ChatAgent:
     ) -> None:
         """保存对话消息到数据库。"""
         if not conversation_id or not content:
-            logger.debug("跳过保存消息: conversation_id=%s, content_len=%d", conversation_id, len(content) if content else 0)
+            logger.debug(
+                "跳过保存消息: conversation_id=%s, content_len=%d",
+                conversation_id,
+                len(content) if content else 0,
+            )
             return
         try:
             session = SessionLocal()
