@@ -58,7 +58,6 @@ remaining_partitions_*.sql
 # 含阿里云 AK 脱敏清单的本地敏感文件，禁止进入版本库
 replace-expressions.txt
 AGENTS.md
-CLAUDE.md
 
 # 私有知识库（含真实业务数据）
 semantic/metrics.json
@@ -70,3 +69,16 @@ data/sql_archive/*.sql
 .idea/
 tmp_agent_api.txt
 tmp_reverse_*.json
+
+CLAUDE.local.md
+*.log
+*.out
+*.err
+.runtime/
+.playwright-mcp/
+
+frontend/screenshots/
+playwright-report/
+test-results/
+*.har
+trace.zip
