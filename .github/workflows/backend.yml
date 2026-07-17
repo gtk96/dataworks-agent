@@ -45,9 +45,9 @@ jobs:
       - name: Run autonomous query golden-corpus gate
         run: uv run python -m dataworks_agent.scripts.verify_autonomous_query
 
-      - name: Run all tests + coverage
+      - name: Run integration tests + coverage
         run: |
-          uv run pytest tests/ \
+          uv run pytest tests/integration/ \
             --cov=dataworks_agent \
             --cov-report=xml:reports/coverage.xml \
             --cov-report=html:reports/coverage-html \

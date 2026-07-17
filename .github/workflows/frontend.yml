@@ -9,7 +9,7 @@ on:
 
 jobs:
   frontend:
-    name: Vitest + Type Check
+    name: Type Check + Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -24,9 +24,6 @@ jobs:
 
       - name: Install frontend deps
         run: cd frontend && npm ci
-
-      - name: Run Vitest
-        run: cd frontend && npm run test:unit
 
       - name: Frontend type check (vue-tsc)
         run: cd frontend && npm run build

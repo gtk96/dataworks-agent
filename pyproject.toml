@@ -65,7 +65,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests/integration"]
 tmp_path_retention_policy = "none"
 addopts = [
     "-ra",

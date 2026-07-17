@@ -45,10 +45,8 @@ scripts/                     # 离线运维脚本
 ├── update_dml.py / push_dwd.py / push_schedule_params.py  # 增量推送
 └── delete_dwd_nodes.py     # 删除工具
 
-tests/                       # 单元/集成/冒烟
-├── unit/                    # 23 个测试文件, ~1800 行
-├── integration/             # 端到端 API 集成测试
-└── smoke/                   # 5 场景发布前冒烟
+tests/                       # 集成测试
+└── integration/             # 端到端 API 集成测试（唯一验证手段）
 
 README.md                    # 项目总览(必读)
 ```
@@ -206,12 +204,10 @@ uv run python scripts/push_dim_params.py   # 重推调度参数
    - 修复 3 个路由壳子/404(lineage downstream 真实现)
    - 启用 4 个中间件(rate_limit + idempotency + ip_isolation + circuit_breaker),幂等键自动 register
    - 8 个端点前端接入(GovernanceHub 加 6 Tab,TaskDetail 完整日志,SyncManager 同步历史)
-   - 238 个单元测试(原 174 + 64 新增,跨 7 个核心模块)
    - lineage_edges 持久化 + 24h TTL 缓存(`/api/lineage/upstream` 接入)
    - 产权追踪接入 modeling engine(`record_table_creation` 写入 ownership_records 表)
-    - **集成测试 100 个**(`tests/integration/conftest.py` mock 框架 + 5 个页面 + fixture 自测)
-    - **E2E 测试 15 个**(`frontend/e2e/` Playwright + Node fake BFF server)
-    - **总计 806 个测试** (691 + 100 + 15), 0 失败 0 破坏
+   - **集成测试 100+ 个**(`tests/integration/` 唯一验证手段)
+   - 移除单元测试/冒烟测试/E2E 测试，精简测试体系
 2. **下一步**: 处理 DWD 1:N 依赖(主 ODS + join 的 ODS 子表);扩展集成测试覆盖剩下 12 个页面
 3. **再之后**: 把 `deploy_dwd.py` 的 `update_vertex` 调用合并上 DWD 专属参数(避免下次新建节点缺 `gmtdate_next1d`)
-4. **更长远**: DWS/DMR 层自动化、调度监控、回滚机制、Pinia + TS types 前端架构升级、CI 集成(自动跑 806 个测试)
+4. **更长远**: DWS/DMR 层自动化、调度监控、回滚机制、Pinia + TS types 前端架构升级、CI 集成(自动跑集成测试)

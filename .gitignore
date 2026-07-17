@@ -64,11 +64,13 @@ semantic/metrics.json
 semantic/knowledge.json
 data/sql_archive/*.sql
 
-# 误入库的外部 README 解码副本（v9 §3.6）
+# IDE / 工具垃圾目录
+.agnes/
 .codex-logs/
 .idea/
 tmp_agent_api.txt
 tmp_reverse_*.json
+tmp_last_response.json
 
 CLAUDE.local.md
 *.log

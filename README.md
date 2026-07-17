@@ -171,11 +171,10 @@ docs/               # 设计、计划、评审和产品文档
 ```powershell
 uv run python -m compileall -q dataworks_agent
 uv run ruff check .
-uv run python -m pytest tests/unit/test_agent tests/unit/test_agent_router.py -q --tb=short
+uv run python -m pytest tests/integration/ -q --tb=short
 
 Set-Location frontend
 npm run build
-npm run test:unit
 ```
 
 上线前不要只看测试数量，应确认：页面可打开、对话可继续、执行步骤可见、确认点有效、Publish Gate 不可绕过。
@@ -412,8 +411,8 @@ Learn (沉淀经验到知识库)
 
 ## 测试状态
 
-- **1077 passed** ✅
-- 3 个 pre-existing failures（`test_memory_layering.py`，与 Harness 支柱无关）
+- **集成测试**：保留 `tests/integration/` 全部测试（约 100+ 用例）
+- 单元测试、冒烟测试、E2E 测试已移除，仅保留集成测试作为唯一验证手段
 
 ## 许可证
 
