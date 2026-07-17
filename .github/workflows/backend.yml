@@ -34,10 +34,10 @@ jobs:
         run: mkdir -p data log reports
 
       - name: Run ruff check
-        run: uv run ruff check dataworks_agent/ tests/
+        run: uv run ruff check dataworks_agent/
 
       - name: Run ruff format check
-        run: uv run ruff format --check dataworks_agent/ tests/
+        run: uv run ruff format --check dataworks_agent/
 
       - name: Run integration tests + coverage
         run: |

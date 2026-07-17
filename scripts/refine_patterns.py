@@ -1,5 +1,5 @@
 """Refine any_ods_modeling patterns to be less greedy"""
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Find and replace the any_ods_modeling patterns
@@ -52,4 +52,4 @@ else:
     # Debug
     aom = content.find('"any_ods_modeling"')
     if aom >= 0:
-        print(f'Found at {aom}: {repr(content[aom:aom+500])}')
+        print(f'Found at {aom}: {content[aom:aom+500]!r}')

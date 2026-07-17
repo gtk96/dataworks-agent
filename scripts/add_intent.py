@@ -1,7 +1,6 @@
 """Script to add any_ods_modeling intent to templates.py"""
-import re
 
-with open("dataworks_agent/agent/nlu/templates.py", "r", encoding="utf-8") as f:
+with open("dataworks_agent/agent/nlu/templates.py", encoding="utf-8") as f:
     content = f.read()
 
 # Find forward_modeling section end

@@ -1,5 +1,5 @@
 """Add any_ods_modeling template to TaskPlanner"""
-with open('dataworks_agent/agent/planner/task_planner.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/planner/task_planner.py', encoding='utf-8') as f:
     content = f.read()
 
 # Find the forward_modeling template

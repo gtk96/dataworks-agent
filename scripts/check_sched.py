@@ -1,5 +1,5 @@
 """Check schedule_planner.py"""
-with open('dataworks_agent/modeling/schedule_planner.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/modeling/schedule_planner.py', encoding='utf-8') as f:
     lines = f.readlines()
 for i, line in enumerate(lines):
     if 'source_cron' in line or 'target_cron' in line:

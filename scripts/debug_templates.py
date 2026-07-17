@@ -1,7 +1,6 @@
 """Debug: check templates.py"""
-import re
 
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Count braces
@@ -13,7 +12,7 @@ for i, c in enumerate(content):
         brace_count -= 1
     if brace_count < 0:
         print(f'Unbalanced brace at position {i}')
-        print(f'Context: {repr(content[max(0,i-50):i+50])}')
+        print(f'Context: {content[max(0,i-50):i+50]!r}')
         break
 
 # Find forward_modeling
@@ -23,7 +22,7 @@ if fm >= 0:
     # Show surrounding context
     start = max(0, fm - 50)
     end = min(len(content), fm + 200)
-    print(f'Context: {repr(content[start:end])}')
+    print(f'Context: {content[start:end]!r}')
 else:
     print('forward_modeling not found')
 

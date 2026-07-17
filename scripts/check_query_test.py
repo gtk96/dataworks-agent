@@ -1,5 +1,5 @@
 """Fix test_parse_query_table_without_lineage_keyword"""
-with open('tests/unit/test_agent/test_intent_parser.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent/test_intent_parser.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):

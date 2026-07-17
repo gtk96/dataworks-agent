@@ -1,5 +1,6 @@
 """Debug: check pattern matching"""
 import re
+
 from dataworks_agent.agent.nlu.templates import INTENT_TEMPLATES
 
 text = "帮我搭建从OSS订单数据到DWS汇总的全链路"

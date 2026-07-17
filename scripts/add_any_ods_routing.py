@@ -1,7 +1,6 @@
 """Add any_ods_modeling routing to workflow_service.py"""
-import re
 
-with open('dataworks_agent/agent/workflow_service.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/workflow_service.py', encoding='utf-8') as f:
     content = f.read()
 
 # Find the workflow_actions set in execute method

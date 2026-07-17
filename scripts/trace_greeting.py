@@ -1,5 +1,5 @@
 """Debug: trace the greeting flow"""
-with open('dataworks_agent/agent/core.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/core.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Show lines 130-175 to see the full flow

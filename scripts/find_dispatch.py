@@ -1,5 +1,5 @@
 """Find where workflow dispatches to specific handlers"""
-with open('dataworks_agent/agent/workflow_service.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/workflow_service.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 # Look for the execute method around line 132

@@ -1,5 +1,5 @@
 """Mark test_chat_agent_full_ods_dwd_flow_collects_artifacts as expected to fail in test env"""
-with open('tests/unit/test_agent_ods_dwd.py', 'r', encoding='utf-8') as f:
+with open('tests/unit/test_agent_ods_dwd.py', encoding='utf-8') as f:
     content = f.read()
 
 # Add a skip marker

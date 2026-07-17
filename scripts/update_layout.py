@@ -1,5 +1,5 @@
 """Update MainLayout with new navigation items"""
-with open('frontend/src/layouts/MainLayout.vue', 'r', encoding='utf-8') as f:
+with open('frontend/src/layouts/MainLayout.vue', encoding='utf-8') as f:
     content = f.read()
 
 # Add modeling route to advancedItems

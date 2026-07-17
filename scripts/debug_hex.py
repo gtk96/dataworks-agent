@@ -6,11 +6,11 @@ text_lower = text.lower().strip()
 
 # The pattern uses \u5168\u94fe\u8def
 pattern = r"(\u5168\u94fe\u8def).*?(ods|dwd|dim|dws)"
-print(f"Pattern: {repr(pattern)}")
+print(f"Pattern: {pattern!r}")
 print(f"Pattern decoded: {pattern}")
 
 # Does the text contain 全链路?
-print(f"text_lower: {repr(text_lower)}")
+print(f"text_lower: {text_lower!r}")
 print(f"'全链路' in text_lower: {'全链路' in text_lower}")
 
 # Try direct match
@@ -21,13 +21,13 @@ print(f"Direct match: {match}")
 idx = text_lower.find('全')
 if idx >= 0:
     print(f"Found '全' at index {idx}")
-    print(f"Context: {repr(text_lower[idx:idx+10])}")
+    print(f"Context: {text_lower[idx:idx+10]!r}")
 else:
     print("'全' not found in text")
 
 # Check if the pattern unicode escapes are actually the same chars
 pat_str = pattern.encode('utf-8').decode('unicode_escape')
-print(f"Pattern after decode: {repr(pat_str)}")
+print(f"Pattern after decode: {pat_str!r}")
 print(f"Does pat_str contain '全链路': {'全链路' in pat_str}")
 
 # Try compiling and matching

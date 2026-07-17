@@ -1,7 +1,7 @@
 """Safely add any_ods_modeling without breaking templates.py"""
 import ast
 
-with open('dataworks_agent/agent/nlu/templates.py', 'r', encoding='utf-8') as f:
+with open('dataworks_agent/agent/nlu/templates.py', encoding='utf-8') as f:
     content = f.read()
 
 # Verify greeting exists before modification
