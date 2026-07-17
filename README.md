@@ -120,7 +120,7 @@ npm run dev
 | 操作 | 策略 |
 |---|---|
 | Dev 新建表 | 允许自动执行 |
-| Dev 新建节点 | 允许自动执行 |
+| Dev 新建节点 | 必须先只读确认既有目录；对话生成节点需用户确认，不允许创建目录 |
 | 修改已有节点 | 执行前确认 |
 | 删除节点 | 执行前确认 |
 | 生产发布 | 必须人工批准 Publish Gate |
@@ -130,6 +130,7 @@ npm run dev
 | API | 用途 |
 |---|---|
 | `POST /agent/chat` | 对话规划或 Dev 执行 |
+| `GET /agent/messages` | 恢复对话历史、当前活动 interaction 和状态版本 |
 | `GET /agent/capabilities` | 查看运行框架和各执行通道状态 |
 | `GET /agent/status` | 查看最近任务状态 |
 | `GET /agent/status/{task_id}` | 查看指定任务状态 |

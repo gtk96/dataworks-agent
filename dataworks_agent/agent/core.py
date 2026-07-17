@@ -176,8 +176,13 @@ class ChatAgent:
                     or previous_context.get("objective")
                     or ""
                 ).strip()
+                selected_layer = str(
+                    (resolved_answer.get("params") or {}).get("layer") or ""
+                ).strip()
                 message = (
-                    f"{objective}\n补充信息：{custom_text}"
+                    f"{objective}\n补充信息：只要 {selected_layer}"
+                    if selected_layer and objective
+                    else f"{objective}\n补充信息：{custom_text}"
                     if custom_text and objective and custom_text != objective
                     else custom_text or objective or incoming_message
                 )

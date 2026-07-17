@@ -1,9 +1,9 @@
 ﻿# DataWorks Agent 对话式交互与可恢复工作流设计
 
 > 项目：`giikin_dw_agent` / DataWorks Agent
-> 版本：v3.0
+> 版本：v3.1
 > 日期：2026-07-17
-> 状态：权威设计草案，待按阶段实施
+> 状态：已实施并通过回归验证
 > 定位：本文件作为对话式 Agent 的主设计文档；早期 LangChain 集成报告和产品体验计划作为历史参考，不再单独代表当前实现状态。
 
 ## 1. 目标与结论
@@ -916,3 +916,27 @@ Agent 正在等待用户选表
 > 用户用自然语言提出目标，Agent 能基于真实元数据发现资源；在信息不足时给出可操作的结构化澄清；用户回答后从正确节点恢复；执行过程可见、结果可验证、失败可继续、危险操作受审批约束。
 
 上下文注入让 Agent 看得见，结构化交互让 Agent 问得清，状态机让 Agent 接得上，Workflow 与 Verifier 让 Agent 做得对。
+
+## 14. 实施状态（2026-07-17）
+
+本期已在 `codex/continuous-conversation` 分支完成以下闭环：
+
+1. **结构化交互协议**：`/agent/chat` 和 `/agent/ws` 支持 `interaction_answer`，服务端用 `interaction_id + option_id + state_version` 解析选项，不信任前端回传的表名或目录路径。
+2. **可恢复会话状态**：`ConversationGraph` 持久化 `selected_resources`、`pending_interaction`、`last_result` 和 `state_version`；页面刷新或进程重启后可恢复当前待回答问题。
+3. **找表连续对话**：候选数超过 8 时先按 ODS/DWD/DWS/DMR 等分层，选择分层后继续过滤；候选数不超过 8 时直接返回精确表选项，并始终保留完整 `project.table`。
+4. **选表后动作**：已提供查看字段、预览数据、查看分区、查看血缘、生成 ODS 节点、生成 DWD 节点和自定义回答。
+5. **前端交互卡**：`MessageBubble.vue` 渲染当前有效的选项和自定义输入；旧交互保留展示但不可重复提交，请求失败时可解锁重试。
+6. **节点安全落位**：测试环境仅使用已只读确认的广告报告目录 `00_ODS`、`02_DWD`、`03_DWS`、`04_DMR`；`01_DIM` 未被确认，因此必须阻断。生产环境仅保留通过 Cookie/DataStudio 在线只读证据确认的候选目录；无证据、证据过期或候选不唯一时停止。
+7. **节点写入确认**：先返回节点名、父目录、完整路径、创建/更新模式和发布边界；用户确认后再次检查目录和同路径同名节点，写入开发草稿后回读校验。`CreateNode` 固定使用 `container_id=None` 和 `scene="DATAWORKS_PROJECT"`，不调用任何目录创建接口，不自动发布。
+
+### 14.1 验证结果
+
+- 后端集成测试：`133 passed`。
+- Ruff：`uv run ruff check .` 通过。
+- 前端单元测试：`38 passed`。
+- TypeScript/Vite 生产构建：通过。
+- 目录创建审计：本期改动路径中无 Folder/create-directory/createPackage 调用；节点创建只在新鲜、精确且为真的目录证据之后发生。
+
+### 14.2 本期未执行的真实写入
+
+本期只使用 mock 和只读证据验证，**没有创建真实 DataWorks 测试节点**，没有删除节点，没有发布生产。这符合“未经明确授权不做真实 DataWorks 写入测试”的项目约束。

@@ -725,3 +725,59 @@ async def test_confirmed_node_write_blocks_when_directory_recheck_fails(monkeypa
     nodes.get_node_uuid_by_path.assert_not_awaited()
     nodes.create_node.assert_not_awaited()
     nodes.update_node.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_layer_option_refines_previous_objective_text() -> None:
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = MagicMock()
+    graph.context = AsyncMock(
+        return_value={
+            "objective": "找订单表",
+            "pending_objective": "找订单表",
+            "action": "ask_data",
+            "params": {},
+            "pending_interaction": {
+                "interaction_id": "int-layer",
+                "type": "single_select",
+                "purpose": "select_layer",
+                "prompt": "请选择分层",
+                "options": [],
+                "allow_custom_input": True,
+                "custom_input_placeholder": "",
+                "status": "pending",
+                "state_version": 1,
+            },
+        }
+    )
+    graph.answer = AsyncMock(return_value={"params": {"layer": "dwd"}})
+    graph.resolve = AsyncMock(side_effect=lambda message, *_args, **_kwargs: message)
+    graph.remember = AsyncMock()
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="unknown", confidence=0.1)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(True, "ok", "ask_data", "dev_execute")
+    )
+    agent._save_conversation_message = MagicMock()
+
+    await agent.chat(
+        "DWD",
+        conversation_id="conv-layer",
+        interaction_answer=InteractionAnswer(
+            interaction_id="int-layer",
+            option_id="layer_dwd",
+            state_version=1,
+        ),
+    )
+
+    parsed_message = agent._intent_parser.parse.call_args.args[0]
+    assert "找订单表" in parsed_message
+    assert "只要 dwd" in parsed_message
+    assert agent._workflow_service.execute.await_args.kwargs["params"]["layer"] == "dwd"
