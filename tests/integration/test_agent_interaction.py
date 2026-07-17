@@ -153,3 +153,103 @@ def test_answer_requires_exactly_one_answer_mode() -> None:
             custom_text="other",
             state_version=1,
         )
+
+@pytest.mark.asyncio
+async def test_pending_interaction_survives_new_graph_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    db_path = str(tmp_path / "conversation.db")
+    first = ConversationGraph(db_path)
+    pending = build_interaction(
+        {"next_actions": [{"id": "dwd", "label": "DWD", "value": "dwd"}]},
+        purpose="select_layer",
+        state_version=1,
+    )
+    assert pending is not None
+    await first.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        action="ask_data",
+        pending_interaction=pending.model_dump(),
+    )
+
+    second = ConversationGraph(db_path)
+    state = await second.context("conv-1")
+
+    assert state["pending_interaction"]["interaction_id"] == pending.interaction_id
+    assert state["state_version"] == 1
+    assert state["objective"] == "找订单表"
+
+
+@pytest.mark.asyncio
+async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "type": "pick_table",
+                    "id": "table_1",
+                    "label": "订单表",
+                    "value": "giikin_aliyun.tb_dwd_order",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    await graph.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+    )
+
+    resolved = await graph.answer(
+        "conv-1",
+        InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="table_1",
+            state_version=1,
+        ),
+    )
+    state = await graph.context("conv-1")
+
+    assert resolved["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert state["selected_resources"]["table"] == "giikin_aliyun.tb_dwd_order"
+    assert state["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert state["pending_interaction"] == {}
+    assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_clears_interaction_and_selected_resources(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = PendingInteraction(
+        interaction_id="int_1",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=1,
+    )
+    await graph.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+        selected_resources={"table": "giikin_aliyun.tb_dwd_order"},
+    )
+
+    resolved = await graph.resolve("取消", "conv-1")
+    state = await graph.context("conv-1")
+
+    assert resolved == "取消"
+    assert state["pending_interaction"] == {}
+    assert state["selected_resources"] == {}
+    assert state["state_version"] == 2
