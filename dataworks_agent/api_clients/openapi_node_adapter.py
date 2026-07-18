@@ -75,8 +75,15 @@ class OpenAPINodeAdapter:
 
     # ── 建节点 ───────────────────────────────────────────────
 
-    async def create_node(self, name: str, path: str, language: str = "odps-sql") -> str | None:
-        """Create or reuse a node under an already existing DataWorks directory."""
+    async def create_node(
+        self,
+        name: str,
+        path: str,
+        language: str = "odps-sql",
+        *,
+        directory_evidence: ExistingDirectoryEvidence | dict[str, Any] | None = None,
+    ) -> str | None:
+        """Create or reuse a node only under a freshly confirmed parent."""
         normalized_path = normalize_node_path(path)
         try:
             existing_uuid = await self.get_node_uuid_by_path(normalized_path)
@@ -87,11 +94,25 @@ class OpenAPINodeAdapter:
             return None
 
         parent_path = parent_node_path(normalized_path)
-        evidence = await self.check_existing_directory(parent_path)
-        if not evidence.confirmed:
+        try:
+            evidence = (
+                directory_evidence
+                if isinstance(directory_evidence, ExistingDirectoryEvidence)
+                else ExistingDirectoryEvidence(**directory_evidence)
+                if isinstance(directory_evidence, dict)
+                else None
+            )
+        except (TypeError, ValueError):
+            evidence = None
+        if (
+            evidence is None
+            or not evidence.confirmed
+            or not evidence.is_fresh()
+            or normalize_node_path(evidence.path) != parent_path
+        ):
             self.last_error = (
-                f"parent directory not confirmed: {parent_path}; "
-                "OpenAPI directory evidence is required; node creation skipped"
+                f"parent directory evidence invalid for {parent_path}; "
+                "fresh exact read-only evidence is required; node creation skipped"
             )
             return None
 

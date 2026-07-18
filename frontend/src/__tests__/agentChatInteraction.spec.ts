@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest } from '@/components/agent/chatInteraction'
 
 describe('Agent chat interaction', () => {
@@ -17,6 +17,25 @@ describe('Agent chat interaction', () => {
       execution_mode: 'plan',
       initialize_data: true,
       publish: false,
+    })
+  })
+
+  it('includes a structured interaction answer without changing context updates', () => {
+    const answer = { interaction_id: 'int-1', option_id: 'dwd', state_version: 2 }
+    expect(
+      buildAgentChatRequest(
+        'DWD',
+        'auto',
+        true,
+        false,
+        'conv-1',
+        { params: { keyword: 'order' } },
+        answer,
+      ),
+    ).toMatchObject({
+      conversation_id: 'conv-1',
+      context_updates: { params: { keyword: 'order' } },
+      interaction_answer: answer,
     })
   })
 

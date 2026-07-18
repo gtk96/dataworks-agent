@@ -426,6 +426,7 @@ class ConversationHistoryModel(Base):
     conversation_id: Mapped[str] = mapped_column(String(128), index=True)
     role: Mapped[str] = mapped_column(String(10))  # user / assistant
     content: Mapped[str] = mapped_column(Text, default="")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
 
 

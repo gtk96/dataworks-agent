@@ -1,0 +1,789 @@
+"""Structured Agent interaction integration coverage."""
+
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from pydantic import ValidationError
+
+from dataworks_agent.agent.interaction import (
+    InteractionAnswer,
+    InteractionExpiredError,
+    PendingInteraction,
+    build_interaction,
+    resolve_interaction_answer,
+)
+
+
+def test_build_interaction_from_table_option_chips() -> None:
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "type": "pick_table",
+                    "id": "opt_0",
+                    "label": "giikin_aliyun.tb_dwd_order",
+                    "value": "giikin_aliyun.tb_dwd_order",
+                    "layer": "dwd",
+                },
+                {
+                    "type": "free_text",
+                    "id": "opt_custom",
+                    "label": "输入其它",
+                    "placeholder": "project.table",
+                },
+            ],
+            "clarifying_questions": ["请选择目标表"],
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+
+    assert pending is not None
+    assert pending.prompt == "请选择目标表"
+    assert pending.allow_custom_input is True
+    assert pending.custom_input_placeholder == "project.table"
+    assert pending.options[0].value == "giikin_aliyun.tb_dwd_order"
+    assert pending.options[0].payload == {
+        "params": {"table_name": "giikin_aliyun.tb_dwd_order"},
+        "selected_resources": {"table": "giikin_aliyun.tb_dwd_order"},
+    }
+
+
+def test_build_interaction_from_next_actions() -> None:
+    pending = build_interaction(
+        {
+            "next_actions": [
+                {
+                    "id": "dwd",
+                    "label": "DWD",
+                    "value": "dwd",
+                    "payload": {"params": {"layer": "dwd"}},
+                }
+            ],
+            "allow_custom_input": True,
+            "custom_input_hint": "继续描述筛选条件",
+        },
+        purpose="select_layer",
+        state_version=2,
+    )
+
+    assert pending is not None
+    assert pending.options[0].id == "dwd"
+    assert pending.options[0].payload == {"params": {"layer": "dwd"}}
+
+
+def test_resolve_answer_uses_server_option_payload() -> None:
+    pending = build_interaction(
+        {
+            "next_actions": [
+                {
+                    "id": "dwd",
+                    "label": "DWD",
+                    "payload": {"params": {"layer": "dwd"}},
+                }
+            ]
+        },
+        purpose="select_layer",
+        state_version=2,
+    )
+    assert pending is not None
+
+    result = resolve_interaction_answer(
+        pending,
+        InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="dwd",
+            state_version=2,
+        ),
+    )
+
+    assert result == {"params": {"layer": "dwd"}}
+
+
+def test_resolve_custom_answer() -> None:
+    pending = PendingInteraction(
+        interaction_id="int_1",
+        type="free_text",
+        purpose="select_table",
+        prompt="请继续描述",
+        allow_custom_input=True,
+        state_version=4,
+    )
+
+    result = resolve_interaction_answer(
+        pending,
+        InteractionAnswer(
+            interaction_id="int_1",
+            custom_text="只要包含退款金额字段的 DWD 表",
+            state_version=4,
+        ),
+    )
+
+    assert result == {"custom_text": "只要包含退款金额字段的 DWD 表"}
+
+
+def test_expired_interaction_is_rejected() -> None:
+    pending = PendingInteraction(
+        interaction_id="int_current",
+        type="single_select",
+        purpose="select_layer",
+        prompt="请选择层级",
+        state_version=5,
+    )
+
+    with pytest.raises(InteractionExpiredError):
+        resolve_interaction_answer(
+            pending,
+            InteractionAnswer(
+                interaction_id="int_old",
+                custom_text="DWD",
+                state_version=4,
+            ),
+        )
+
+
+def test_answer_requires_exactly_one_answer_mode() -> None:
+    with pytest.raises(ValidationError):
+        InteractionAnswer(interaction_id="int_1", state_version=1)
+
+    with pytest.raises(ValidationError):
+        InteractionAnswer(
+            interaction_id="int_1",
+            option_id="opt_1",
+            custom_text="other",
+            state_version=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_pending_interaction_survives_new_graph_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    db_path = str(tmp_path / "conversation.db")
+    first = ConversationGraph(db_path)
+    pending = build_interaction(
+        {"next_actions": [{"id": "dwd", "label": "DWD", "value": "dwd"}]},
+        purpose="select_layer",
+        state_version=1,
+    )
+    assert pending is not None
+    await first.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        action="ask_data",
+        pending_interaction=pending.model_dump(),
+    )
+
+    second = ConversationGraph(db_path)
+    state = await second.context("conv-1")
+
+    assert state["pending_interaction"]["interaction_id"] == pending.interaction_id
+    assert state["state_version"] == 1
+    assert state["objective"] == "找订单表"
+
+
+@pytest.mark.asyncio
+async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "type": "pick_table",
+                    "id": "table_1",
+                    "label": "订单表",
+                    "value": "giikin_aliyun.tb_dwd_order",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    await graph.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+    )
+
+    resolved = await graph.answer(
+        "conv-1",
+        InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="table_1",
+            state_version=1,
+        ),
+    )
+    state = await graph.context("conv-1")
+
+    assert resolved["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert state["selected_resources"]["table"] == "giikin_aliyun.tb_dwd_order"
+    assert state["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert state["pending_interaction"] == {}
+    assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_clears_interaction_and_selected_resources(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = PendingInteraction(
+        interaction_id="int_1",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=1,
+    )
+    await graph.remember(
+        "conv-1",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+        selected_resources={"table": "giikin_aliyun.tb_dwd_order"},
+    )
+
+    resolved = await graph.resolve("取消", "conv-1")
+    state = await graph.context("conv-1")
+
+    assert resolved == "取消"
+    assert state["pending_interaction"] == {}
+    assert state["selected_resources"] == {}
+    assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_resolves_structured_answer_before_nlu() -> None:
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    pending = PendingInteraction(
+        interaction_id="int-1",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=1,
+        options=[],
+    )
+    previous_context = {
+        "objective": "找订单表",
+        "pending_objective": "找订单表",
+        "action": "ask_data",
+        "params": {"keyword": "order"},
+        "pending_interaction": pending.model_dump(),
+        "state_version": 1,
+    }
+    graph = MagicMock()
+    graph.context = AsyncMock(return_value=previous_context)
+    graph.answer = AsyncMock(
+        return_value={
+            "params": {"table_name": "giikin_aliyun.tb_dwd_order"},
+            "selected_resources": {"table": "giikin_aliyun.tb_dwd_order"},
+        }
+    )
+    graph.resolve = AsyncMock(side_effect=lambda message, *_args, **_kwargs: message)
+    graph.remember = AsyncMock()
+
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="unknown", confidence=0.1)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="ok",
+            workflow_type="ask_data",
+            mode="dev_execute",
+        )
+    )
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._save_conversation_message = MagicMock()
+
+    response = await agent.chat(
+        "订单表",
+        conversation_id="conv-1",
+        interaction_answer=InteractionAnswer(
+            interaction_id="int-1",
+            option_id="table-1",
+            state_version=1,
+        ),
+    )
+
+    assert response.success is True
+    graph.answer.assert_awaited_once()
+    execute = agent._workflow_service.execute.await_args.kwargs
+    assert execute["action"] == "ask_data"
+    assert execute["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert execute["params"]["keyword"] == "order"
+    assert execute["params"]["interaction_purpose"] == "select_table"
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_current_interaction_when_answer_expired() -> None:
+    from dataworks_agent.agent.core import ChatAgent
+
+    pending = PendingInteraction(
+        interaction_id="int-current",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=3,
+    )
+    graph = MagicMock()
+    graph.context = AsyncMock(
+        return_value={
+            "pending_interaction": pending.model_dump(),
+            "state_version": 3,
+        }
+    )
+    graph.answer = AsyncMock(side_effect=InteractionExpiredError("expired", current=pending))
+
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+
+    response = await agent.chat(
+        "old",
+        conversation_id="conv-1",
+        interaction_answer=InteractionAnswer(
+            interaction_id="int-old",
+            option_id="table-1",
+            state_version=2,
+        ),
+    )
+
+    assert response.success is False
+    assert response.error == "interaction_expired"
+    assert response.data["interaction"]["interaction_id"] == "int-current"
+
+
+def test_history_persists_readable_content_and_structured_payload(monkeypatch) -> None:
+    import dataworks_agent.agent.core as core_module
+    from dataworks_agent.agent.core import ChatAgent
+
+    session = MagicMock()
+    monkeypatch.setattr(core_module, "SessionLocal", lambda: session)
+    agent = ChatAgent()
+    payload = {"interaction": {"interaction_id": "int-1"}}
+
+    agent._save_conversation_message(
+        "conv-1",
+        "assistant",
+        "请选择表",
+        payload=payload,
+    )
+
+    saved = session.add.call_args.args[0]
+    assert saved.content == "请选择表"
+    assert json.loads(saved.payload_json) == payload
+    session.commit.assert_called_once()
+    session.close.assert_called_once()
+
+
+def test_history_loading_parses_payload_json(monkeypatch) -> None:
+    import dataworks_agent.agent.core as core_module
+    from dataworks_agent.agent.core import ChatAgent
+
+    message = SimpleNamespace(
+        role="assistant",
+        content="请选择表",
+        created_at="2026-07-17T00:00:00+00:00",
+        payload_json='{"interaction":{"interaction_id":"int-1"}}',
+    )
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = [message]
+    monkeypatch.setattr(core_module, "SessionLocal", lambda: session)
+
+    history = ChatAgent().get_conversation_history("conv-1")
+
+    assert history == [
+        {
+            "role": "assistant",
+            "content": "请选择表",
+            "timestamp": "2026-07-17T00:00:00+00:00",
+            "payload": {"interaction": {"interaction_id": "int-1"}},
+        }
+    ]
+
+
+def test_table_clarification_groups_large_candidate_sets_by_layer() -> None:
+    from dataworks_agent.agent.workflow_service import (
+        AgentWorkflowService,
+        QueryNeedsClarificationError,
+    )
+
+    chips = [
+        {
+            "type": "pick_table",
+            "id": f"opt-{index}",
+            "label": f"project.tb_{layer}_orders_{index}",
+            "value": f"project.tb_{layer}_orders_{index}",
+            "layer": layer,
+        }
+        for index, layer in enumerate(
+            ["ods", "ods", "dwd", "dwd", "dwd", "dws", "dws", "dmr", "dmr"]
+        )
+    ]
+    result = AgentWorkflowService()._query_clarification_result(
+        QueryNeedsClarificationError("orders", [], option_chips=chips),
+        "dev_execute",
+    )
+
+    interaction = result.data["interaction"]
+    assert interaction["purpose"] == "select_layer"
+    assert {option["value"] for option in interaction["options"]} == {
+        "ods",
+        "dwd",
+        "dws",
+        "dmr",
+    }
+    assert result.data["option_chips"][-1]["type"] == "free_text"
+
+
+def test_table_clarification_keeps_full_identifiers_for_small_sets() -> None:
+    from dataworks_agent.agent.workflow_service import (
+        AgentWorkflowService,
+        QueryNeedsClarificationError,
+    )
+
+    full_name = "giikin_aliyun.tb_dwd_order"
+    result = AgentWorkflowService()._query_clarification_result(
+        QueryNeedsClarificationError(
+            "orders",
+            [],
+            option_chips=[
+                {
+                    "type": "pick_table",
+                    "id": "table-1",
+                    "label": full_name,
+                    "value": full_name,
+                    "layer": "dwd",
+                }
+            ],
+        ),
+        "dev_execute",
+    )
+
+    interaction = result.data["interaction"]
+    assert interaction["purpose"] == "select_table"
+    assert interaction["options"][0]["value"] == full_name
+    assert interaction["options"][0]["payload"] == {
+        "params": {"table_name": full_name},
+        "selected_resources": {"table": full_name},
+    }
+
+
+def test_selected_table_returns_follow_up_actions_with_same_identifier() -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+
+    full_name = "giikin_aliyun.tb_dwd_order"
+    result = AgentWorkflowService()._selected_table_action_result(full_name, "dev_execute")
+
+    assert result.data["selected_table"] == full_name
+    assert result.data["interaction"]["purpose"] == "select_action"
+    actions = {
+        option["payload"]["params"]["table_action"]: option
+        for option in result.data["interaction"]["options"]
+    }
+    assert set(actions) == {
+        "view_columns",
+        "preview_data",
+        "view_partitions",
+        "view_lineage",
+        "generate_ods_node",
+        "generate_dwd_node",
+    }
+    assert all(
+        option["payload"]["params"]["table_name"] == full_name for option in actions.values()
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_node_action_returns_confirmation_without_writing(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value=None)
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock()
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+
+    result = await AgentWorkflowService()._prepare_node_write_confirmation(
+        "giikin_aliyun.tb_dwd_order",
+        "DWD",
+        {"environment": "test"},
+        "dev_execute",
+    )
+
+    assert result.success is True
+    assert result.data["interaction"]["purpose"] == "confirm_node_write"
+    plan = next(
+        option["payload"]["params"]["node_write_plan"]
+        for option in result.data["interaction"]["options"]
+        if option["id"] == "confirm_node_write"
+    )
+    assert plan["parent_path"] == parent
+    assert plan["node_path"].startswith(parent + "/")
+    assert plan["operation"] == "create"
+    assert plan["publish"] is False
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_rechecks_and_updates_existing_uuid(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
+    node_name = "tb_dwd_order"
+    node_path = f"{parent}/{node_name}"
+    script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
+    plan = {
+        "decision_id": "placement-1",
+        "environment": "test",
+        "layer": "DWD",
+        "source_table": "giikin_aliyun.tb_dwd_order",
+        "node_name": node_name,
+        "parent_path": parent,
+        "node_path": node_path,
+        "language": "odps-sql",
+        "script_content": script,
+        "operation": "update",
+        "existing_uuid": "node-existing",
+        "publish": False,
+    }
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value="node-existing")
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock(return_value=True)
+    api = MagicMock()
+    api.get_node = AsyncMock(
+        return_value={
+            "Node": {
+                "Id": "node-existing",
+                "Name": node_name,
+                "Spec": json.dumps(
+                    {
+                        "spec": {
+                            "nodes": [
+                                {
+                                    "name": node_name,
+                                    "script": {
+                                        "path": node_path,
+                                        "language": "odps-sql",
+                                        "content": script,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ),
+            }
+        }
+    )
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+    monkeypatch.setattr(app_state, "_openapi_client", api)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(plan, "dev_execute")
+
+    assert result.success is True
+    assert result.data["node_uuid"] == "node-existing"
+    assert result.data["operation"] == "update"
+    assert result.data["published"] is False
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_awaited_once_with("node-existing", script)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_creates_draft_with_fresh_evidence(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"
+    node_name = "tb_ods_order"
+    node_path = f"{parent}/{node_name}"
+    script = "-- Agent draft\nSELECT * FROM giikin_aliyun.tb_dwd_order;"
+    plan = {
+        "decision_id": "placement-1",
+        "environment": "test",
+        "layer": "ODS",
+        "source_table": "giikin_aliyun.tb_dwd_order",
+        "node_name": node_name,
+        "parent_path": parent,
+        "node_path": node_path,
+        "language": "odps-sql",
+        "script_content": script,
+        "operation": "create",
+        "existing_uuid": "",
+        "publish": False,
+    }
+    evidence = ExistingDirectoryEvidence.from_check(parent, "datastudio_directory_tree", True)
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(return_value=evidence)
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock(return_value=None)
+    nodes.create_node = AsyncMock(return_value="node-new")
+    nodes.update_node = AsyncMock(return_value=True)
+    api = MagicMock()
+    api.get_node = AsyncMock(
+        return_value={
+            "Node": {
+                "Id": "node-new",
+                "Name": node_name,
+                "Spec": json.dumps(
+                    {
+                        "spec": {
+                            "nodes": [
+                                {
+                                    "name": node_name,
+                                    "script": {
+                                        "path": node_path,
+                                        "language": "odps-sql",
+                                        "content": script,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ),
+            }
+        }
+    )
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+    monkeypatch.setattr(app_state, "_openapi_client", api)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(plan, "dev_execute")
+
+    assert result.success is True
+    nodes.create_node.assert_awaited_once()
+    assert nodes.create_node.await_args.kwargs["directory_evidence"] == evidence
+    nodes.update_node.assert_awaited_once_with("node-new", script)
+    assert result.data["published"] is False
+
+
+@pytest.mark.asyncio
+async def test_confirmed_node_write_blocks_when_directory_recheck_fails(monkeypatch) -> None:
+    from dataworks_agent.agent.workflow_service import AgentWorkflowService
+    from dataworks_agent.services.ods_oss.directory_guard import ExistingDirectoryEvidence
+    from dataworks_agent.state import app_state
+
+    parent = "业务流程/106_广告报告/MaxCompute/数据开发/02_DWD"
+    bff = MagicMock()
+    bff.check_existing_directory = AsyncMock(
+        return_value=ExistingDirectoryEvidence.from_check(parent, "no_positive_evidence", False)
+    )
+    nodes = MagicMock()
+    nodes.get_node_uuid_by_path = AsyncMock()
+    nodes.create_node = AsyncMock()
+    nodes.update_node = AsyncMock()
+    monkeypatch.setattr(app_state, "_bff_client", bff)
+    monkeypatch.setattr(app_state, "_node_client", nodes)
+
+    result = await AgentWorkflowService()._execute_confirmed_node_write(
+        {
+            "decision_id": "placement-1",
+            "environment": "test",
+            "layer": "DWD",
+            "source_table": "giikin_aliyun.tb_dwd_order",
+            "node_name": "tb_dwd_order",
+            "parent_path": parent,
+            "node_path": f"{parent}/tb_dwd_order",
+            "language": "odps-sql",
+            "script_content": "SELECT 1;",
+            "publish": False,
+        },
+        "dev_execute",
+    )
+
+    assert result.success is False
+    assert result.data["directory_creation_attempted"] is False
+    nodes.get_node_uuid_by_path.assert_not_awaited()
+    nodes.create_node.assert_not_awaited()
+    nodes.update_node.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_layer_option_refines_previous_objective_text() -> None:
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = MagicMock()
+    graph.context = AsyncMock(
+        return_value={
+            "objective": "找订单表",
+            "pending_objective": "找订单表",
+            "action": "ask_data",
+            "params": {},
+            "pending_interaction": {
+                "interaction_id": "int-layer",
+                "type": "single_select",
+                "purpose": "select_layer",
+                "prompt": "请选择分层",
+                "options": [],
+                "allow_custom_input": True,
+                "custom_input_placeholder": "",
+                "status": "pending",
+                "state_version": 1,
+            },
+        }
+    )
+    graph.answer = AsyncMock(return_value={"params": {"layer": "dwd"}})
+    graph.resolve = AsyncMock(side_effect=lambda message, *_args, **_kwargs: message)
+    graph.remember = AsyncMock()
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="unknown", confidence=0.1)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(True, "ok", "ask_data", "dev_execute")
+    )
+    agent._save_conversation_message = MagicMock()
+
+    await agent.chat(
+        "DWD",
+        conversation_id="conv-layer",
+        interaction_answer=InteractionAnswer(
+            interaction_id="int-layer",
+            option_id="layer_dwd",
+            state_version=1,
+        ),
+    )
+
+    parsed_message = agent._intent_parser.parse.call_args.args[0]
+    assert "找订单表" in parsed_message
+    assert "只要 dwd" in parsed_message
+    assert agent._workflow_service.execute.await_args.kwargs["params"]["layer"] == "dwd"
+
+@pytest.mark.parametrize("message", ["取消", "重新开始", "新任务", "cancel", "reset"])
+def test_conversation_reset_recognizes_supported_commands(message: str) -> None:
+    from dataworks_agent.agent.core import ChatAgent
+
+    assert ChatAgent._is_conversation_reset(message) is True

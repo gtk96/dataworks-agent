@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * RepositoryPathPicker 组件单元测试
  * 测试目录选择器的基本功能

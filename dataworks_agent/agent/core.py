@@ -12,6 +12,11 @@ from sqlalchemy import select
 
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
+from dataworks_agent.agent.interaction import (
+    InteractionAnswer,
+    InteractionExpiredError,
+    build_interaction,
+)
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
@@ -102,6 +107,7 @@ class ChatAgent:
         client_ip: str = "127.0.0.1",
         conversation_id: str | None = None,
         context_updates: dict[str, Any] | None = None,
+        interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
     ) -> ChatResponse:
         """Process user message."""
         if not message or not message.strip():
@@ -113,22 +119,91 @@ class ChatAgent:
 
         try:
             incoming_message = message.strip()
-            # 保存用户消息到历史
-            self._save_conversation_message(conversation_id, "user", incoming_message)
+            answer = (
+                interaction_answer
+                if isinstance(interaction_answer, InteractionAnswer)
+                else InteractionAnswer.model_validate(interaction_answer)
+                if interaction_answer is not None
+                else None
+            )
+            self._save_conversation_message(
+                conversation_id,
+                "user",
+                incoming_message,
+                payload={"interaction_answer": answer.model_dump(exclude_none=True)}
+                if answer is not None
+                else None,
+            )
             previous_context = await self._conversation_graph.context(conversation_id)
+            if (
+                answer is None
+                and previous_context.get("pending_interaction")
+                and not self._is_conversation_reset(incoming_message)
+            ):
+                pending = previous_context["pending_interaction"]
+                answer = InteractionAnswer(
+                    interaction_id=str(pending.get("interaction_id") or ""),
+                    custom_text=incoming_message,
+                    state_version=int(pending.get("state_version") or 0),
+                )
+            resolved_answer: dict[str, Any] = {}
+            merged_context_updates = dict(context_updates or {})
+            if answer is not None:
+                try:
+                    resolved_answer = await self._conversation_graph.answer(conversation_id, answer)
+                except InteractionExpiredError as exc:
+                    current = (
+                        exc.current.model_dump()
+                        if exc.current is not None
+                        else previous_context.get("pending_interaction") or None
+                    )
+                    return ChatResponse(
+                        message=str(exc),
+                        success=False,
+                        data={"interaction": current},
+                        error="interaction_expired",
+                    )
+                merged_context_updates = self._merge_context_updates(
+                    merged_context_updates, resolved_answer
+                )
+                custom_text = str(resolved_answer.get("custom_text") or "").strip()
+                if custom_text:
+                    params_update = dict(merged_context_updates.get("params") or {})
+                    params_update["custom_text"] = custom_text
+                    merged_context_updates["params"] = params_update
+                objective = str(
+                    previous_context.get("pending_objective")
+                    or previous_context.get("objective")
+                    or ""
+                ).strip()
+                selected_layer = str(
+                    (resolved_answer.get("params") or {}).get("layer") or ""
+                ).strip()
+                message = (
+                    f"{objective}\n补充信息：只要 {selected_layer}"
+                    if selected_layer and objective
+                    else f"{objective}\n补充信息：{custom_text}"
+                    if custom_text and objective and custom_text != objective
+                    else custom_text or objective or incoming_message
+                )
             message = await self._conversation_graph.resolve(
                 message,
                 conversation_id,
-                context_updates=context_updates,
+                context_updates=merged_context_updates,
             )
             intent = self._intent_parser.parse(message)
             intent.params = self._merge_conversation_params(
                 previous_context.get("params") or {},
                 intent.params,
-                (context_updates or {}).get("params") or {},
+                merged_context_updates.get("params") or {},
             )
             intent.params.setdefault("conversation_id", conversation_id)
-            intent.params["goal"] = intent.params.get("goal") or incoming_message
+            pending_interaction = previous_context.get("pending_interaction") or {}
+            if answer is not None and pending_interaction.get("purpose"):
+                intent.params["interaction_purpose"] = str(pending_interaction["purpose"])
+            intent.params["goal"] = (
+                intent.params.get("goal") or previous_context.get("objective") or incoming_message
+            )
             if self._is_context_summary_request(incoming_message, previous_context):
                 return self._build_context_summary_response(previous_context, incoming_message)
             if self._is_context_read_only_request(incoming_message, previous_context):
@@ -143,7 +218,7 @@ class ChatAgent:
                 )
 
             previous_action = str(previous_context.get("action") or "")
-            if previous_action and intent.action == "unknown":
+            if previous_action and (answer is not None or intent.action == "unknown"):
                 intent.action = previous_action
                 intent.confidence = max(intent.confidence, 0.75)
             business_query = self._resolve_business_query(message, conversation_id)
@@ -198,6 +273,21 @@ class ChatAgent:
                         ),
                     }
                 )
+                interaction = None
+                if (
+                    data.get("interaction")
+                    or data.get("needs_clarification")
+                    or data.get("option_chips")
+                ):
+                    current_context = await self._conversation_graph.context(conversation_id)
+                    interaction = build_interaction(
+                        {**data, "message": workflow.message},
+                        purpose=self._interaction_purpose(data, intent.action),
+                        state_version=int(current_context.get("state_version") or 0) + 1,
+                    )
+                    if interaction is not None:
+                        data["interaction"] = interaction.model_dump()
+                        data["needs_clarification"] = True
                 response = ChatResponse(
                     message=workflow.message,
                     success=workflow.success,
@@ -208,7 +298,7 @@ class ChatAgent:
                 await self._conversation_graph.remember(
                     conversation_id,
                     message,
-                    needs_clarification=bool(data.get("needs_clarification")),
+                    needs_clarification=bool(interaction or data.get("needs_clarification")),
                     action=intent.action,
                     params=intent.params,
                     workflow_state={
@@ -218,17 +308,20 @@ class ChatAgent:
                         "result_data": self._conversation_result_snapshot(data),
                         "message": workflow.message,
                     },
+                    pending_interaction=(
+                        interaction.model_dump() if interaction is not None else None
+                    ),
+                    last_result=self._conversation_result_snapshot(data),
                 )
-                # Persist the assistant reply along with the metadata
-                # context (option chips / artifacts) so HistoryProvider
-                # can find recent tables in follow-up turns.
-                history_payload = {
-                    "message": workflow.message,
-                    "option_chips": (workflow.to_data() or {}).get("data", {}).get("option_chips")
-                    or [],
-                }
                 self._save_conversation_message(
-                    conversation_id, "assistant", json.dumps(history_payload, ensure_ascii=False)
+                    conversation_id,
+                    "assistant",
+                    workflow.message,
+                    payload={
+                        "interaction": data.get("interaction"),
+                        "option_chips": data.get("option_chips") or [],
+                        "artifacts": data.get("artifacts") or [],
+                    },
                 )
                 return response
 
@@ -244,6 +337,11 @@ class ChatAgent:
         except Exception as e:
             logger.exception("ChatAgent failed: %s", e)
             return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
+
+    @staticmethod
+    def _is_conversation_reset(message: str) -> bool:
+        text = message.lower()
+        return any(marker in text for marker in ("取消", "重新开始", "新任务", "cancel", "reset"))
 
     @staticmethod
     def _is_context_summary_request(message: str, context: dict[str, Any]) -> bool:
@@ -488,7 +586,12 @@ class ChatAgent:
                 self._query_frames.pop(key, None)
 
     def _save_conversation_message(
-        self, conversation_id: str | None, role: str, content: str
+        self,
+        conversation_id: str | None,
+        role: str,
+        content: str,
+        *,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """保存对话消息到数据库。"""
         if not conversation_id or not content:
@@ -505,6 +608,7 @@ class ChatAgent:
                     conversation_id=conversation_id,
                     role=role,
                     content=content,
+                    payload_json=json.dumps(payload or {}, ensure_ascii=False),
                 )
                 session.add(msg)
                 session.commit()
@@ -516,7 +620,7 @@ class ChatAgent:
 
     def get_conversation_history(
         self, conversation_id: str, limit: int = 50
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """获取对话历史消息。"""
         if not conversation_id:
             return []
@@ -531,15 +635,54 @@ class ChatAgent:
                 )
                 result = session.execute(stmt)
                 messages = result.scalars().all()
-                return [
-                    {"role": msg.role, "content": msg.content, "timestamp": msg.created_at}
-                    for msg in reversed(messages)
-                ]
+                history: list[dict[str, Any]] = []
+                for msg in reversed(messages):
+                    item: dict[str, Any] = {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "timestamp": msg.created_at,
+                    }
+                    try:
+                        payload = json.loads(getattr(msg, "payload_json", "{}") or "{}")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        payload = {}
+                    if isinstance(payload, dict) and payload:
+                        item["payload"] = payload
+                    history.append(item)
+                return history
             finally:
                 session.close()
         except Exception as e:
             logger.warning("获取对话历史失败: %s", e)
             return []
+
+    async def get_conversation_context(self, conversation_id: str) -> dict[str, Any]:
+        """Return live checkpoint state for restoring the actionable interaction."""
+        return await self._conversation_graph.context(conversation_id)
+
+    @staticmethod
+    def _merge_context_updates(current: dict[str, Any], resolved: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(current)
+        for key in ("params", "selected_resources", "workflow_state"):
+            values = dict(merged.get(key) or {})
+            values.update(resolved.get(key) or {})
+            if values:
+                merged[key] = values
+        if resolved.get("action"):
+            merged["action"] = resolved["action"]
+        return merged
+
+    @staticmethod
+    def _interaction_purpose(data: dict[str, Any], action: str) -> str:
+        existing = data.get("interaction")
+        if isinstance(existing, dict) and existing.get("purpose"):
+            return str(existing["purpose"])
+        if data.get("interaction_purpose"):
+            return str(data["interaction_purpose"])
+        for option in data.get("option_chips") or []:
+            if isinstance(option, dict) and option.get("type") == "pick_table":
+                return "select_table"
+        return "clarify_" + (action or "request")
 
     def capability_status(self) -> dict[str, Any]:
         """Return the live AK/SK, Cookie/CDP and official MCP capability matrix."""

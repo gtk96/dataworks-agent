@@ -72,3 +72,14 @@ class ExistingDirectoryEvidence:
             checked_at=datetime.now(UTC).isoformat(),
             confirmed=confirmed,
         )
+
+    def is_fresh(self, max_age_seconds: int = 300) -> bool:
+        """Reject stale or malformed evidence before any write."""
+        try:
+            checked = datetime.fromisoformat(self.checked_at)
+            if checked.tzinfo is None:
+                checked = checked.replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            return False
+        age = (datetime.now(UTC) - checked.astimezone(UTC)).total_seconds()
+        return 0 <= age <= max_age_seconds

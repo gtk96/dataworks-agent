@@ -118,7 +118,10 @@
               :content="msg.content"
               :streaming="msg.streaming"
               :option-chips="msg.optionChips"
+              :interaction="msg.interaction"
+              :active-interaction-id="activeInteractionId"
               @pick="handleSend"
+              @answer-interaction="handleInteractionAnswer"
             />
           </div>
 
@@ -209,6 +212,12 @@ import Composer from '@/components/agent/Composer.vue'
 import WelcomePanel from '@/components/agent/WelcomePanel.vue'
 import { createSSEStream, type SSEEvent } from '@/utils/sse-client'
 import { idempotencyKey } from '@/utils/request'
+import {
+  buildAgentChatRequest,
+  requestAgentChat,
+  type AgentInteraction,
+  type InteractionAnswer,
+} from '@/components/agent/chatInteraction'
 
 interface ChatMessage {
   id: string
@@ -224,6 +233,7 @@ interface ChatMessage {
     value?: string
     placeholder?: string
   }>
+  interaction?: AgentInteraction
 }
 
 interface AgentPayload {
@@ -241,6 +251,7 @@ interface AgentPayload {
     publish_request?: Record<string, unknown>
     next_actions?: string[]
     agent_mode?: string
+    interaction?: AgentInteraction
     [key: string]: unknown
   }
   error?: string | null
@@ -264,7 +275,12 @@ const tabs = [
 
 const messages = ref<ChatMessage[]>([])
 const messagesContainer = ref<HTMLElement>()
-const conversationId = ref<string>(idempotencyKey())
+const storedConversationId = typeof localStorage !== 'undefined' ? localStorage.getItem('conversation_id') : null
+const conversationId = ref<string>(storedConversationId || idempotencyKey())
+const activeInteractionId = ref<string | null>(null)
+if (typeof localStorage !== 'undefined' && !storedConversationId) {
+  localStorage.setItem('conversation_id', conversationId.value)
+}
 const isStreaming = ref(false)
 const isConnected = ref(false)
 const mobileMenuOpen = ref(false)
@@ -290,7 +306,9 @@ function scrollToBottom() {
 
 function resetChat() {
   conversationId.value = idempotencyKey()
+  localStorage.setItem('conversation_id', conversationId.value)
   messages.value = []
+  activeInteractionId.value = null
   lastPayload.value = null
   isStreaming.value = false
 }
@@ -332,6 +350,7 @@ async function handleSend(text: string) {
       if (event.type === 'connected') {
         isConnected.value = true
         conversationId.value = event.conversation_id
+        localStorage.setItem('conversation_id', conversationId.value)
       } else if (event.type === 'thinking') {
         const idx = messages.value.findIndex(m => m.id === assistantMsgId)
         if (idx >= 0) {
@@ -346,7 +365,11 @@ async function handleSend(text: string) {
             content: event.message,
             streaming: false,
             optionChips: (event.data?.option_chips ?? undefined) as ChatMessage['optionChips'],
+            interaction: event.data?.interaction as AgentInteraction | undefined,
           }
+          activeInteractionId.value = event.data?.interaction
+            ? String((event.data.interaction as AgentInteraction).interaction_id)
+            : null
           lastPayload.value = {
             message: event.message,
             success: event.success,
@@ -386,6 +409,94 @@ async function handleSend(text: string) {
   })
 
   onUnmounted(() => controller.abort())
+}
+
+async function handleInteractionAnswer(payload: { message: string; answer: InteractionAnswer }) {
+  if (isStreaming.value) return
+  const source = messages.value.find(
+    message => message.interaction?.interaction_id === payload.answer.interaction_id,
+  )
+  const originalInteraction = source?.interaction
+  if (source?.interaction) {
+    source.interaction = { ...source.interaction, status: 'answered' }
+  }
+  activeInteractionId.value = null
+  messages.value.push({ id: idempotencyKey(), role: 'user', content: payload.message })
+  const assistantMsgId = idempotencyKey()
+  messages.value.push({ id: assistantMsgId, role: 'assistant', content: '', streaming: true })
+  isStreaming.value = true
+  await nextTick(scrollToBottom)
+
+  try {
+    const request = buildAgentChatRequest(
+      payload.message,
+      'auto',
+      true,
+      false,
+      conversationId.value,
+      undefined,
+      payload.answer,
+    )
+    const response = await requestAgentChat<AgentPayload>(request)
+    const interaction = response.data?.interaction
+    const index = messages.value.findIndex(message => message.id === assistantMsgId)
+    if (index >= 0) {
+      messages.value[index] = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: response.message,
+        interaction,
+        optionChips: response.data?.option_chips as ChatMessage['optionChips'],
+      }
+    }
+    activeInteractionId.value = interaction?.status === 'pending' ? interaction.interaction_id : null
+    lastPayload.value = response
+  } catch (error) {
+    if (source && originalInteraction) source.interaction = originalInteraction
+    activeInteractionId.value = originalInteraction?.interaction_id ?? null
+    const index = messages.value.findIndex(message => message.id === assistantMsgId)
+    if (index >= 0) {
+      messages.value[index] = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: `❌ Agent 请求失败：${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  } finally {
+    isStreaming.value = false
+    nextTick(scrollToBottom)
+  }
+}
+
+async function loadConversationHistory() {
+  try {
+    const response = await fetch(
+      `/agent/messages?conversation_id=${encodeURIComponent(conversationId.value)}`,
+    )
+    if (!response.ok) return
+    const data = await response.json()
+    const restored: ChatMessage[] = Array.isArray(data.messages)
+      ? data.messages.map((message: Record<string, any>) => ({
+          id: idempotencyKey(),
+          role: message.role === 'user' ? 'user' : 'assistant',
+          content: String(message.content ?? ''),
+          interaction: message.payload?.interaction as AgentInteraction | undefined,
+        }))
+      : []
+    const active = data.active_interaction as AgentInteraction | null
+    if (active) {
+      const target = [...restored].reverse().find(
+        message => message.role === 'assistant'
+          && message.interaction?.interaction_id === active.interaction_id,
+      ) || [...restored].reverse().find(message => message.role === 'assistant')
+      if (target) target.interaction = active
+    }
+    messages.value = restored
+    activeInteractionId.value = active?.interaction_id ?? null
+    await nextTick(scrollToBottom)
+  } catch {
+    // A missing history endpoint must not block a new conversation.
+  }
 }
 
 // ---- Cookie management ----
@@ -545,7 +656,8 @@ function queryCell(row: unknown[], column: string, columnIndex: number): string 
   return value === null || value === undefined ? '—' : String(value)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadConversationHistory()
   loadCapabilities()
 })
 </script>

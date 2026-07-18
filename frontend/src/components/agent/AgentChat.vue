@@ -70,7 +70,15 @@
 
         <!-- Message list (shown when there are messages) -->
         <div v-else class="message-list">
-          <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+          <MessageBubble
+            v-for="msg in messages"
+            :key="msg.id"
+            :role="msg.isUser ? 'user' : 'assistant'"
+            :content="msg.text"
+            :interaction="msg.interaction"
+            :active-interaction-id="activeInteractionId"
+            @answer-interaction="handleInteractionAnswer"
+          />
           <div v-if="loading" class="thinking-row">
             <div class="thinking-dots">
               <span /><span /><span />
@@ -290,15 +298,29 @@ import {
   Tools,
   Lock,
 } from '@element-plus/icons-vue'
-import ChatMessage from './ChatMessage.vue'
+import MessageBubble from './MessageBubble.vue'
 import { buildCapabilityBadges } from './capabilityStatus'
 import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 import { buildSourceDiscoveryView } from './sourceDiscovery'
 import { buildExecutionResources } from './executionResources'
-import { buildAgentChatRequest, requestAgentChat, reviewPublishRequest, type AgentContextUpdates, type AgentExecutionMode } from './chatInteraction'
+import {
+  buildAgentChatRequest,
+  requestAgentChat,
+  reviewPublishRequest,
+  type AgentContextUpdates,
+  type AgentExecutionMode,
+  type AgentInteraction,
+  type InteractionAnswer,
+} from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
 
-interface ChatMsg { id: string; text: string; isUser: boolean; timestamp: Date }
+interface ChatMsg {
+  id: string
+  text: string
+  isUser: boolean
+  timestamp: Date
+  interaction?: AgentInteraction
+}
 interface PlanStep { step_id?: string; step?: string; tool?: string; title?: string; phase?: string; status?: string }
 interface ExecutionStatus { task_id: string; current_step: string | null; total_steps: number; completed_steps: number; failed_steps: number; steps: Record<string, { status: string }> }
 interface SemanticPlan {
@@ -342,6 +364,7 @@ interface AgentPayload {
     allow_custom_input?: boolean
     custom_input_hint?: string
     agent_mode?: string
+    interaction?: AgentInteraction
     semantic_plan?: SemanticPlan
     source_discovery?: Record<string, unknown>
     query?: {
@@ -360,6 +383,7 @@ interface AgentPayload {
 // Persist conversation_id in localStorage
 const storedConvId = typeof localStorage !== 'undefined' ? localStorage.getItem('conversation_id') : null
 const conversationId = ref(storedConvId || idempotencyKey())
+const activeInteractionId = ref<string | null>(null)
 
 if (typeof localStorage !== 'undefined' && !storedConvId) {
   localStorage.setItem('conversation_id', conversationId.value)
@@ -540,6 +564,7 @@ function resetConversation() {
   conversationId.value = idempotencyKey()
   localStorage.setItem('conversation_id', conversationId.value)
   messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
+  activeInteractionId.value = null
   lastPayload.value = null
   currentStatus.value = null
   input.value = ''
@@ -558,7 +583,16 @@ async function loadConversationHistory() {
         text: msg.content,
         isUser: msg.role === 'user',
         timestamp: new Date(msg.timestamp),
+        interaction: msg.payload?.interaction as AgentInteraction | undefined,
       }))
+      const active = data.active_interaction as AgentInteraction | null
+      if (active) {
+        const target = [...messages.value].reverse().find(
+          message => !message.isUser && message.interaction?.interaction_id === active.interaction_id,
+        ) || [...messages.value].reverse().find(message => !message.isUser)
+        if (target) target.interaction = active
+      }
+      activeInteractionId.value = active?.interaction_id ?? null
     } else {
       // 没有历史消息，显示欢迎消息
       messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
@@ -588,9 +622,13 @@ function connectWebSocket() {
   socket.onclose = () => { if (ws.value === socket) ws.value = null }
   socket.onerror = () => socket.close()
 }
-async function sendMessage(overrideText?: string, contextUpdates?: AgentContextUpdates) {
+async function sendMessage(
+  overrideText?: string,
+  contextUpdates?: AgentContextUpdates,
+  interactionAnswer?: InteractionAnswer,
+): Promise<boolean> {
   const text = (overrideText ?? input.value).trim()
-  if (!text || loading.value) return
+  if (!text || loading.value) return false
   input.value = ''
   messages.value.push({ id: idempotencyKey(), text, isUser: true, timestamp: new Date() })
   loading.value = true
@@ -603,12 +641,31 @@ async function sendMessage(overrideText?: string, contextUpdates?: AgentContextU
       requestPublish.value,
       conversationId.value,
       contextUpdates,
+      interactionAnswer,
     )
     handleAgentResponse(await requestAgentChat<AgentPayload>(payload))
+    return true
   } catch (error) {
     handleAgentResponse({ message: `Agent 请求失败：${error instanceof Error ? error.message : String(error)}`, success: false })
+    return false
   } finally {
     loading.value = false
+  }
+}
+async function handleInteractionAnswer(payload: { message: string; answer: InteractionAnswer }) {
+  if (loading.value) return
+  const source = messages.value.find(
+    message => message.interaction?.interaction_id === payload.answer.interaction_id,
+  )
+  const originalInteraction = source?.interaction
+  if (source?.interaction) {
+    source.interaction = { ...source.interaction, status: 'answered' }
+  }
+  activeInteractionId.value = null
+  const succeeded = await sendMessage(payload.message, undefined, payload.answer)
+  if (!succeeded && source && originalInteraction) {
+    source.interaction = originalInteraction
+    activeInteractionId.value = originalInteraction.interaction_id
   }
 }
 function handleAgentResponse(payload: AgentPayload) {
@@ -616,7 +673,15 @@ function handleAgentResponse(payload: AgentPayload) {
   publishReviewFeedback.value = ''
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
   activeClarifyingQuestion.value = payload.data?.clarifying_questions?.[0] ?? ''
-  messages.value.push({ id: idempotencyKey(), text: payload.message, isUser: false, timestamp: new Date() })
+  messages.value.push({
+    id: idempotencyKey(),
+    text: payload.message,
+    isUser: false,
+    timestamp: new Date(),
+    interaction: payload.data?.interaction,
+  })
+  const interaction = payload.data?.interaction
+  activeInteractionId.value = interaction?.status === 'pending' ? interaction.interaction_id : null
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)
