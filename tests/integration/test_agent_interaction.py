@@ -1043,6 +1043,47 @@ async def test_execution_unknown_blocks_continue_without_restarting_workflow(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interlude", ["你好", "什么意思"])
+async def test_execution_unknown_survives_greeting_or_explanation(tmp_path, interlude) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.execute = AsyncMock()
+    try:
+        await graph.remember(
+            "conv-unknown-interlude",
+            "创建订单模型",
+            needs_clarification=False,
+            action="forward_modeling",
+            params={"source_table": "dw.orders"},
+            task_status="execution_unknown",
+        )
+        interlude_response = await agent.chat(
+            interlude,
+            conversation_id="conv-unknown-interlude",
+        )
+        after_interlude = await graph.context("conv-unknown-interlude")
+        continue_response = await agent.chat(
+            "继续",
+            conversation_id="conv-unknown-interlude",
+            execution_mode="dev_execute",
+        )
+
+        assert interlude_response.error == "execution_unknown"
+        assert "interaction" not in interlude_response.data
+        assert after_interlude["task_status"] == "execution_unknown"
+        assert continue_response.error == "execution_unknown"
+        agent._workflow_service.execute.assert_not_awaited()
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
 async def test_duplicate_old_card_click_executes_workflow_once(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
     from dataworks_agent.agent.core import ChatAgent

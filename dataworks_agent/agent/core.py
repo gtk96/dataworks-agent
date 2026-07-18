@@ -227,6 +227,24 @@ class ChatAgent:
                 )
 
             if answer is None and resolved_turn.dialogue_action is DialogueAction.GREETING:
+                if previous_context.get("task_status") == "execution_unknown":
+                    return await self._complete_turn(
+                        conversation_id,
+                        incoming_message,
+                        ChatResponse(
+                            message=(
+                                "你好。当前有一项执行结果仍待确认；为避免重复写入，"
+                                "请先查询任务或节点状态，或明确开始新任务。"
+                            ),
+                            success=False,
+                            data={
+                                "agent_mode": "execution_unknown",
+                                "execution_result": "unknown",
+                            },
+                            error="execution_unknown",
+                        ),
+                        context=previous_context,
+                    )
                 data = self._response_policy.greeting(
                     previous_context,
                     state_version=int(previous_context.get("state_version") or 0) + 1,
@@ -248,6 +266,24 @@ class ChatAgent:
                 )
 
             if answer is None and resolved_turn.dialogue_action is DialogueAction.EXPLAIN:
+                if previous_context.get("task_status") == "execution_unknown":
+                    return await self._complete_turn(
+                        conversation_id,
+                        incoming_message,
+                        ChatResponse(
+                            message=(
+                                "上一项执行已经启动，但结果尚未确认。当前不能解释为已成功或已失败，"
+                                "也不能直接继续；请先查询任务或节点状态。"
+                            ),
+                            success=False,
+                            data={
+                                "agent_mode": "execution_unknown",
+                                "execution_result": "unknown",
+                            },
+                            error="execution_unknown",
+                        ),
+                        context=previous_context,
+                    )
                 explanation, data = self._response_policy.explain(previous_context)
                 return await self._complete_turn(
                     conversation_id,
