@@ -19,6 +19,160 @@ from dataworks_agent.agent.interaction import (
     build_interaction,
     resolve_interaction_answer,
 )
+from dataworks_agent.agent.response_policy import ConversationMeta, ResponsePolicy
+
+ENTRY_OPTION_IDS = ["ask_data", "find_table", "modeling", "diagnose"]
+
+
+def test_conversation_meta_selected_resources_defaults_are_independent() -> None:
+    first = ConversationMeta()
+    second = ConversationMeta()
+
+    first.selected_resources["table"] = "dw.orders"
+
+    assert second.selected_resources == {}
+
+
+def test_greeting_returns_entry_cards() -> None:
+    data = ResponsePolicy().greeting({}, state_version=1)
+
+    assert [item["id"] for item in data["interaction"]["options"]] == ENTRY_OPTION_IDS
+    assert data["interaction"]["allow_custom_input"] is True
+
+
+def test_greeting_preserves_active_interaction() -> None:
+    pending = {
+        "interaction_id": "int_orders",
+        "type": "single_select",
+        "purpose": "select_table",
+        "prompt": "请选择候选表",
+        "options": [],
+        "allow_custom_input": True,
+        "custom_input_placeholder": "",
+        "state_version": 2,
+        "status": "pending",
+    }
+
+    data = ResponsePolicy().greeting({"pending_interaction": pending}, state_version=3)
+
+    assert data["interaction"] == pending
+
+
+def test_explanation_preserves_active_interaction() -> None:
+    context = {
+        "pending_interaction": {
+            "interaction_id": "int_orders",
+            "type": "single_select",
+            "purpose": "select_table",
+            "prompt": "请选择候选表",
+            "options": [
+                {
+                    "id": "detail",
+                    "label": "订单明细表",
+                    "value": "dw.detail",
+                    "description": "一单一行",
+                    "payload": {},
+                }
+            ],
+            "allow_custom_input": True,
+            "custom_input_placeholder": "",
+            "state_version": 2,
+            "status": "pending",
+        }
+    }
+
+    message, data = ResponsePolicy().explain(context)
+
+    assert "一单一行" in message
+    assert data["interaction"]["interaction_id"] == "int_orders"
+
+
+def test_explanation_without_pending_or_previous_content_requests_clarification() -> None:
+    message, data = ResponsePolicy().explain({})
+
+    assert message
+    assert message != "上一条的意思是："
+    assert "补充" in message or "说明" in message
+    assert data["interaction"] is None
+
+
+def test_clarify_returns_stable_entry_cards() -> None:
+    data = ResponsePolicy().clarify(state_version=4)
+
+    assert data["interaction"]["purpose"] == "clarify_request"
+    assert [item["id"] for item in data["interaction"]["options"]] == ENTRY_OPTION_IDS
+
+
+def test_string_next_actions_become_structured_options_without_mutating_input() -> None:
+    original = {"next_actions": ["查看字段", "查询数据"]}
+    snapshot = {"next_actions": list(original["next_actions"])}
+
+    data = ResponsePolicy().normalize_workflow_data(
+        original,
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert original == snapshot
+    assert [item["label"] for item in data["interaction"]["options"]] == [
+        "查看字段",
+        "查询数据",
+    ]
+    assert [item["id"] for item in data["interaction"]["options"]] == [
+        "action_0",
+        "action_1",
+    ]
+    assert all(item["payload"]["value"] == item["value"] for item in data["interaction"]["options"])
+
+
+def test_normalize_workflow_data_without_useful_options_has_no_interaction() -> None:
+    original = {"next_actions": ["", "   ", None]}
+    snapshot = {"next_actions": list(original["next_actions"])}
+
+    data = ResponsePolicy().normalize_workflow_data(
+        original,
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert original == snapshot
+    assert data["option_chips"] == []
+    assert data["interaction"] is None
+
+
+def test_legacy_string_options_are_preserved() -> None:
+    pending = build_interaction(
+        {"next_actions": ["查看字段", "查询数据"]},
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert pending is not None
+    assert [item.label for item in pending.options] == ["查看字段", "查询数据"]
+    assert [item.id for item in pending.options] == ["action_0", "action_1"]
+
+
+def test_action_option_payload_is_structured() -> None:
+    pending = build_interaction(
+        {
+            "next_actions": [
+                {
+                    "id": "inspect",
+                    "type": "action",
+                    "label": "查看字段",
+                    "value": "查看字段",
+                }
+            ]
+        },
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert pending is not None
+    assert pending.options[0].payload == {
+        "value": "查看字段",
+        "params": {"follow_up_action": "查看字段"},
+    }
 
 
 def test_build_interaction_from_table_option_chips() -> None:

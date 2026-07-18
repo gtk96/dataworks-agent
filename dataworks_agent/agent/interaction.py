@@ -76,6 +76,9 @@ def _option_payload(
         layer = str(value or "").strip().lower()
         if layer:
             return {"params": {"layer": layer}}
+    if option_type == "action":
+        action_value = str(value or "").strip()
+        return {"value": action_value, "params": {"follow_up_action": action_value}}
     return {"value": value} if value not in (None, "") else {}
 
 
@@ -99,20 +102,32 @@ def build_interaction(
     placeholder = str(data.get("custom_input_hint") or "")
 
     for index, raw in enumerate(raw_options):
-        if not isinstance(raw, dict):
-            continue
-        option_type = str(raw.get("type") or "")
-        if option_type == "free_text" or raw.get("requires_custom_input"):
+        if isinstance(raw, dict):
+            option_data = raw
+        else:
+            label = str(raw or "").strip()
+            if not label:
+                continue
+            option_data = {
+                "id": f"action_{index}",
+                "type": "action",
+                "label": label,
+                "value": label,
+            }
+        option_type = str(option_data.get("type") or "")
+        if option_type == "free_text" or option_data.get("requires_custom_input"):
             allow_custom_input = True
-            placeholder = str(raw.get("placeholder") or placeholder)
+            placeholder = str(option_data.get("placeholder") or placeholder)
             continue
-        label = str(raw.get("label") or raw.get("value") or "").strip()
+        label = str(option_data.get("label") or option_data.get("value") or "").strip()
         if not label:
             continue
-        option_id = str(raw.get("id") or f"opt_{index}")
-        value = raw.get("value", label)
-        description = str(raw.get("description") or raw.get("subtitle") or "")
-        explicit_payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
+        option_id = str(option_data.get("id") or f"opt_{index}")
+        value = option_data.get("value", label)
+        description = str(option_data.get("description") or option_data.get("subtitle") or "")
+        explicit_payload = (
+            option_data.get("payload") if isinstance(option_data.get("payload"), dict) else {}
+        )
         options.append(
             InteractionOption(
                 id=option_id,
@@ -125,7 +140,7 @@ def build_interaction(
                     value=value,
                     explicit=explicit_payload,
                 ),
-                layer=str(raw.get("layer") or ""),
+                layer=str(option_data.get("layer") or ""),
             )
         )
 
