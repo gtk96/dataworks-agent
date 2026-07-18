@@ -188,6 +188,65 @@ async def test_pending_interaction_survives_new_graph_instance(tmp_path) -> None
 
 
 @pytest.mark.asyncio
+async def test_rich_context_survives_new_graph_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    db_path = str(tmp_path / "conversation.db")
+    first = ConversationGraph(db_path)
+    current = await first.remember(
+        "conv-rich",
+        "查找订单相关表",
+        needs_clarification=False,
+        action="ask_data",
+        params={"layer": "dwd"},
+        selected_resources={"table": "dw.dwd_order_detail"},
+        last_assistant_turn={"content": "已选择订单明细表"},
+        conversation_summary="目标：查订单；分层：DWD",
+        query_frame={"metric": "order_count"},
+        task_status="active",
+    )
+
+    restored = await ConversationGraph(db_path).context("conv-rich")
+    empty = await first.context("conv-empty")
+
+    assert current["state_version"] == 1
+    assert restored["last_assistant_turn"] == {"content": "已选择订单明细表"}
+    assert restored["conversation_summary"] == "目标：查订单；分层：DWD"
+    assert restored["query_frame"] == {"metric": "order_count"}
+    assert restored["task_status"] == "active"
+    assert empty["last_assistant_turn"] == {}
+    assert empty["conversation_summary"] == ""
+    assert empty["query_frame"] == {}
+    assert empty["task_status"] == ""
+
+
+@pytest.mark.asyncio
+async def test_remember_rejects_stale_expected_version(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import (
+        ConversationGraph,
+        ConversationStateConflictError,
+    )
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    current = await graph.remember(
+        "conv-cas",
+        "查订单",
+        needs_clarification=False,
+    )
+
+    with pytest.raises(ConversationStateConflictError) as exc_info:
+        await graph.remember(
+            "conv-cas",
+            "查订单",
+            needs_clarification=False,
+            expected_version=current["state_version"] - 1,
+        )
+
+    assert exc_info.value.current == current
+    assert (await graph.context("conv-cas"))["state_version"] == current["state_version"]
+
+
+@pytest.mark.asyncio
 async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
 
@@ -225,10 +284,45 @@ async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) ->
     state = await graph.context("conv-1")
 
     assert resolved["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert resolved["state_version"] == 2
     assert state["selected_resources"]["table"] == "giikin_aliyun.tb_dwd_order"
     assert state["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
     assert state["pending_interaction"] == {}
+    assert state["pending_objective"] == ""
     assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_atomically_clears_pending_and_increments_version(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = PendingInteraction(
+        interaction_id="int-cancel",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=1,
+    )
+    remembered = await graph.remember(
+        "conv-cancel",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+        selected_resources={"table": "giikin_aliyun.tb_dwd_order"},
+        task_status="waiting_user",
+    )
+
+    cancelled = await graph.cancel("conv-cancel")
+    restored = await graph.context("conv-cancel")
+
+    assert remembered["state_version"] == 1
+    assert cancelled["state_version"] == 2
+    assert cancelled["pending_interaction"] == {}
+    assert cancelled["pending_objective"] == ""
+    assert cancelled["task_status"] == "cancelled"
+    assert cancelled["selected_resources"] == {"table": "giikin_aliyun.tb_dwd_order"}
+    assert restored == cancelled
 
 
 @pytest.mark.asyncio
@@ -781,6 +875,7 @@ async def test_layer_option_refines_previous_objective_text() -> None:
     assert "找订单表" in parsed_message
     assert "只要 dwd" in parsed_message
     assert agent._workflow_service.execute.await_args.kwargs["params"]["layer"] == "dwd"
+
 
 @pytest.mark.parametrize("message", ["取消", "重新开始", "新任务", "cancel", "reset"])
 def test_conversation_reset_recognizes_supported_commands(message: str) -> None:
