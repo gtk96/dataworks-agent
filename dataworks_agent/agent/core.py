@@ -376,7 +376,12 @@ class ChatAgent:
                     return ChatResponse(
                         message=str(exc),
                         success=False,
-                        data={"interaction": current},
+                        data={
+                            "interaction": current,
+                            "conversation": self._response_policy.conversation_meta(
+                                str(conversation_id or ""), previous_context
+                            ),
+                        },
                         error="interaction_expired",
                     )
                 consumed_interaction = dict(pending_interaction)

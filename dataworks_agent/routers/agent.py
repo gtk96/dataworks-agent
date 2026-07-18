@@ -115,11 +115,19 @@ async def _response_data_with_conversation(
     response: Any, conversation_id: str | None
 ) -> dict[str, Any]:
     data = dict(response.data or {})
-    if not conversation_id:
+    if not conversation_id or isinstance(data.get("conversation"), dict):
         return data
-    context = await _agent.get_conversation_context(conversation_id)
+    try:
+        context = await _agent.get_conversation_context(conversation_id)
+    except Exception:
+        logger.warning("Failed to supplement conversation envelope", exc_info=True)
+        return data
     data["conversation"] = _conversation_envelope(conversation_id, context)
-    if response.error == "interaction_expired" and context.get("pending_interaction"):
+    if (
+        response.error == "interaction_expired"
+        and not data.get("interaction")
+        and context.get("pending_interaction")
+    ):
         data["interaction"] = dict(context["pending_interaction"])
     return data
 
