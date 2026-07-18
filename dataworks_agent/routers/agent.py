@@ -100,6 +100,30 @@ def _publish_request_payload(request: PublishRequest) -> dict[str, Any]:
     }
 
 
+def _conversation_envelope(conversation_id: str, context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "conversation_id": conversation_id,
+        "active_goal": str(context.get("objective") or ""),
+        "action": str(context.get("action") or ""),
+        "status": str(context.get("task_status") or "idle"),
+        "state_version": int(context.get("state_version") or 0),
+        "selected_resources": dict(context.get("selected_resources") or {}),
+    }
+
+
+async def _response_data_with_conversation(
+    response: Any, conversation_id: str | None
+) -> dict[str, Any]:
+    data = dict(response.data or {})
+    if not conversation_id:
+        return data
+    context = await _agent.get_conversation_context(conversation_id)
+    data["conversation"] = _conversation_envelope(conversation_id, context)
+    if response.error == "interaction_expired" and context.get("pending_interaction"):
+        data["interaction"] = dict(context["pending_interaction"])
+    return data
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     """Handle conversational planning and development execution."""
@@ -133,10 +157,11 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
             kwargs["interaction_answer"] = payload.interaction_answer
         response = await _agent.chat(payload.message, payload.request_type, **kwargs)
     logger.info("Chat response: success=%s", response.success)
+    response_data = await _response_data_with_conversation(response, payload.conversation_id)
     return ChatResponse(
         message=response.message,
         success=response.success,
-        data=response.data,
+        data=response_data,
         error=response.error,
     )
 
@@ -152,10 +177,12 @@ async def get_messages(conversation_id: str, limit: int = 50) -> dict[str, Any]:
     """获取对话历史消息。"""
     messages = _agent.get_conversation_history(conversation_id, limit)
     context = await _agent.get_conversation_context(conversation_id)
+    conversation = _conversation_envelope(conversation_id, context)
     return {
         "messages": messages,
         "active_interaction": context.get("pending_interaction") or None,
-        "state_version": int(context.get("state_version") or 0),
+        "state_version": conversation["state_version"],
+        "conversation": conversation,
     }
 
 
@@ -286,15 +313,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 if interaction_answer is not None:
                     kwargs["interaction_answer"] = interaction_answer
                 response = await _agent.chat(message, request_type, **kwargs)
+            response_data = await _response_data_with_conversation(response, conversation_id)
             payload = {
                 "message": response.message,
                 "success": response.success,
-                "data": response.data,
+                "data": response_data,
                 "error": response.error,
             }
             await websocket.send_json({"type": "response", "data": payload})
-            if response.data.get("status"):
-                await websocket.send_json({"type": "status", "data": response.data["status"]})
+            if response_data.get("status"):
+                await websocket.send_json({"type": "status", "data": response_data["status"]})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

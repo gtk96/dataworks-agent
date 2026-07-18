@@ -170,6 +170,10 @@ def test_messages_returns_active_interaction_and_state_version(client):
         }
     ]
     mock_agent.get_conversation_context.return_value = {
+        "objective": "查订单",
+        "action": "ask_data",
+        "task_status": "waiting_user",
+        "selected_resources": {"table": "dw.orders"},
         "pending_interaction": interaction,
         "state_version": 3,
     }
@@ -181,5 +185,81 @@ def test_messages_returns_active_interaction_and_state_version(client):
         "messages": mock_agent.get_conversation_history.return_value,
         "active_interaction": interaction,
         "state_version": 3,
+        "conversation": {
+            "conversation_id": "conv-1",
+            "active_goal": "查订单",
+            "action": "ask_data",
+            "status": "waiting_user",
+            "state_version": 3,
+            "selected_resources": {"table": "dw.orders"},
+        },
     }
     mock_agent.get_conversation_context.assert_awaited_once_with("conv-1")
+
+
+def test_expired_answer_returns_latest_server_state(client):
+    test_client, mock_agent = client
+    latest_interaction = {
+        "interaction_id": "int_latest",
+        "type": "single_select",
+        "purpose": "select_table",
+        "prompt": "请选择最新候选",
+        "options": [],
+        "allow_custom_input": True,
+        "custom_input_placeholder": "",
+        "status": "pending",
+        "state_version": 9,
+    }
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="当前候选已经更新，请根据最新选项继续。",
+            success=False,
+            data={"interaction": {"interaction_id": "stale"}},
+            error="interaction_expired",
+        )
+    )
+    mock_agent.get_conversation_context.return_value = {
+        "objective": "查订单",
+        "action": "ask_data",
+        "task_status": "waiting_user",
+        "state_version": 9,
+        "selected_resources": {"table": "dw.orders"},
+        "pending_interaction": latest_interaction,
+    }
+
+    response = test_client.post(
+        "/agent/chat",
+        json={"message": "第二个", "conversation_id": "conv-1"},
+    )
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["success"] is False
+    assert payload["error"] == "interaction_expired"
+    assert payload["data"]["interaction"]["interaction_id"] == "int_latest"
+    assert payload["data"]["conversation"]["state_version"] == 9
+
+
+def test_websocket_response_uses_same_conversation_envelope(client):
+    test_client, mock_agent = client
+    mock_agent.get_conversation_context.return_value = {
+        "objective": "查订单",
+        "action": "ask_data",
+        "task_status": "active",
+        "state_version": 4,
+        "selected_resources": {},
+    }
+
+    with test_client.websocket_connect("/agent/ws") as websocket:
+        websocket.send_json({"message": "继续", "conversation_id": "conv-ws"})
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "response"
+    assert payload["data"]["data"]["conversation"] == {
+        "conversation_id": "conv-ws",
+        "active_goal": "查订单",
+        "action": "ask_data",
+        "status": "active",
+        "state_version": 4,
+        "selected_resources": {},
+    }
