@@ -803,6 +803,221 @@ async def test_cancel_clears_interaction_and_selected_resources(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_text_reset_clears_active_objective(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    try:
+        await graph.remember(
+            "conv-reset-objective",
+            "查找订单表",
+            needs_clarification=False,
+            params={"layer": "dwd"},
+        )
+        await graph.resolve("重新开始", "conv-reset-objective")
+        state = await graph.context("conv-reset-objective")
+
+        assert state["objective"] == ""
+        assert state["params"] == {}
+        assert state["task_status"] == "idle"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_new_goal_is_not_hijacked_by_old_custom_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="diagnose_issue", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="诊断完成",
+            workflow_type="diagnose_issue",
+            mode="plan",
+        )
+    )
+    pending = PendingInteraction(
+        interaction_id="int-old",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择订单表",
+        allow_custom_input=True,
+        state_version=1,
+    )
+    try:
+        await graph.remember(
+            "conv-switch-goal",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            params={"layer": "dwd"},
+            selected_resources={"table": "dw.old_orders"},
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "诊断昨天失败的任务",
+            conversation_id="conv-switch-goal",
+            execution_mode="plan",
+        )
+        restored = await graph.context("conv-switch-goal")
+
+        assert response.success is True
+        assert restored["objective"] == "诊断昨天失败的任务"
+        assert restored["action"] == "diagnose_issue"
+        assert restored["selected_resources"] == {}
+        assert "layer" not in restored["params"]
+        assert agent._workflow_service.execute.await_args.kwargs["action"] == "diagnose_issue"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_workflow_restores_consumed_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="ask_data", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(side_effect=RuntimeError("temporary failure"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "table_1",
+                    "type": "pick_table",
+                    "label": "订单表",
+                    "value": "dw.orders",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-recover-answer",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            params={"keyword": "order"},
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "订单表",
+            conversation_id="conv-recover-answer",
+            execution_mode="auto",
+            interaction_answer=InteractionAnswer(
+                interaction_id=pending.interaction_id,
+                option_id="table_1",
+                state_version=remembered["state_version"],
+            ),
+        )
+        restored = await graph.context("conv-recover-answer")
+
+        assert response.success is False
+        assert response.data["agent_mode"] == "retryable_error"
+        assert response.data["interaction"]["interaction_id"] == pending.interaction_id
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+        assert restored["pending_interaction"]["interaction_id"] == pending.interaction_id
+        assert restored["params"] == {"keyword": "order"}
+        assert restored["selected_resources"] == {}
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_old_card_click_executes_workflow_once(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="ask_data", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="查询完成",
+            workflow_type="ask_data",
+            mode="dev_execute",
+        )
+    )
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "table_1",
+                    "type": "pick_table",
+                    "label": "订单表",
+                    "value": "dw.orders",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-double-click",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            pending_interaction=pending.model_dump(),
+        )
+        answer = InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="table_1",
+            state_version=remembered["state_version"],
+        )
+        first, second = await asyncio.gather(
+            agent.chat(
+                "订单表",
+                conversation_id="conv-double-click",
+                execution_mode="auto",
+                interaction_answer=answer,
+            ),
+            agent.chat(
+                "订单表",
+                conversation_id="conv-double-click",
+                execution_mode="auto",
+                interaction_answer=answer,
+            ),
+        )
+
+        assert sorted([first.success, second.success]) == [False, True]
+        assert {first.error, second.error} >= {"interaction_expired"}
+        assert agent._workflow_service.execute.await_count == 1
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
 async def test_chat_resolves_structured_answer_before_nlu() -> None:
     from dataworks_agent.agent.core import ChatAgent
     from dataworks_agent.agent.nlu.intent_parser import Intent

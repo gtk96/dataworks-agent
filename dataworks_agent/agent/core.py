@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any
+from weakref import WeakValueDictionary
 
 from sqlalchemy import select
 
@@ -75,6 +78,19 @@ _CONTEXT_WRITE_MARKERS = (
 )
 
 
+_TURN_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+_TURN_LOCKS_GUARD = threading.Lock()
+
+
+def _turn_lock(conversation_id: str) -> asyncio.Lock:
+    with _TURN_LOCKS_GUARD:
+        lock = _TURN_LOCKS.get(conversation_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TURN_LOCKS[conversation_id] = lock
+        return lock
+
+
 @dataclass
 class ChatResponse:
     """Chat response."""
@@ -112,6 +128,34 @@ class ChatAgent:
         context_updates: dict[str, Any] | None = None,
         interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
     ) -> ChatResponse:
+        """Serialize a full conversation turn before any workflow side effect."""
+        kwargs = {
+            "execution_mode": execution_mode,
+            "initialize_data": initialize_data,
+            "publish": publish,
+            "client_ip": client_ip,
+            "conversation_id": conversation_id,
+            "context_updates": context_updates,
+            "interaction_answer": interaction_answer,
+        }
+        if not conversation_id:
+            return await self._chat_locked(message, request_type, **kwargs)
+        async with _turn_lock(conversation_id):
+            return await self._chat_locked(message, request_type, **kwargs)
+
+    async def _chat_locked(
+        self,
+        message: str,
+        request_type: str | None = None,
+        *,
+        execution_mode: str | None = None,
+        initialize_data: bool = True,
+        publish: bool = False,
+        client_ip: str = "127.0.0.1",
+        conversation_id: str | None = None,
+        context_updates: dict[str, Any] | None = None,
+        interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
+    ) -> ChatResponse:
         """Process one context-aware user turn."""
         if not message or not message.strip():
             return ChatResponse(
@@ -120,6 +164,8 @@ class ChatAgent:
                 error="empty message",
             )
 
+        previous_context: dict[str, Any] = {}
+        consumed_interaction: dict[str, Any] | None = None
         try:
             incoming_message = message.strip()
             answer = (
@@ -143,6 +189,11 @@ class ChatAgent:
             merged_context_updates = self._merge_context_updates(
                 dict(context_updates or {}), resolved_turn.context_updates
             )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.NEW_GOAL:
+                previous_context = await self._conversation_graph.start_goal(
+                    conversation_id, incoming_message
+                )
 
             if answer is None and resolved_turn.dialogue_action is DialogueAction.CANCEL:
                 context = await self._conversation_graph.cancel(conversation_id)
@@ -214,7 +265,12 @@ class ChatAgent:
                 and pending_interaction
                 and pending_interaction.get("allow_custom_input")
                 and resolved_turn.dialogue_action
-                not in {DialogueAction.CONTINUE, DialogueAction.MODIFY, DialogueAction.REFER}
+                not in {
+                    DialogueAction.CONTINUE,
+                    DialogueAction.MODIFY,
+                    DialogueAction.REFER,
+                    DialogueAction.NEW_GOAL,
+                }
             ):
                 answer = InteractionAnswer(
                     interaction_id=str(pending_interaction.get("interaction_id") or ""),
@@ -255,6 +311,7 @@ class ChatAgent:
                         data={"interaction": current},
                         error="interaction_expired",
                     )
+                consumed_interaction = dict(pending_interaction)
                 merged_context_updates = self._merge_context_updates(
                     merged_context_updates, resolved_answer
                 )
@@ -449,6 +506,14 @@ class ChatAgent:
             )
         except Exception as exc:
             logger.exception("ChatAgent failed: %s", exc)
+            if consumed_interaction and conversation_id:
+                return await self._recover_consumed_interaction(
+                    conversation_id,
+                    incoming_message,
+                    previous_context,
+                    consumed_interaction,
+                    exc,
+                )
             return ChatResponse(message=f"处理失败：{exc}", success=False, error=str(exc))
 
     @staticmethod
@@ -658,6 +723,60 @@ class ChatAgent:
                     continue
                 merged[key] = value
         return merged
+
+    async def _recover_consumed_interaction(
+        self,
+        conversation_id: str,
+        incoming_message: str,
+        previous_context: dict[str, Any],
+        consumed_interaction: dict[str, Any],
+        error: Exception,
+    ) -> ChatResponse:
+        """Reissue a consumed card when downstream processing fails."""
+        try:
+            current = await self._conversation_graph.context(conversation_id)
+            restored = await self._conversation_graph.remember(
+                conversation_id,
+                str(previous_context.get("objective") or incoming_message),
+                needs_clarification=True,
+                action=str(previous_context.get("action") or ""),
+                params=dict(previous_context.get("params") or {}),
+                workflow_state=dict(previous_context.get("workflow_state") or {}),
+                pending_interaction=dict(consumed_interaction),
+                selected_resources=dict(previous_context.get("selected_resources") or {}),
+                last_result=dict(previous_context.get("last_result") or {}),
+                last_assistant_turn=dict(previous_context.get("last_assistant_turn") or {}),
+                conversation_summary=str(previous_context.get("conversation_summary") or ""),
+                query_frame=dict(previous_context.get("query_frame") or {}),
+                task_status="waiting_user",
+                expected_version=int(current.get("state_version") or 0),
+            )
+            response = ChatResponse(
+                message=f"执行当前选择时失败：{error}。候选卡片已恢复，你可以重试或补充说明。",
+                success=False,
+                data={
+                    "agent_mode": "retryable_error",
+                    "interaction": dict(restored.get("pending_interaction") or {}),
+                    "conversation": self._response_policy.conversation_meta(
+                        conversation_id, restored
+                    ),
+                },
+                error=str(error),
+            )
+            self._save_conversation_message(
+                conversation_id,
+                "assistant",
+                response.message,
+                payload=response.data,
+            )
+            return response
+        except Exception:
+            logger.exception("Failed to restore consumed interaction")
+            return ChatResponse(
+                message=f"处理失败：{error}",
+                success=False,
+                error=str(error),
+            )
 
     def _resolve_business_query(
         self, message: str, context: dict[str, Any]

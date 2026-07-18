@@ -201,17 +201,50 @@ class ConversationGraph:
                 "context_updates": context_updates or {},
                 "resolved_message": message,
                 "pending_objective": "",
-                "objective": message,
+                "objective": "",
                 "action": "",
                 "params": {},
                 "workflow_state": {},
                 "selected_resources": {},
                 "pending_interaction": {},
                 "last_result": {},
+                "last_assistant_turn": {},
+                "conversation_summary": "",
+                "query_frame": {},
+                "task_status": "idle",
                 "state_version": int(current.get("state_version") or 0) + 1,
             },
             as_node="resolve_context",
         )
+
+    async def start_goal(self, conversation_id: str | None, objective: str) -> dict[str, Any]:
+        """Start a new active goal without leaking state from the previous task."""
+        if not conversation_id:
+            return {}
+        await self._ensure_initialized()
+        async with self._conversation_lock(conversation_id):
+            current = await self._context_unlocked(conversation_id)
+            next_version = int(current.get("state_version") or 0) + 1
+            await self._graph.aupdate_state(
+                self._config(conversation_id),
+                {
+                    "objective": objective,
+                    "pending_objective": "",
+                    "action": "",
+                    "params": {},
+                    "workflow_state": {},
+                    "selected_resources": {},
+                    "pending_interaction": {},
+                    "last_result": {},
+                    "last_assistant_turn": {},
+                    "conversation_summary": "",
+                    "query_frame": {},
+                    "task_status": "active",
+                    "state_version": next_version,
+                },
+                as_node="resolve_context",
+            )
+            return await self._context_unlocked(conversation_id)
 
     async def context(self, conversation_id: str | None) -> dict[str, Any]:
         if not conversation_id:
