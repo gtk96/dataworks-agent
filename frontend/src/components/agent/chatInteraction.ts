@@ -28,6 +28,58 @@ export interface AgentInteraction {
   state_version: number
 }
 
+export interface ConversationMeta {
+  conversation_id: string
+  active_goal: string
+  action: string
+  status: string
+  state_version: number
+  selected_resources: Record<string, unknown>
+}
+
+export interface InteractionMessage {
+  role?: 'user' | 'assistant'
+  isUser?: boolean
+  interaction?: AgentInteraction
+}
+
+function isAssistantMessage(message: InteractionMessage): boolean {
+  return message.role === 'assistant' || message.isUser === false
+}
+
+export function reconcileActiveInteraction<T extends InteractionMessage>(
+  messages: T[],
+  active: AgentInteraction | null | undefined,
+): T[] {
+  const reconciled = messages.map(message => ({
+    ...message,
+    ...(message.interaction ? { interaction: { ...message.interaction } } : {}),
+  })) as T[]
+
+  let activeIndex = -1
+  for (let index = 0; index < reconciled.length; index += 1) {
+    const interaction = reconciled[index].interaction
+    if (!interaction) continue
+    if (active && interaction.interaction_id === active.interaction_id) {
+      activeIndex = index
+      reconciled[index].interaction = { ...active }
+    } else if (interaction.status === 'pending') {
+      reconciled[index].interaction = { ...interaction, status: 'expired' }
+    }
+  }
+
+  if (active && activeIndex < 0) {
+    for (let index = reconciled.length - 1; index >= 0; index -= 1) {
+      if (isAssistantMessage(reconciled[index])) {
+        reconciled[index].interaction = { ...active }
+        break
+      }
+    }
+  }
+
+  return reconciled
+}
+
 export interface AgentChatRequest {
   message: string
   execution_mode: AgentExecutionMode

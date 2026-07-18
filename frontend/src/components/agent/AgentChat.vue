@@ -305,11 +305,13 @@ import { buildSourceDiscoveryView } from './sourceDiscovery'
 import { buildExecutionResources } from './executionResources'
 import {
   buildAgentChatRequest,
+  reconcileActiveInteraction,
   requestAgentChat,
   reviewPublishRequest,
   type AgentContextUpdates,
   type AgentExecutionMode,
   type AgentInteraction,
+  type ConversationMeta,
   type InteractionAnswer,
 } from './chatInteraction'
 import { idempotencyKey } from '@/utils/request'
@@ -364,7 +366,8 @@ interface AgentPayload {
     allow_custom_input?: boolean
     custom_input_hint?: string
     agent_mode?: string
-    interaction?: AgentInteraction
+    interaction?: AgentInteraction | null
+    conversation?: ConversationMeta
     semantic_plan?: SemanticPlan
     source_discovery?: Record<string, unknown>
     query?: {
@@ -384,6 +387,7 @@ interface AgentPayload {
 const storedConvId = typeof localStorage !== 'undefined' ? localStorage.getItem('conversation_id') : null
 const conversationId = ref(storedConvId || idempotencyKey())
 const activeInteractionId = ref<string | null>(null)
+const conversationMeta = ref<ConversationMeta | null>(null)
 
 if (typeof localStorage !== 'undefined' && !storedConvId) {
   localStorage.setItem('conversation_id', conversationId.value)
@@ -565,6 +569,7 @@ function resetConversation() {
   localStorage.setItem('conversation_id', conversationId.value)
   messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
   activeInteractionId.value = null
+  conversationMeta.value = null
   lastPayload.value = null
   currentStatus.value = null
   input.value = ''
@@ -586,13 +591,9 @@ async function loadConversationHistory() {
         interaction: msg.payload?.interaction as AgentInteraction | undefined,
       }))
       const active = data.active_interaction as AgentInteraction | null
-      if (active) {
-        const target = [...messages.value].reverse().find(
-          message => !message.isUser && message.interaction?.interaction_id === active.interaction_id,
-        ) || [...messages.value].reverse().find(message => !message.isUser)
-        if (target) target.interaction = active
-      }
-      activeInteractionId.value = active?.interaction_id ?? null
+      messages.value = reconcileActiveInteraction(messages.value, active)
+      conversationMeta.value = (data.conversation as ConversationMeta | undefined) ?? null
+      activeInteractionId.value = active?.status === 'pending' ? active.interaction_id : null
     } else {
       // 没有历史消息，显示欢迎消息
       messages.value = [{ id: idempotencyKey(), text: '你好，我是 DataWorks Agent。你只需要说清业务目标，我会自动选择正向建模、逆向建模、异常排查、Cookie 管理或自主问数路径。', isUser: false, timestamp: new Date() }]
@@ -657,31 +658,29 @@ async function handleInteractionAnswer(payload: { message: string; answer: Inter
   const source = messages.value.find(
     message => message.interaction?.interaction_id === payload.answer.interaction_id,
   )
-  const originalInteraction = source?.interaction
   if (source?.interaction) {
     source.interaction = { ...source.interaction, status: 'answered' }
   }
   activeInteractionId.value = null
   const succeeded = await sendMessage(payload.message, undefined, payload.answer)
-  if (!succeeded && source && originalInteraction) {
-    source.interaction = originalInteraction
-    activeInteractionId.value = originalInteraction.interaction_id
-  }
+  if (!succeeded) await loadConversationHistory()
 }
 function handleAgentResponse(payload: AgentPayload) {
   lastPayload.value = payload
   publishReviewFeedback.value = ''
   if (payload.data?.capabilities) capabilities.value = payload.data.capabilities
   activeClarifyingQuestion.value = payload.data?.clarifying_questions?.[0] ?? ''
+  const interaction = payload.data?.interaction ?? null
   messages.value.push({
     id: idempotencyKey(),
     text: payload.message,
     isUser: false,
     timestamp: new Date(),
-    interaction: payload.data?.interaction,
+    interaction: interaction ?? undefined,
   })
-  const interaction = payload.data?.interaction
+  messages.value = reconcileActiveInteraction(messages.value, interaction)
   activeInteractionId.value = interaction?.status === 'pending' ? interaction.interaction_id : null
+  if (payload.data?.conversation) conversationMeta.value = payload.data.conversation
   currentStatus.value = payload.data?.status ?? currentStatus.value
   loading.value = false
   nextTick(scrollToBottom)

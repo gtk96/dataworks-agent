@@ -214,8 +214,10 @@ import { createSSEStream, type SSEEvent } from '@/utils/sse-client'
 import { idempotencyKey } from '@/utils/request'
 import {
   buildAgentChatRequest,
+  reconcileActiveInteraction,
   requestAgentChat,
   type AgentInteraction,
+  type ConversationMeta,
   type InteractionAnswer,
 } from '@/components/agent/chatInteraction'
 
@@ -251,7 +253,8 @@ interface AgentPayload {
     publish_request?: Record<string, unknown>
     next_actions?: string[]
     agent_mode?: string
-    interaction?: AgentInteraction
+    interaction?: AgentInteraction | null
+    conversation?: ConversationMeta
     [key: string]: unknown
   }
   error?: string | null
@@ -278,6 +281,7 @@ const messagesContainer = ref<HTMLElement>()
 const storedConversationId = typeof localStorage !== 'undefined' ? localStorage.getItem('conversation_id') : null
 const conversationId = ref<string>(storedConversationId || idempotencyKey())
 const activeInteractionId = ref<string | null>(null)
+const conversationMeta = ref<ConversationMeta | null>(null)
 if (typeof localStorage !== 'undefined' && !storedConversationId) {
   localStorage.setItem('conversation_id', conversationId.value)
 }
@@ -309,6 +313,7 @@ function resetChat() {
   localStorage.setItem('conversation_id', conversationId.value)
   messages.value = []
   activeInteractionId.value = null
+  conversationMeta.value = null
   lastPayload.value = null
   isStreaming.value = false
 }
@@ -357,26 +362,12 @@ async function handleSend(text: string) {
           messages.value[idx].content = event.message
         }
       } else if (event.type === 'response') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx] = {
-            id: assistantMsgId,
-            role: 'assistant',
-            content: event.message,
-            streaming: false,
-            optionChips: (event.data?.option_chips ?? undefined) as ChatMessage['optionChips'],
-            interaction: event.data?.interaction as AgentInteraction | undefined,
-          }
-          activeInteractionId.value = event.data?.interaction
-            ? String((event.data.interaction as AgentInteraction).interaction_id)
-            : null
-          lastPayload.value = {
-            message: event.message,
-            success: event.success,
-            data: event.data,
-            error: event.error,
-          }
-        }
+        applyAgentResponse({
+          message: event.message,
+          success: event.success,
+          data: event.data,
+          error: event.error,
+        }, assistantMsgId)
         isStreaming.value = false
         nextTick(scrollToBottom)
       } else if (event.type === 'error') {
@@ -411,12 +402,35 @@ async function handleSend(text: string) {
   onUnmounted(() => controller.abort())
 }
 
+function applyAgentResponse(response: AgentPayload, assistantMsgId?: string) {
+  const interaction = response.data?.interaction ?? null
+  const assistantMessage: ChatMessage = {
+    id: assistantMsgId || idempotencyKey(),
+    role: 'assistant',
+    content: response.message,
+    streaming: false,
+    interaction: interaction ?? undefined,
+    optionChips: response.data?.option_chips as ChatMessage['optionChips'],
+  }
+  const index = assistantMsgId
+    ? messages.value.findIndex(message => message.id === assistantMsgId)
+    : -1
+  if (index >= 0) messages.value[index] = assistantMessage
+  else messages.value.push(assistantMessage)
+
+  messages.value = reconcileActiveInteraction(messages.value, interaction)
+  activeInteractionId.value = interaction?.status === 'pending'
+    ? interaction.interaction_id
+    : null
+  if (response.data?.conversation) conversationMeta.value = response.data.conversation
+  lastPayload.value = response
+}
+
 async function handleInteractionAnswer(payload: { message: string; answer: InteractionAnswer }) {
   if (isStreaming.value) return
   const source = messages.value.find(
     message => message.interaction?.interaction_id === payload.answer.interaction_id,
   )
-  const originalInteraction = source?.interaction
   if (source?.interaction) {
     source.interaction = { ...source.interaction, status: 'answered' }
   }
@@ -437,31 +451,17 @@ async function handleInteractionAnswer(payload: { message: string; answer: Inter
       undefined,
       payload.answer,
     )
-    const response = await requestAgentChat<AgentPayload>(request)
-    const interaction = response.data?.interaction
-    const index = messages.value.findIndex(message => message.id === assistantMsgId)
-    if (index >= 0) {
-      messages.value[index] = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: response.message,
-        interaction,
-        optionChips: response.data?.option_chips as ChatMessage['optionChips'],
-      }
-    }
-    activeInteractionId.value = interaction?.status === 'pending' ? interaction.interaction_id : null
-    lastPayload.value = response
+    applyAgentResponse(await requestAgentChat<AgentPayload>(request), assistantMsgId)
   } catch (error) {
-    if (source && originalInteraction) source.interaction = originalInteraction
-    activeInteractionId.value = originalInteraction?.interaction_id ?? null
-    const index = messages.value.findIndex(message => message.id === assistantMsgId)
-    if (index >= 0) {
-      messages.value[index] = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: `❌ Agent 请求失败：${error instanceof Error ? error.message : String(error)}`,
-      }
+    await loadConversationHistory()
+    const failureMessage: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: `Agent 请求失败，已重新同步会话状态： ${error instanceof Error ? error.message : String(error)}`,
     }
+    const index = messages.value.findIndex(message => message.id === assistantMsgId)
+    if (index >= 0) messages.value[index] = failureMessage
+    else messages.value.push(failureMessage)
   } finally {
     isStreaming.value = false
     nextTick(scrollToBottom)
@@ -484,15 +484,9 @@ async function loadConversationHistory() {
         }))
       : []
     const active = data.active_interaction as AgentInteraction | null
-    if (active) {
-      const target = [...restored].reverse().find(
-        message => message.role === 'assistant'
-          && message.interaction?.interaction_id === active.interaction_id,
-      ) || [...restored].reverse().find(message => message.role === 'assistant')
-      if (target) target.interaction = active
-    }
-    messages.value = restored
-    activeInteractionId.value = active?.interaction_id ?? null
+    messages.value = reconcileActiveInteraction(restored, active)
+    conversationMeta.value = (data.conversation as ConversationMeta | undefined) ?? null
+    activeInteractionId.value = active?.status === 'pending' ? active.interaction_id : null
     await nextTick(scrollToBottom)
   } catch {
     // A missing history endpoint must not block a new conversation.

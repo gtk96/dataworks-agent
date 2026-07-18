@@ -84,7 +84,8 @@ describe('MessageBubble structured interaction', () => {
 
     expect(wrapper.find('[data-interaction-card]').exists()).toBe(true)
     expect(wrapper.get('[data-interaction-option="table-1"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-interaction-custom]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-interaction-custom]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已失效')
   })
 
   it('unlocks a choice when the parent restores the pending interaction after failure', async () => {

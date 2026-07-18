@@ -49,7 +49,7 @@
             <span class="interaction-option__arrow">→</span>
           </button>
         </div>
-        <div v-if="interaction.allow_custom_input" class="interaction-custom">
+        <div v-if="interaction.allow_custom_input && interactionActionable" class="interaction-custom">
           <input
             v-model="interactionCustomText"
             :placeholder="interaction.custom_input_placeholder || '输入自定义回答'"
@@ -156,21 +156,13 @@ const customOpen = ref(true)
 const customText = ref('')
 const interactionCustomText = ref('')
 
-const interactionActionable = computed(() => Boolean(
-  props.interaction
-  && props.interaction.status === 'pending'
-  && props.activeInteractionId === props.interaction.interaction_id,
-))
+const interactionActionable = computed(() => props.interaction?.status === 'pending')
 
 const interactionStatusLabel = computed(() => {
   if (!props.interaction) return ''
   if (interactionActionable.value) return '等待回答'
-  return {
-    answered: '已回答',
-    expired: '已过期',
-    cancelled: '已取消',
-    pending: '非当前问题',
-  }[props.interaction.status]
+  if (props.interaction.status === 'answered') return '已回答'
+  return '已失效'
 })
 
 watch(

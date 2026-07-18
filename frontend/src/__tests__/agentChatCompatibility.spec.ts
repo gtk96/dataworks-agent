@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentChat from '@/components/agent/AgentChat.vue'
@@ -20,6 +20,14 @@ const interaction = {
   custom_input_placeholder: '输入其他表名',
   status: 'pending' as const,
   state_version: 3,
+}
+
+const latestInteraction = {
+  ...interaction,
+  interaction_id: 'int-agent-chat-latest',
+  prompt: 'Choose the latest target table',
+  options: [{ id: 'table-2', label: 'Refund detail table', value: 'giikin_aliyun.tb_dwd_refund' }],
+  state_version: 4,
 }
 
 class MockWebSocket {
@@ -104,24 +112,27 @@ describe('AgentChat structured interaction compatibility', () => {
     })
   })
 
-  it('restores the active option when submitting the answer fails', async () => {
+  it('reloads the authoritative card instead of resurrecting a stale option after transport failure', async () => {
+    let historyReads = 0
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/agent/messages')) {
+        historyReads += 1
+        const active = historyReads === 1 ? interaction : latestInteraction
         return {
           ok: true,
           json: async () => ({
             messages: [
-              { role: 'user', content: '找订单表', timestamp: '2026-07-17T00:00:00Z', payload: {} },
+              { role: 'user', content: 'find order table', timestamp: '2026-07-17T00:00:00Z', payload: {} },
               {
                 role: 'assistant',
-                content: '请选择目标表',
+                content: active.prompt,
                 timestamp: '2026-07-17T00:00:01Z',
                 payload: { interaction },
               },
             ],
-            active_interaction: interaction,
-            state_version: 3,
+            active_interaction: active,
+            state_version: active.state_version,
           }),
         } as Response
       }
@@ -155,6 +166,9 @@ describe('AgentChat structured interaction compatibility', () => {
     await wrapper.get('[data-interaction-option="table-1"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-interaction-option="table-1"]').attributes('disabled')).toBeUndefined()
+    expect(historyReads).toBe(2)
+    expect(wrapper.find('[data-interaction-option="table-1"]').exists()).toBe(false)
+    expect(wrapper.get('[data-interaction-option="table-2"]').attributes('disabled')).toBeUndefined()
   })
+
 })
