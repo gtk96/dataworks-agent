@@ -9,7 +9,11 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
 
-from dataworks_agent.agent.interaction import InteractionAnswer, PendingInteraction
+from dataworks_agent.agent.interaction import (
+    InteractionAnswer,
+    InteractionOption,
+    PendingInteraction,
+)
 
 
 class DialogueAction(StrEnum):
@@ -36,7 +40,7 @@ class ResolvedTurn(BaseModel):
     resolved_references: list[str] = Field(default_factory=list)
     interaction_answer: InteractionAnswer | None = None
     resolver: str = "deterministic"
-    confidence: float = 1.0
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     consume_interaction: bool = False
 
 
@@ -69,36 +73,47 @@ class LLMDialogueFallback:
             "action": context.get("action"),
             "selected_resources": context.get("selected_resources"),
         }
-        result = await self._classifier.classify(
-            f"当前会话上下文：{json.dumps(compact, ensure_ascii=False)}\n用户输入：{message}"
-        )
-        mapping = {
-            "greeting": DialogueAction.GREETING,
-            "clarification": DialogueAction.CLARIFY,
-            "ask_data": DialogueAction.NEW_GOAL,
-            "modeling": DialogueAction.NEW_GOAL,
-            "diagnosis": DialogueAction.NEW_GOAL,
-        }
-        action = mapping.get(result.action)
-        if action is None:
+        try:
+            result = await self._classifier.classify(
+                f"当前会话上下文：{json.dumps(compact, ensure_ascii=False)}\n用户输入：{message}"
+            )
+            params = getattr(result, "params", None)
+            if not isinstance(params, dict):
+                return None
+            mapping = {
+                "greeting": DialogueAction.GREETING,
+                "clarification": DialogueAction.CLARIFY,
+                "ask_data": DialogueAction.NEW_GOAL,
+                "modeling": DialogueAction.NEW_GOAL,
+                "diagnosis": DialogueAction.NEW_GOAL,
+            }
+            action = mapping.get(getattr(result, "action", None))
+            if action is None:
+                return None
+            return ResolvedTurn(
+                dialogue_action=action,
+                rewritten_message=message,
+                context_updates={"params": params},
+                resolver="llm",
+                confidence=float(getattr(result, "confidence", 0.0)),
+            )
+        except Exception:
             return None
-        return ResolvedTurn(
-            dialogue_action=action,
-            rewritten_message=message,
-            context_updates={"params": result.params},
-            resolver="llm",
-            confidence=float(result.confidence),
-        )
 
 
 class ContextResolver:
     """Resolve short contextual turns before the existing NLU pipeline."""
 
-    _RESET_RE = re.compile(r"^(?:重新开始|重置(?:会话|对话)?|新会话|清空上下文)[。！!？?]?")
-    _CANCEL_RE = re.compile(r"(?:取消|停止|终止)(?:这个|当前)?任务|^(?:不做了|算了)[。！!？?]?$")
+    _RESET_RE = re.compile(r"^(?:重新开始|重置(?:会话|对话)?|新会话|清空上下文)[。！!？?]?$")
+    _CANCEL_RE = re.compile(r"^(?:(?:取消|停止|终止)(?:这个|当前)?任务|不做了|算了)[。！!？?]?$")
     _GREETING_RE = re.compile(r"^(?:你好|您好|嗨|哈喽|hello|hi)[。！!？?~～]*$", re.IGNORECASE)
-    _EXPLAIN_RE = re.compile(r"(?:什么意思|解释一下|没看懂|为什么(?:这么|这样)?)")
-    _CONTINUE_RE = re.compile(r"^(?:继续|下一步|接着(?:说|做)?|往下(?:说|做)?)[。！!？?]?$")
+    _EXPLAIN_RE = re.compile(
+        r"^(?:什么意思|请?解释一下|没看懂|为什么(?:这么|这样)?(?:选|说|做)?)[。！!？?]?$"
+    )
+    _CONTINUE_RE = re.compile(
+        r"^(?:(?:不要取消(?:这个|当前)?任务[，,]\s*)?继续(?:执行)?|下一步|"
+        r"接着(?:说|做)?|往下(?:说|做)?)[。！!？?]?$"
+    )
     _ORDINALS = {
         "第一个": 0,
         "第1个": 0,
@@ -112,7 +127,10 @@ class ContextResolver:
         re.IGNORECASE,
     )
     _DATE_RE = re.compile(r"最近\s*(\d+)\s*天")
-    _REFERENCE_RE = re.compile(r"(?:刚才|之前|那个|这张表|该表|用它|用这(?:个|张))")
+    _TABLE_REFERENCE_RE = re.compile(r"(?:刚才|之前)?(?:那张表|这张表)|该表")
+    _NODE_REFERENCE_RE = re.compile(r"(?:刚才|之前)?(?:那个节点|这个节点)|该节点")
+    _TASK_REFERENCE_RE = re.compile(r"(?:刚才|之前)?(?:那个任务|这个任务)|该任务")
+    _GENERIC_REFERENCE_RE = re.compile(r"(?:刚才|之前)(?:那个|这个)|用它")
     _TASK_RE = re.compile(
         r"(?:查询|查找|查一下|搜索|建模|创建|新建|修改|更新|删除|发布|部署|"
         r"血缘|字段|数据表|表结构|表(?:$|[\s，,。！!？?])|节点|数据源|调度|排查|诊断|SQL)",
@@ -126,24 +144,27 @@ class ContextResolver:
         """Resolve a message in deterministic priority order."""
 
         text = message.strip()
-
-        if self._RESET_RE.search(text):
-            return self._turn(DialogueAction.RESET, text, consume_interaction=True)
-        if self._CANCEL_RE.search(text):
-            return self._turn(DialogueAction.CANCEL, text, consume_interaction=True)
-        if self._GREETING_RE.search(text):
-            return self._turn(DialogueAction.GREETING, text)
-        if self._EXPLAIN_RE.search(text):
-            return self._turn(DialogueAction.EXPLAIN, text)
-        if self._CONTINUE_RE.search(text):
-            return self._turn(DialogueAction.CONTINUE, text)
-
         pending = self._pending_interaction(context)
-        option_result = self._resolve_option(text, pending)
+        option_result = self._resolve_option(
+            text,
+            pending,
+            context_state_version=context.get("state_version"),
+        )
         if option_result is not None:
             return option_result
         if self._looks_like_ordinal(text):
             return self._turn(DialogueAction.CLARIFY, text)
+
+        if self._RESET_RE.fullmatch(text):
+            return self._turn(DialogueAction.RESET, text, consume_interaction=True)
+        if self._CANCEL_RE.fullmatch(text):
+            return self._turn(DialogueAction.CANCEL, text, consume_interaction=True)
+        if self._GREETING_RE.fullmatch(text):
+            return self._turn(DialogueAction.GREETING, text)
+        if self._EXPLAIN_RE.fullmatch(text):
+            return self._turn(DialogueAction.EXPLAIN, text)
+        if self._CONTINUE_RE.fullmatch(text):
+            return self._turn(DialogueAction.CONTINUE, text)
 
         modification = self._resolve_modification(text)
         if modification is not None:
@@ -157,7 +178,10 @@ class ContextResolver:
             return self._turn(DialogueAction.NEW_GOAL, text)
 
         if self._fallback is not None and len(text) >= 4:
-            fallback_result = await self._fallback.classify(text, context)
+            try:
+                fallback_result = await self._fallback.classify(text, context)
+            except Exception:
+                fallback_result = None
             if fallback_result is not None and fallback_result.confidence >= 0.7:
                 return fallback_result
 
@@ -191,32 +215,66 @@ class ContextResolver:
             return None
         return pending if pending.status == "pending" else None
 
-    def _resolve_option(self, text: str, pending: PendingInteraction | None) -> ResolvedTurn | None:
+    def _resolve_option(
+        self,
+        text: str,
+        pending: PendingInteraction | None,
+        *,
+        context_state_version: Any,
+    ) -> ResolvedTurn | None:
         if pending is None:
             return None
 
         option_index = self._ordinal_index(text, len(pending.options))
-        option = None
-        if option_index is not None and 0 <= option_index < len(pending.options):
-            option = pending.options[option_index]
-        elif option_index is None:
-            normalized = self._normalize_option_text(text)
-            for candidate in pending.options:
-                values = (candidate.label, str(candidate.value or ""))
-                if any(
-                    value
-                    and (
-                        normalized == self._normalize_option_text(value)
-                        or self._normalize_option_text(value) in normalized
-                    )
-                    for value in values
-                ):
-                    option = candidate
-                    break
+        normalized = self._normalize_option_text(text)
+        exact_matches = self._matching_options(normalized, pending, exact=True)
+        substring_matches = (
+            [] if exact_matches else self._matching_options(normalized, pending, exact=False)
+        )
+        is_option_input = option_index is not None or bool(exact_matches or substring_matches)
+        if is_option_input and context_state_version != pending.state_version:
+            return self._turn(DialogueAction.CLARIFY, text)
 
-        if option is None:
-            return None
+        if option_index is not None:
+            if 0 <= option_index < len(pending.options):
+                return self._option_answer(text, pending, pending.options[option_index])
+            return self._turn(DialogueAction.CLARIFY, text)
 
+        matches = exact_matches or substring_matches
+        if len(matches) == 1:
+            return self._option_answer(text, pending, matches[0])
+        if len(matches) > 1:
+            return self._turn(DialogueAction.CLARIFY, text)
+        return None
+
+    @classmethod
+    def _matching_options(
+        cls,
+        normalized_message: str,
+        pending: PendingInteraction,
+        *,
+        exact: bool,
+    ) -> list[InteractionOption]:
+        matches = []
+        for option in pending.options:
+            values = {
+                cls._normalize_option_text(option.label),
+                cls._normalize_option_text(str(option.value or "")),
+            }
+            values.discard("")
+            matched = (
+                normalized_message in values
+                if exact
+                else any(value in normalized_message for value in values)
+            )
+            if matched:
+                matches.append(option)
+        return matches
+
+    @staticmethod
+    def _option_answer(
+        text: str, pending: PendingInteraction, option: InteractionOption
+    ) -> ResolvedTurn:
         return ResolvedTurn(
             dialogue_action=DialogueAction.ANSWER,
             rewritten_message=text,
@@ -281,16 +339,28 @@ class ContextResolver:
 
     def _resolve_reference(self, text: str, context: dict[str, Any]) -> ResolvedTurn | None:
         resources = context.get("selected_resources")
-        if not isinstance(resources, dict) or not resources or not self._REFERENCE_RE.search(text):
+        if not isinstance(resources, dict) or not resources:
             return None
 
-        references = [value for value in resources.values() if isinstance(value, str)]
-        rewritten = text
-        if references:
-            rewritten = f"{text}\n已解析资源：{', '.join(references)}"
+        resource_type = None
+        if self._TABLE_REFERENCE_RE.search(text):
+            resource_type = "table"
+        elif self._NODE_REFERENCE_RE.search(text):
+            resource_type = "node"
+        elif self._TASK_REFERENCE_RE.search(text):
+            resource_type = "task"
+        elif self._GENERIC_REFERENCE_RE.search(text) and len(resources) == 1:
+            resource_type = next(iter(resources))
+        if resource_type is None:
+            return None
+
+        resource = resources.get(resource_type)
+        if not isinstance(resource, str) or not resource:
+            return None
+        selected = {resource_type: resource}
         return self._turn(
             DialogueAction.REFER,
-            rewritten,
-            context_updates={"selected_resources": dict(resources)},
-            resolved_references=references,
+            f"{text}\n已解析资源：{resource}",
+            context_updates={"selected_resources": selected},
+            resolved_references=[resource],
         )
