@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+import os
+import threading
 from typing import Any, TypedDict
+from weakref import WeakValueDictionary
 
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -45,16 +47,34 @@ class ConversationStateConflictError(RuntimeError):
         self.current = current
 
 
+_PROCESS_CONVERSATION_LOCKS: WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+    WeakValueDictionary()
+)
+_PROCESS_CONVERSATION_LOCKS_GUARD = threading.Lock()
+
+
 class ConversationGraph:
     """Keep structured workflow context in checkpoints keyed by conversation id."""
 
     def __init__(self, db_path: str = "data/conversation_checkpoints.db") -> None:
         self._db_path = db_path
+        self._normalized_db_path = os.path.normcase(
+            os.path.realpath(os.path.abspath(os.path.expanduser(db_path)))
+        )
+        self._connection: aiosqlite.Connection | None = None
         self._checkpointer: AsyncSqliteSaver | None = None
         self._graph = None
         self._initialized = False
         self._initialization_lock = asyncio.Lock()
-        self._conversation_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+    def _conversation_lock(self, conversation_id: str) -> asyncio.Lock:
+        key = (self._normalized_db_path, conversation_id)
+        with _PROCESS_CONVERSATION_LOCKS_GUARD:
+            lock = _PROCESS_CONVERSATION_LOCKS.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                _PROCESS_CONVERSATION_LOCKS[key] = lock
+            return lock
 
     async def _ensure_initialized(self) -> None:
         """Initialize the SQLite checkpointer and graph exactly once."""
@@ -64,23 +84,46 @@ class ConversationGraph:
             if self._initialized:
                 return
             conn = await aiosqlite.connect(self._db_path)
-            self._checkpointer = AsyncSqliteSaver(conn)
-            await self._checkpointer.setup()
-            builder = StateGraph(ConversationState)
-            builder.add_node("resolve_context", self._resolve_context)
-            builder.add_edge(START, "resolve_context")
-            builder.add_edge("resolve_context", END)
-            self._graph = builder.compile(checkpointer=self._checkpointer)
+            try:
+                checkpointer = AsyncSqliteSaver(conn)
+                await checkpointer.setup()
+                builder = StateGraph(ConversationState)
+                builder.add_node("resolve_context", self._resolve_context)
+                builder.add_edge(START, "resolve_context")
+                builder.add_edge("resolve_context", END)
+                graph = builder.compile(checkpointer=checkpointer)
+            except Exception:
+                await conn.close()
+                raise
+            self._connection = conn
+            self._checkpointer = checkpointer
+            self._graph = graph
             self._initialized = True
 
+    async def aclose(self) -> None:
+        """Close the lazily opened SQLite connection, if any."""
+        async with self._initialization_lock:
+            conn = self._connection
+            if conn is None:
+                return
+            self._connection = None
+            self._checkpointer = None
+            self._graph = None
+            self._initialized = False
+            await conn.close()
+
     @staticmethod
-    def _resolve_context(state: ConversationState) -> dict[str, Any]:
+    def _is_reset_message(message: str) -> bool:
+        return any(
+            word in message.lower() for word in ("取消", "重新开始", "新任务", "cancel", "reset")
+        )
+
+    @classmethod
+    def _resolve_context(cls, state: ConversationState) -> dict[str, Any]:
         incoming = str(state.get("incoming_message") or "")
         pending = str(state.get("pending_objective") or "")
         updates = dict(state.get("context_updates") or {})
-        if any(
-            word in incoming.lower() for word in ("取消", "重新开始", "新任务", "cancel", "reset")
-        ):
+        if cls._is_reset_message(incoming):
             return {
                 "resolved_message": incoming,
                 "pending_objective": "",
@@ -126,16 +169,57 @@ class ConversationGraph:
         if not conversation_id:
             return message
         await self._ensure_initialized()
+        async with self._conversation_lock(conversation_id):
+            return await self._resolve_unlocked(message, conversation_id, context_updates)
+
+    async def _resolve_unlocked(
+        self,
+        message: str,
+        conversation_id: str,
+        context_updates: dict[str, Any] | None = None,
+    ) -> str:
+        if self._is_reset_message(message):
+            await self._reset_unlocked(message, conversation_id, context_updates)
+            return message
         state = await self._graph.ainvoke(
             {"incoming_message": message, "context_updates": context_updates or {}},
             config=self._config(conversation_id),
         )
         return str(state.get("resolved_message") or message)
 
+    async def _reset_unlocked(
+        self,
+        message: str,
+        conversation_id: str,
+        context_updates: dict[str, Any] | None = None,
+    ) -> None:
+        current = await self._context_unlocked(conversation_id)
+        await self._graph.aupdate_state(
+            self._config(conversation_id),
+            {
+                "incoming_message": message,
+                "context_updates": context_updates or {},
+                "resolved_message": message,
+                "pending_objective": "",
+                "objective": message,
+                "action": "",
+                "params": {},
+                "workflow_state": {},
+                "selected_resources": {},
+                "pending_interaction": {},
+                "last_result": {},
+                "state_version": int(current.get("state_version") or 0) + 1,
+            },
+            as_node="resolve_context",
+        )
+
     async def context(self, conversation_id: str | None) -> dict[str, Any]:
         if not conversation_id:
             return {}
         await self._ensure_initialized()
+        return await self._context_unlocked(conversation_id)
+
+    async def _context_unlocked(self, conversation_id: str) -> dict[str, Any]:
         snapshot = await self._graph.aget_state(self._config(conversation_id))
         values = dict(snapshot.values or {})
         return {
@@ -175,8 +259,8 @@ class ConversationGraph:
         if not conversation_id:
             return {}
         await self._ensure_initialized()
-        async with self._conversation_locks[conversation_id]:
-            current = await self.context(conversation_id)
+        async with self._conversation_lock(conversation_id):
+            current = await self._context_unlocked(conversation_id)
             current_version = int(current.get("state_version") or 0)
             if expected_version is not None and expected_version != current_version:
                 raise ConversationStateConflictError(current=current)
@@ -229,7 +313,7 @@ class ConversationGraph:
                 },
                 as_node="resolve_context",
             )
-            return await self.context(conversation_id)
+            return await self._context_unlocked(conversation_id)
 
     async def answer(
         self, conversation_id: str | None, answer: InteractionAnswer
@@ -237,8 +321,8 @@ class ConversationGraph:
         if not conversation_id:
             raise InteractionExpiredError("会话不存在，请重新开始。")
         await self._ensure_initialized()
-        async with self._conversation_locks[conversation_id]:
-            current = await self.context(conversation_id)
+        async with self._conversation_lock(conversation_id):
+            current = await self._context_unlocked(conversation_id)
             pending_data = dict(current.get("pending_interaction") or {})
             if not pending_data:
                 raise InteractionExpiredError("当前没有等待回答的问题。")
@@ -267,20 +351,23 @@ class ConversationGraph:
         if not conversation_id:
             return {}
         await self._ensure_initialized()
-        async with self._conversation_locks[conversation_id]:
-            current = await self.context(conversation_id)
-            next_version = int(current.get("state_version") or 0) + 1
-            await self._graph.aupdate_state(
-                self._config(conversation_id),
-                {
-                    "pending_objective": "",
-                    "pending_interaction": {},
-                    "task_status": "cancelled",
-                    "state_version": next_version,
-                },
-                as_node="resolve_context",
-            )
-            return await self.context(conversation_id)
+        async with self._conversation_lock(conversation_id):
+            return await self._cancel_unlocked(conversation_id)
+
+    async def _cancel_unlocked(self, conversation_id: str) -> dict[str, Any]:
+        current = await self._context_unlocked(conversation_id)
+        next_version = int(current.get("state_version") or 0) + 1
+        await self._graph.aupdate_state(
+            self._config(conversation_id),
+            {
+                "pending_objective": "",
+                "pending_interaction": {},
+                "task_status": "cancelled",
+                "state_version": next_version,
+            },
+            as_node="resolve_context",
+        )
+        return await self._context_unlocked(conversation_id)
 
     async def pending_objective(self, conversation_id: str) -> str:
         return str((await self.context(conversation_id)).get("pending_objective") or "")

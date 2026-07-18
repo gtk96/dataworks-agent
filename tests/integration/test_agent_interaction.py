@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -247,6 +250,104 @@ async def test_remember_rejects_stale_expected_version(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_single_process_lock_serializes_cas_across_graph_instances(
+    tmp_path, monkeypatch
+) -> None:
+    from dataworks_agent.agent.conversation_graph import (
+        ConversationGraph,
+        ConversationStateConflictError,
+    )
+
+    db_path = tmp_path / "conversation.db"
+    first = ConversationGraph(str(db_path))
+    second = ConversationGraph(os.path.relpath(db_path, start=Path.cwd()))
+    first_write_entered = asyncio.Event()
+    release_first_write = asyncio.Event()
+    second_read_entered = asyncio.Event()
+    tasks = []
+
+    try:
+        current = await first.remember(
+            "conv-shared-lock",
+            "query orders",
+            needs_clarification=False,
+        )
+        await second.context("conv-shared-lock")
+        first_update = first._graph.aupdate_state
+        second_context = second._context_unlocked
+
+        async def delayed_first_update(*args, **kwargs):
+            first_write_entered.set()
+            await release_first_write.wait()
+            return await first_update(*args, **kwargs)
+
+        async def observed_second_context(*args, **kwargs):
+            second_read_entered.set()
+            return await second_context(*args, **kwargs)
+
+        monkeypatch.setattr(first._graph, "aupdate_state", delayed_first_update)
+        monkeypatch.setattr(second, "_context_unlocked", observed_second_context)
+        tasks.append(
+            asyncio.create_task(
+                first.remember(
+                    "conv-shared-lock",
+                    "query orders",
+                    needs_clarification=False,
+                    params={"writer": "first"},
+                    expected_version=current["state_version"],
+                )
+            )
+        )
+        await first_write_entered.wait()
+        tasks.append(
+            asyncio.create_task(
+                second.remember(
+                    "conv-shared-lock",
+                    "query orders",
+                    needs_clarification=False,
+                    params={"writer": "second"},
+                    expected_version=current["state_version"],
+                )
+            )
+        )
+        await asyncio.sleep(0)
+        if second_read_entered.is_set():
+            await tasks[1]
+        release_first_write.set()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        final = await first.context("conv-shared-lock")
+
+        assert sum(isinstance(result, dict) for result in results) == 1
+        assert sum(isinstance(result, ConversationStateConflictError) for result in results) == 1
+        assert final["state_version"] == current["state_version"] + 1
+    finally:
+        release_first_write.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await first.aclose()
+        await second.aclose()
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_connection_idempotently(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    try:
+        await graph.context("conv-close")
+        connection = graph._connection
+        assert connection is not None
+
+        await graph.aclose()
+        await graph.aclose()
+
+        with pytest.raises(ValueError, match="connection"):
+            await connection.execute("SELECT 1")
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
 async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
 
@@ -290,6 +391,87 @@ async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) ->
     assert state["pending_interaction"] == {}
     assert state["pending_objective"] == ""
     assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_resolve_cancel_serializes_with_answer(tmp_path, monkeypatch) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "type": "pick_table",
+                    "id": "table_1",
+                    "label": "query orders",
+                    "value": "giikin_aliyun.tb_dwd_order",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    answer_write_entered = asyncio.Event()
+    release_answer_write = asyncio.Event()
+    resolve_entered = asyncio.Event()
+    tasks = []
+
+    try:
+        current = await graph.remember(
+            "conv-resolve-race",
+            "find orders",
+            needs_clarification=True,
+            pending_interaction=pending.model_dump(),
+        )
+        update_state = graph._graph.aupdate_state
+        resolve_unlocked = graph._resolve_unlocked
+
+        async def delayed_answer_update(*args, **kwargs):
+            answer_write_entered.set()
+            await release_answer_write.wait()
+            return await update_state(*args, **kwargs)
+
+        async def observed_resolve(*args, **kwargs):
+            resolve_entered.set()
+            return await resolve_unlocked(*args, **kwargs)
+
+        monkeypatch.setattr(graph._graph, "aupdate_state", delayed_answer_update)
+        monkeypatch.setattr(graph, "_resolve_unlocked", observed_resolve)
+        tasks.append(
+            asyncio.create_task(
+                graph.answer(
+                    "conv-resolve-race",
+                    InteractionAnswer(
+                        interaction_id=pending.interaction_id,
+                        option_id="table_1",
+                        state_version=current["state_version"],
+                    ),
+                )
+            )
+        )
+        await answer_write_entered.wait()
+        tasks.append(asyncio.create_task(graph.resolve("取消", "conv-resolve-race")))
+        await asyncio.sleep(0)
+        if resolve_entered.is_set():
+            await tasks[1]
+        release_answer_write.set()
+        answer_result, resolve_result = await asyncio.gather(*tasks, return_exceptions=True)
+        final = await graph.context("conv-resolve-race")
+
+        assert resolve_result == "取消"
+        assert final["pending_interaction"] == {}
+        if isinstance(answer_result, InteractionExpiredError):
+            assert final["state_version"] == current["state_version"] + 1
+        else:
+            assert answer_result["state_version"] == current["state_version"] + 1
+            assert final["state_version"] == current["state_version"] + 2
+    finally:
+        release_answer_write.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await graph.aclose()
 
 
 @pytest.mark.asyncio
