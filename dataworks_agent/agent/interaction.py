@@ -63,6 +63,16 @@ class InteractionAnswer(BaseModel):
 def _option_payload(
     *, purpose: str, option_type: str, value: Any, explicit: dict[str, Any]
 ) -> dict[str, Any]:
+    if option_type == "action":
+        action_value = str(value or "").strip()
+        payload = {"value": action_value, "params": {"follow_up_action": action_value}}
+        if explicit:
+            payload.update(explicit)
+            payload["params"] = {
+                "follow_up_action": action_value,
+                **dict(explicit.get("params") or {}),
+            }
+        return payload
     if explicit:
         return dict(explicit)
     if purpose == "select_table" or option_type == "pick_table":
@@ -76,9 +86,6 @@ def _option_payload(
         layer = str(value or "").strip().lower()
         if layer:
             return {"params": {"layer": layer}}
-    if option_type == "action":
-        action_value = str(value or "").strip()
-        return {"value": action_value, "params": {"follow_up_action": action_value}}
     return {"value": value} if value not in (None, "") else {}
 
 

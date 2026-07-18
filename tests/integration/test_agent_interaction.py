@@ -123,6 +123,20 @@ def test_string_next_actions_become_structured_options_without_mutating_input() 
         "action_1",
     ]
     assert all(item["payload"]["value"] == item["value"] for item in data["interaction"]["options"])
+    assert all(
+        item["payload"]["params"]["follow_up_action"] == item["value"]
+        for item in data["interaction"]["options"]
+    )
+    pending = PendingInteraction.model_validate(data["interaction"])
+    resolved = resolve_interaction_answer(
+        pending,
+        InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="action_0",
+            state_version=pending.state_version,
+        ),
+    )
+    assert resolved["params"]["follow_up_action"] == "查看字段"
 
 
 def test_normalize_workflow_data_without_useful_options_has_no_interaction() -> None:
