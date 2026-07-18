@@ -883,20 +883,19 @@ async def test_new_goal_is_not_hijacked_by_old_custom_interaction(tmp_path) -> N
 
 
 @pytest.mark.asyncio
-async def test_failed_workflow_restores_consumed_interaction(tmp_path) -> None:
+async def test_pre_workflow_failure_restores_consumed_interaction(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
     from dataworks_agent.agent.core import ChatAgent
-    from dataworks_agent.agent.nlu.intent_parser import Intent
 
     graph = ConversationGraph(str(tmp_path / "conversation.db"))
     agent = ChatAgent()
     agent._conversation_graph = graph
     agent._save_conversation_message = MagicMock()
     agent._intent_parser = MagicMock()
-    agent._intent_parser.parse.return_value = Intent(action="ask_data", confidence=0.95)
+    agent._intent_parser.parse.side_effect = RuntimeError("temporary failure")
     agent._workflow_service = MagicMock()
     agent._workflow_service.understand_business_query.return_value = None
-    agent._workflow_service.execute = AsyncMock(side_effect=RuntimeError("temporary failure"))
+    agent._workflow_service.execute = AsyncMock()
     pending = build_interaction(
         {
             "option_chips": [
@@ -1001,6 +1000,44 @@ async def test_risky_workflow_failure_marks_execution_unknown_without_retry_card
         assert "interaction" not in response.data
         assert restored["pending_interaction"] == {}
         assert restored["task_status"] == "execution_unknown"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_execution_unknown_blocks_continue_without_restarting_workflow(
+    tmp_path,
+) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.execute = AsyncMock()
+    try:
+        await graph.remember(
+            "conv-unknown-continue",
+            "创建订单模型",
+            needs_clarification=False,
+            action="forward_modeling",
+            params={"source_table": "dw.orders"},
+            task_status="execution_unknown",
+        )
+        response = await agent.chat(
+            "继续",
+            conversation_id="conv-unknown-continue",
+            execution_mode="dev_execute",
+        )
+        restored = await graph.context("conv-unknown-continue")
+
+        assert response.success is False
+        assert response.error == "execution_unknown"
+        assert response.data["agent_mode"] == "execution_unknown"
+        assert restored["task_status"] == "execution_unknown"
+        agent._workflow_service.execute.assert_not_awaited()
     finally:
         await graph.aclose()
 

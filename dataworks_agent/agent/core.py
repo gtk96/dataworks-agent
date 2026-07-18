@@ -167,7 +167,6 @@ class ChatAgent:
         previous_context: dict[str, Any] = {}
         consumed_interaction: dict[str, Any] | None = None
         workflow_started = False
-        workflow_side_effect_risk = False
         try:
             incoming_message = message.strip()
             answer = (
@@ -257,6 +256,37 @@ class ChatAgent:
                         message=explanation,
                         success=True,
                         data={"agent_mode": "explain", **data},
+                    ),
+                    context=previous_context,
+                )
+
+            if previous_context.get(
+                "task_status"
+            ) == "execution_unknown" and resolved_turn.dialogue_action not in {
+                DialogueAction.CANCEL,
+                DialogueAction.RESET,
+                DialogueAction.NEW_GOAL,
+                DialogueAction.GREETING,
+                DialogueAction.EXPLAIN,
+            }:
+                is_status_query = self._is_execution_status_query(incoming_message)
+                blocked_message = (
+                    "当前执行结果仍待确认，不能继续或重复提交原写操作。"
+                    if not is_status_query
+                    else "当前执行结果仍待确认；请先通过任务或节点状态确认结果，再决定是否继续。"
+                )
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message=blocked_message,
+                        success=False,
+                        data={
+                            "agent_mode": "execution_unknown",
+                            "execution_result": "unknown",
+                            "status_query": is_status_query,
+                        },
+                        error="execution_unknown",
                     ),
                     context=previous_context,
                 )
@@ -421,9 +451,6 @@ class ChatAgent:
                 execution_mode is not None
                 or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
             ):
-                workflow_side_effect_risk = self._workflow_has_side_effect_risk(
-                    intent.action, execution_mode, publish
-                )
                 workflow_started = True
                 workflow = await self._workflow_service.execute(
                     message=workflow_message,
@@ -512,11 +539,9 @@ class ChatAgent:
             )
         except Exception as exc:
             logger.exception("ChatAgent failed: %s", exc)
+            if conversation_id and workflow_started:
+                return await self._mark_execution_unknown(conversation_id, incoming_message, exc)
             if consumed_interaction and conversation_id:
-                if workflow_started and workflow_side_effect_risk:
-                    return await self._mark_execution_unknown(
-                        conversation_id, incoming_message, exc
-                    )
                 return await self._recover_consumed_interaction(
                     conversation_id,
                     incoming_message,
@@ -735,20 +760,20 @@ class ChatAgent:
         return merged
 
     @staticmethod
-    def _workflow_has_side_effect_risk(
-        action: str, execution_mode: str | None, publish: bool
-    ) -> bool:
-        if publish:
-            return True
-        mode = str(execution_mode or "").lower()
-        if mode in {"dev_execute", "execute", "write"}:
-            return True
-        return action in {
-            "ods_dwd_modeling",
-            "forward_modeling",
-            "any_ods_modeling",
-            "reverse_modeling",
-        } and mode not in {"", "plan", "dry_run", "proposal"}
+    def _is_execution_status_query(message: str) -> bool:
+        text = message.lower()
+        return any(
+            marker in text
+            for marker in (
+                "状态",
+                "结果",
+                "是否成功",
+                "查询任务",
+                "查询节点",
+                "status",
+                "result",
+            )
+        )
 
     async def _mark_execution_unknown(
         self,
@@ -927,6 +952,8 @@ class ChatAgent:
         task_status = (
             "cancelled"
             if agent_mode == "cancelled"
+            else "execution_unknown"
+            if agent_mode == "execution_unknown"
             else "idle"
             if agent_mode == "reset"
             else "waiting_user"
