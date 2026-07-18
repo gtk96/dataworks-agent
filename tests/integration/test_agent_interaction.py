@@ -189,6 +189,104 @@ def test_action_option_payload_is_structured() -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_greeting_emits_and_persists_entry_cards(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    agent = ChatAgent()
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    try:
+        response = await agent.chat("你好", conversation_id="conv-greeting")
+        restored = await agent.get_conversation_context("conv-greeting")
+
+        assert response.data["interaction"]["purpose"] == "choose_entry"
+        assert restored["pending_interaction"]["purpose"] == "choose_entry"
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+        assert response.data["conversation"]["active_goal"] == ""
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_explain_preserves_current_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    agent = ChatAgent()
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    try:
+        remembered = await graph.remember(
+            "conv-explain",
+            "查找订单相关表",
+            needs_clarification=True,
+            action="ask_data",
+            pending_interaction={
+                "interaction_id": "int_orders",
+                "type": "single_select",
+                "purpose": "select_table",
+                "prompt": "请选择候选表",
+                "options": [
+                    {
+                        "id": "detail",
+                        "label": "订单明细表",
+                        "value": "dw.detail",
+                        "description": "一单一行",
+                        "payload": {},
+                    }
+                ],
+                "allow_custom_input": True,
+                "custom_input_placeholder": "",
+                "state_version": 1,
+                "status": "pending",
+            },
+            last_assistant_turn={"content": "请选择订单表"},
+        )
+        response = await agent.chat("什么意思", conversation_id="conv-explain")
+        restored = await graph.context("conv-explain")
+
+        assert "一单一行" in response.message
+        assert response.data["interaction"]["interaction_id"] == "int_orders"
+        assert restored["pending_interaction"]["interaction_id"] == "int_orders"
+        assert restored["state_version"] == remembered["state_version"] + 1
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_query_frame_survives_new_agent_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    path = tmp_path / "conversation.db"
+    first = ChatAgent()
+    first_graph = ConversationGraph(str(path))
+    first._conversation_graph = first_graph
+    second = ChatAgent()
+    second_graph = ConversationGraph(str(path))
+    second._conversation_graph = second_graph
+    try:
+        await first_graph.remember(
+            "conv-query",
+            "查询订单量",
+            needs_clarification=False,
+            query_frame={"metric_id": "order_count", "filters": {"layer": "dwd"}},
+        )
+
+        restored = await second.get_conversation_context("conv-query")
+        assert restored["query_frame"]["metric_id"] == "order_count"
+        assert not hasattr(first, "_query_frames")
+        assert not hasattr(second, "_query_frames")
+    finally:
+        await first_graph.aclose()
+        await second_graph.aclose()
+
+
 def test_build_interaction_from_table_option_chips() -> None:
     pending = build_interaction(
         {

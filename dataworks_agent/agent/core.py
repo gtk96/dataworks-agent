@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
 
+from dataworks_agent.agent.context_resolver import (
+    ContextResolver,
+    DialogueAction,
+    LLMDialogueFallback,
+)
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.interaction import (
     InteractionAnswer,
     InteractionExpiredError,
-    build_interaction,
 )
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
+from dataworks_agent.agent.response_policy import ResponsePolicy
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ConversationHistoryModel
@@ -91,10 +95,9 @@ class ChatAgent:
         self._workflow_service = AgentWorkflowService()
         self._skill_registry = SkillRegistry()
         self._conversation_graph = ConversationGraph()
+        self._context_resolver = ContextResolver(LLMDialogueFallback())
+        self._response_policy = ResponsePolicy()
         self._last_task_id: str | None = None
-        self._query_frames: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._query_frame_ttl_seconds = 2 * 60 * 60
-        self._query_frame_capacity = 128
 
     async def chat(
         self,
@@ -109,7 +112,7 @@ class ChatAgent:
         context_updates: dict[str, Any] | None = None,
         interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
     ) -> ChatResponse:
-        """Process user message."""
+        """Process one context-aware user turn."""
         if not message or not message.strip():
             return ChatResponse(
                 message="请输入你希望 Agent 达成的业务或数据目标。我会先理解目标、拆解计划，再生成可审计的 dry-run 方案。",
@@ -135,19 +138,108 @@ class ChatAgent:
                 else None,
             )
             previous_context = await self._conversation_graph.context(conversation_id)
+            resolved_turn = await self._context_resolver.resolve(incoming_message, previous_context)
+            answer = answer or resolved_turn.interaction_answer
+            merged_context_updates = self._merge_context_updates(
+                dict(context_updates or {}), resolved_turn.context_updates
+            )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.CANCEL:
+                context = await self._conversation_graph.cancel(conversation_id)
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message="已取消当前任务。",
+                        success=True,
+                        data={"agent_mode": "cancelled"},
+                    ),
+                    context=context,
+                )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.RESET:
+                await self._conversation_graph.resolve(incoming_message, conversation_id)
+                context = await self._conversation_graph.context(conversation_id)
+                data = self._response_policy.greeting(
+                    {}, state_version=int(context.get("state_version") or 0) + 1
+                )
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message="已重置当前会话，请选择下一步或直接描述新目标。",
+                        success=True,
+                        data={"agent_mode": "reset", **data},
+                    ),
+                    context=context,
+                )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.GREETING:
+                data = self._response_policy.greeting(
+                    previous_context,
+                    state_version=int(previous_context.get("state_version") or 0) + 1,
+                )
+                greeting = (
+                    "你好，我们可以继续当前任务。"
+                    if previous_context.get("objective")
+                    else "你好！我可以协助你查表、问数、建模和排障。"
+                )
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message=greeting,
+                        success=True,
+                        data={"agent_mode": "greeting", **data},
+                    ),
+                    context=previous_context,
+                )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.EXPLAIN:
+                explanation, data = self._response_policy.explain(previous_context)
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message=explanation,
+                        success=True,
+                        data={"agent_mode": "explain", **data},
+                    ),
+                    context=previous_context,
+                )
+
+            pending_interaction = previous_context.get("pending_interaction") or {}
             if (
                 answer is None
-                and previous_context.get("pending_interaction")
-                and not self._is_conversation_reset(incoming_message)
+                and pending_interaction
+                and pending_interaction.get("allow_custom_input")
+                and resolved_turn.dialogue_action
+                not in {DialogueAction.CONTINUE, DialogueAction.MODIFY, DialogueAction.REFER}
             ):
-                pending = previous_context["pending_interaction"]
                 answer = InteractionAnswer(
-                    interaction_id=str(pending.get("interaction_id") or ""),
+                    interaction_id=str(pending_interaction.get("interaction_id") or ""),
                     custom_text=incoming_message,
-                    state_version=int(pending.get("state_version") or 0),
+                    state_version=int(pending_interaction.get("state_version") or 0),
                 )
+
+            if answer is None and resolved_turn.dialogue_action is DialogueAction.CLARIFY:
+                data = self._response_policy.clarify(
+                    state_version=int(previous_context.get("state_version") or 0) + 1
+                )
+                return await self._complete_turn(
+                    conversation_id,
+                    incoming_message,
+                    ChatResponse(
+                        message="我还不能确定你的具体目标，请选择一个入口或补充说明。",
+                        success=False,
+                        data={"agent_mode": "needs_context", **data},
+                        error="ambiguous_context",
+                    ),
+                    context=previous_context,
+                )
+
             resolved_answer: dict[str, Any] = {}
-            merged_context_updates = dict(context_updates or {})
+            workflow_message = resolved_turn.rewritten_message
             if answer is not None:
                 try:
                     resolved_answer = await self._conversation_graph.answer(conversation_id, answer)
@@ -179,49 +271,73 @@ class ChatAgent:
                 selected_layer = str(
                     (resolved_answer.get("params") or {}).get("layer") or ""
                 ).strip()
-                message = (
+                follow_up_action = str(
+                    (resolved_answer.get("params") or {}).get("follow_up_action")
+                    or resolved_answer.get("value")
+                    or ""
+                ).strip()
+                workflow_message = (
                     f"{objective}\n补充信息：只要 {selected_layer}"
                     if selected_layer and objective
                     else f"{objective}\n补充信息：{custom_text}"
                     if custom_text and objective and custom_text != objective
-                    else custom_text or objective or incoming_message
+                    else f"{objective}\n补充信息：{follow_up_action}"
+                    if follow_up_action and objective
+                    else custom_text or follow_up_action or objective or incoming_message
                 )
-            message = await self._conversation_graph.resolve(
-                message,
+            elif resolved_turn.dialogue_action is DialogueAction.CONTINUE and previous_context.get(
+                "objective"
+            ):
+                workflow_message = str(previous_context["objective"])
+
+            workflow_message = await self._conversation_graph.resolve(
+                workflow_message,
                 conversation_id,
                 context_updates=merged_context_updates,
             )
-            intent = self._intent_parser.parse(message)
+            current_context = await self._conversation_graph.context(conversation_id)
+            intent = self._intent_parser.parse(workflow_message)
             intent.params = self._merge_conversation_params(
-                previous_context.get("params") or {},
+                current_context.get("params") or previous_context.get("params") or {},
                 intent.params,
                 merged_context_updates.get("params") or {},
             )
             intent.params.setdefault("conversation_id", conversation_id)
-            pending_interaction = previous_context.get("pending_interaction") or {}
             if answer is not None and pending_interaction.get("purpose"):
                 intent.params["interaction_purpose"] = str(pending_interaction["purpose"])
             intent.params["goal"] = (
-                intent.params.get("goal") or previous_context.get("objective") or incoming_message
+                intent.params.get("goal")
+                or current_context.get("objective")
+                or previous_context.get("objective")
+                or incoming_message
             )
-            if self._is_context_summary_request(incoming_message, previous_context):
-                return self._build_context_summary_response(previous_context, incoming_message)
-            if self._is_context_read_only_request(incoming_message, previous_context):
-                return self._build_context_read_only_response(previous_context, incoming_message)
 
-            # 处理问候意图
-            if intent.action == "greeting":
-                return ChatResponse(
-                    message="你好！我是 DataWorks Agent，可以帮助你完成数仓建模、任务诊断、血缘分析等工作。请告诉我你想要处理什么任务。",
-                    success=True,
-                    data={"intent": self._intent_to_dict(intent), "agent_mode": "greeting"},
+            if self._is_context_summary_request(incoming_message, current_context):
+                response = self._build_context_summary_response(current_context, incoming_message)
+                self._normalize_response_data(
+                    response,
+                    action=str(current_context.get("action") or "summary"),
+                    state_version=int(current_context.get("state_version") or 0) + 1,
+                )
+                return await self._complete_turn(
+                    conversation_id, incoming_message, response, context=current_context
+                )
+            if self._is_context_read_only_request(incoming_message, current_context):
+                response = self._build_context_read_only_response(current_context, incoming_message)
+                self._normalize_response_data(
+                    response,
+                    action=str(current_context.get("action") or "read_only"),
+                    state_version=int(current_context.get("state_version") or 0) + 1,
+                )
+                return await self._complete_turn(
+                    conversation_id, incoming_message, response, context=current_context
                 )
 
-            previous_action = str(previous_context.get("action") or "")
+            previous_action = str(current_context.get("action") or "")
             if previous_action and (answer is not None or intent.action == "unknown"):
                 intent.action = previous_action
                 intent.confidence = max(intent.confidence, 0.75)
-            business_query = self._resolve_business_query(message, conversation_id)
+            business_query = self._resolve_business_query(workflow_message, current_context)
             if business_query is not None and (not request_type or request_type == "auto"):
                 intent.action = "ask_data"
                 intent.params["business_query"] = business_query
@@ -247,7 +363,7 @@ class ChatAgent:
                 or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
             ):
                 workflow = await self._workflow_service.execute(
-                    message=message,
+                    message=workflow_message,
                     action=intent.action,
                     params=dict(intent.params or {}, conversation_id=conversation_id),
                     execution_mode=execution_mode,
@@ -273,70 +389,67 @@ class ChatAgent:
                         ),
                     }
                 )
-                interaction = None
-                if (
-                    data.get("interaction")
-                    or data.get("needs_clarification")
-                    or data.get("option_chips")
-                ):
-                    current_context = await self._conversation_graph.context(conversation_id)
-                    interaction = build_interaction(
-                        {**data, "message": workflow.message},
-                        purpose=self._interaction_purpose(data, intent.action),
-                        state_version=int(current_context.get("state_version") or 0) + 1,
-                    )
-                    if interaction is not None:
-                        data["interaction"] = interaction.model_dump()
-                        data["needs_clarification"] = True
+                data = self._response_policy.normalize_workflow_data(
+                    {**data, "message": workflow.message},
+                    purpose=self._interaction_purpose(data, intent.action),
+                    state_version=int(current_context.get("state_version") or 0) + 1,
+                )
+                data["needs_clarification"] = bool(data.get("interaction"))
                 response = ChatResponse(
                     message=workflow.message,
                     success=workflow.success,
                     data=data,
                     error=workflow.errors[0] if workflow.errors else None,
                 )
-                self._remember_business_query(conversation_id, data)
-                await self._conversation_graph.remember(
-                    conversation_id,
-                    message,
-                    needs_clarification=bool(interaction or data.get("needs_clarification")),
-                    action=intent.action,
-                    params=intent.params,
-                    workflow_state={
+                turn_context = {
+                    **current_context,
+                    "action": intent.action,
+                    "params": intent.params,
+                    "workflow_state": {
                         "current_step": data.get("next_step"),
                         "missing_context": data.get("missing_context") or [],
                         "completed_steps": data.get("completed_steps") or [],
                         "result_data": self._conversation_result_snapshot(data),
                         "message": workflow.message,
                     },
-                    pending_interaction=(
-                        interaction.model_dump() if interaction is not None else None
-                    ),
-                    last_result=self._conversation_result_snapshot(data),
-                )
-                self._save_conversation_message(
+                    "query_frame": self._query_frame_from_data(data)
+                    or current_context.get("query_frame")
+                    or {},
+                }
+                return await self._complete_turn(
                     conversation_id,
-                    "assistant",
-                    workflow.message,
-                    payload={
-                        "interaction": data.get("interaction"),
-                        "option_chips": data.get("option_chips") or [],
-                        "artifacts": data.get("artifacts") or [],
-                    },
+                    incoming_message,
+                    response,
+                    context=turn_context,
                 )
-                return response
 
             plan = self._task_planner.plan(intent)
             logger.info("Task planned: task_id=%s, steps=%d", plan.task_id, len(plan.steps))
-
             if not plan.steps:
-                return self._build_no_plan_response(intent, plan)
-
-            result = self._task_executor.execute(plan)
-            self._last_task_id = result.task_id
-            return self._build_response(intent, plan, result)
-        except Exception as e:
-            logger.exception("ChatAgent failed: %s", e)
-            return ChatResponse(message=f"处理失败：{e}", success=False, error=str(e))
+                response = self._build_no_plan_response(intent, plan)
+            else:
+                result = self._task_executor.execute(plan)
+                self._last_task_id = result.task_id
+                response = self._build_response(intent, plan, result)
+            self._normalize_response_data(
+                response,
+                action=intent.action,
+                state_version=int(current_context.get("state_version") or 0) + 1,
+            )
+            turn_context = {
+                **current_context,
+                "action": intent.action,
+                "params": intent.params,
+            }
+            return await self._complete_turn(
+                conversation_id,
+                incoming_message,
+                response,
+                context=turn_context,
+            )
+        except Exception as exc:
+            logger.exception("ChatAgent failed: %s", exc)
+            return ChatResponse(message=f"处理失败：{exc}", success=False, error=str(exc))
 
     @staticmethod
     def _is_conversation_reset(message: str) -> bool:
@@ -547,43 +660,105 @@ class ChatAgent:
         return merged
 
     def _resolve_business_query(
-        self, message: str, conversation_id: str | None
+        self, message: str, context: dict[str, Any]
     ) -> dict[str, Any] | None:
         direct = self._workflow_service.understand_business_query(message)
         if direct is not None:
             return direct
-        if not conversation_id:
+        previous = context.get("query_frame")
+        if not isinstance(previous, dict) or not previous:
             return None
-        self._prune_query_frames()
-        previous = self._query_frames.get(conversation_id)
-        if previous is None:
-            return None
-        return self._workflow_service.refine_business_query(message, previous[1])
+        return self._workflow_service.refine_business_query(message, previous)
 
-    def _remember_business_query(self, conversation_id: str | None, data: dict[str, Any]) -> None:
-        if not conversation_id:
-            return
+    @staticmethod
+    def _query_frame_from_data(data: dict[str, Any]) -> dict[str, Any]:
         semantic_plan = data.get("semantic_plan") or {}
         query_frame = semantic_plan.get("business_query")
         if not isinstance(query_frame, dict) or not query_frame.get("metric_id"):
-            return
-        self._query_frames[conversation_id] = (time.monotonic(), dict(query_frame))
-        self._prune_query_frames()
+            return {}
+        return dict(query_frame)
 
-    def _prune_query_frames(self) -> None:
-        now = time.monotonic()
-        expired = [
-            key
-            for key, (created_at, _) in self._query_frames.items()
-            if now - created_at > self._query_frame_ttl_seconds
-        ]
-        for key in expired:
-            self._query_frames.pop(key, None)
-        overflow = len(self._query_frames) - self._query_frame_capacity
-        if overflow > 0:
-            oldest = sorted(self._query_frames, key=lambda key: self._query_frames[key][0])
-            for key in oldest[:overflow]:
-                self._query_frames.pop(key, None)
+    def _normalize_response_data(
+        self,
+        response: ChatResponse,
+        *,
+        action: str,
+        state_version: int,
+    ) -> None:
+        response.data = self._response_policy.normalize_workflow_data(
+            response.data,
+            purpose=self._interaction_purpose(response.data, action),
+            state_version=state_version,
+        )
+
+    async def _complete_turn(
+        self,
+        conversation_id: str | None,
+        incoming_message: str,
+        response: ChatResponse,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> ChatResponse:
+        if not conversation_id:
+            return response
+        persisted = await self._conversation_graph.context(conversation_id)
+        current = {**persisted, **dict(context or {})}
+        interaction = response.data.get("interaction") if isinstance(response.data, dict) else None
+        agent_mode = str(response.data.get("agent_mode") or "")
+        has_active_goal = bool(current.get("objective"))
+        objective = str(current.get("objective") or incoming_message)
+        if not has_active_goal and agent_mode in {
+            "greeting",
+            "explain",
+            "cancelled",
+            "reset",
+            "needs_context",
+        }:
+            objective = ""
+        task_status = (
+            "cancelled"
+            if agent_mode == "cancelled"
+            else "idle"
+            if agent_mode == "reset"
+            else "waiting_user"
+            if interaction
+            else "active"
+        )
+        remembered = await self._conversation_graph.remember(
+            conversation_id,
+            objective,
+            needs_clarification=bool(interaction),
+            action=str(current.get("action") or ""),
+            params=dict(current.get("params") or {}),
+            workflow_state=dict(current.get("workflow_state") or {}),
+            pending_interaction=dict(interaction or {}) if interaction is not None else None,
+            selected_resources=dict(current.get("selected_resources") or {}),
+            last_result=dict(response.data or {}),
+            last_assistant_turn={
+                "content": response.message,
+                "payload": dict(response.data or {}),
+            },
+            conversation_summary=str(current.get("conversation_summary") or ""),
+            query_frame=dict(current.get("query_frame") or {}),
+            task_status=task_status,
+            expected_version=int(persisted.get("state_version") or 0),
+        )
+        if not isinstance(remembered, dict):
+            remembered = await self._conversation_graph.context(conversation_id)
+        if interaction is not None:
+            response.data["interaction"] = dict(
+                remembered.get("pending_interaction") or interaction
+            )
+        response.data["conversation"] = self._response_policy.conversation_meta(
+            conversation_id, remembered
+        )
+        self._save_conversation_message(
+            conversation_id,
+            "assistant",
+            response.message,
+            payload=response.data,
+        )
+        return response
 
     def _save_conversation_message(
         self,
