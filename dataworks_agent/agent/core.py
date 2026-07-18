@@ -166,6 +166,8 @@ class ChatAgent:
 
         previous_context: dict[str, Any] = {}
         consumed_interaction: dict[str, Any] | None = None
+        workflow_started = False
+        workflow_side_effect_risk = False
         try:
             incoming_message = message.strip()
             answer = (
@@ -419,6 +421,10 @@ class ChatAgent:
                 execution_mode is not None
                 or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
             ):
+                workflow_side_effect_risk = self._workflow_has_side_effect_risk(
+                    intent.action, execution_mode, publish
+                )
+                workflow_started = True
                 workflow = await self._workflow_service.execute(
                     message=workflow_message,
                     action=intent.action,
@@ -507,6 +513,10 @@ class ChatAgent:
         except Exception as exc:
             logger.exception("ChatAgent failed: %s", exc)
             if consumed_interaction and conversation_id:
+                if workflow_started and workflow_side_effect_risk:
+                    return await self._mark_execution_unknown(
+                        conversation_id, incoming_message, exc
+                    )
                 return await self._recover_consumed_interaction(
                     conversation_id,
                     incoming_message,
@@ -723,6 +733,86 @@ class ChatAgent:
                     continue
                 merged[key] = value
         return merged
+
+    @staticmethod
+    def _workflow_has_side_effect_risk(
+        action: str, execution_mode: str | None, publish: bool
+    ) -> bool:
+        if publish:
+            return True
+        mode = str(execution_mode or "").lower()
+        if mode in {"dev_execute", "execute", "write"}:
+            return True
+        return action in {
+            "ods_dwd_modeling",
+            "forward_modeling",
+            "any_ods_modeling",
+            "reverse_modeling",
+        } and mode not in {"", "plan", "dry_run", "proposal"}
+
+    async def _mark_execution_unknown(
+        self,
+        conversation_id: str,
+        incoming_message: str,
+        error: Exception,
+    ) -> ChatResponse:
+        """Do not reissue an executable card after a risky workflow has started."""
+        try:
+            current = await self._conversation_graph.context(conversation_id)
+            remembered = await self._conversation_graph.remember(
+                conversation_id,
+                str(current.get("objective") or incoming_message),
+                needs_clarification=False,
+                action=str(current.get("action") or ""),
+                params=dict(current.get("params") or {}),
+                workflow_state=dict(current.get("workflow_state") or {}),
+                pending_interaction=None,
+                selected_resources=dict(current.get("selected_resources") or {}),
+                last_result={
+                    "execution_result": "unknown",
+                    "error": str(error),
+                },
+                last_assistant_turn={
+                    "content": "执行已启动，但结果尚未确认。",
+                    "payload": {"execution_result": "unknown"},
+                },
+                conversation_summary=str(current.get("conversation_summary") or ""),
+                query_frame=dict(current.get("query_frame") or {}),
+                task_status="execution_unknown",
+                expected_version=int(current.get("state_version") or 0),
+            )
+            response = ChatResponse(
+                message=(
+                    "执行请求已经启动，但返回结果无法确认。为避免重复写入，请不要重复提交；"
+                    "请先查询任务或节点状态。"
+                ),
+                success=False,
+                data={
+                    "agent_mode": "execution_unknown",
+                    "execution_result": "unknown",
+                    "conversation": self._response_policy.conversation_meta(
+                        conversation_id, remembered
+                    ),
+                },
+                error=str(error),
+            )
+            self._save_conversation_message(
+                conversation_id,
+                "assistant",
+                response.message,
+                payload=response.data,
+            )
+            return response
+        except Exception:
+            logger.exception("Failed to persist unknown execution state")
+            return ChatResponse(
+                message=(
+                    "执行请求可能已经启动，但结果无法确认。请不要重复提交，先查询任务或节点状态。"
+                ),
+                success=False,
+                data={"agent_mode": "execution_unknown"},
+                error=str(error),
+            )
 
     async def _recover_consumed_interaction(
         self,

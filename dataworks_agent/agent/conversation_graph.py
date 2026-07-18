@@ -314,9 +314,13 @@ class ConversationGraph:
                 {
                     "objective": root_objective,
                     "pending_objective": root_objective if needs_clarification else "",
-                    "action": action or current.get("action") or "",
-                    "params": dict(params or current.get("params") or {}),
-                    "workflow_state": dict(workflow_state or current.get("workflow_state") or {}),
+                    "action": (action if action is not None else current.get("action") or ""),
+                    "params": dict(params if params is not None else current.get("params") or {}),
+                    "workflow_state": dict(
+                        workflow_state
+                        if workflow_state is not None
+                        else current.get("workflow_state") or {}
+                    ),
                     "pending_interaction": pending_payload,
                     "selected_resources": dict(
                         selected_resources

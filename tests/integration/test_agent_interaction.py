@@ -918,7 +918,7 @@ async def test_failed_workflow_restores_consumed_interaction(tmp_path) -> None:
             "查找订单表",
             needs_clarification=True,
             action="ask_data",
-            params={"keyword": "order"},
+            params={},
             pending_interaction=pending.model_dump(),
         )
         response = await agent.chat(
@@ -938,8 +938,69 @@ async def test_failed_workflow_restores_consumed_interaction(tmp_path) -> None:
         assert response.data["interaction"]["interaction_id"] == pending.interaction_id
         assert response.data["interaction"]["state_version"] == restored["state_version"]
         assert restored["pending_interaction"]["interaction_id"] == pending.interaction_id
-        assert restored["params"] == {"keyword": "order"}
+        assert restored["params"] == {}
         assert restored["selected_resources"] == {}
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_risky_workflow_failure_marks_execution_unknown_without_retry_card(
+    tmp_path,
+) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="forward_modeling", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(side_effect=RuntimeError("timeout"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "confirm_model",
+                    "type": "action",
+                    "label": "确认执行",
+                    "value": "确认执行",
+                }
+            ]
+        },
+        purpose="confirm_modeling",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-risky-failure",
+            "创建订单模型",
+            needs_clarification=True,
+            action="forward_modeling",
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "确认执行",
+            conversation_id="conv-risky-failure",
+            execution_mode="dev_execute",
+            interaction_answer=InteractionAnswer(
+                interaction_id=pending.interaction_id,
+                option_id="confirm_model",
+                state_version=remembered["state_version"],
+            ),
+        )
+        restored = await graph.context("conv-risky-failure")
+
+        assert response.success is False
+        assert response.data["agent_mode"] == "execution_unknown"
+        assert "interaction" not in response.data
+        assert restored["pending_interaction"] == {}
+        assert restored["task_status"] == "execution_unknown"
     finally:
         await graph.aclose()
 
