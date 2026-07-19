@@ -33,8 +33,12 @@ ENTRY_OPTIONS = [
         "id": "find_table",
         "type": "action",
         "label": "查找数据表",
-        "value": "我想查找数据表",
+        "value": "查找数据表",
         "description": "搜索现有数据资产",
+        "payload": {
+            "action": "find_table",
+            "params": {"tool_name": "find_table"},
+        },
     },
     {
         "id": "modeling",
