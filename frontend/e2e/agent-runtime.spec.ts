@@ -43,7 +43,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   await page.waitForLoadState('networkidle')
 })
 
-test.afterEach(async ({ page, request }, testInfo) => {
+test.afterEach(async ({ page }, testInfo) => {
   const evidence = (testInfo as TestInfo & { evidence: Evidence }).evidence
   const evidenceDir = process.env.AGENT_EVIDENCE_DIR
   if (evidenceDir) {
@@ -61,7 +61,6 @@ test.afterEach(async ({ page, request }, testInfo) => {
     contentType: 'application/json',
   })
   await page.screenshot({ path: testInfo.outputPath('final.png'), fullPage: true })
-  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { enabled: false } })
   const forbidden = evidence.network.filter(item => {
     const path = new URL(item.url).pathname
     return item.method !== 'GET'
