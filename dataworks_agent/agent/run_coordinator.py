@@ -116,10 +116,16 @@ class AgentRunCoordinator:
                 )
                 state = await self.conversation_graph.context(request.conversation_id)
             except InteractionExpiredError as exc:
+                current = await self.conversation_graph.context(request.conversation_id)
                 response = AgentRunResponse(
                     str(exc),
                     success=False,
-                    data={"interaction": pending or None},
+                    data={
+                        "interaction": current.get("pending_interaction") or None,
+                        "conversation": self._responses.conversation_meta(
+                            request.conversation_id, current
+                        ),
+                    },
                     error="interaction_expired",
                 )
                 await publish("response.completed", response=self._response_data(response))
