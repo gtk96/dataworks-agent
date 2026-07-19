@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from dataworks_agent.agent.capabilities import capability_registry
 from dataworks_agent.agent.core import ChatAgent
 from dataworks_agent.agent.interaction import InteractionAnswer
 from dataworks_agent.agent.run_models import RunEvent
@@ -290,9 +291,9 @@ async def run_stream(payload: ChatRequest, request: Request) -> StreamingRespons
 
 
 @router.get("/capabilities")
-async def capabilities() -> dict[str, Any]:
+async def capabilities(force: bool = False) -> dict[str, Any]:
     """Expose the Agent execution matrix used by the conversational workspace."""
-    return {"capabilities": _agent.capability_status()}
+    return {"capabilities": await capability_registry.snapshot_dict(force=force)}
 
 
 @router.get("/messages")

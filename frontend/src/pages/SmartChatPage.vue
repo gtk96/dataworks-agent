@@ -219,6 +219,7 @@ import {
   type InteractionAnswer,
 } from '@/components/agent/chatInteraction'
 import { streamAgentRun, type RunEvent } from '@/components/agent/runStream'
+import { countOnlineCapabilities } from '@/components/agent/capabilityStatus'
 
 interface ChatMessage {
   id: string
@@ -476,7 +477,7 @@ async function loadCapabilities() {
     const data = await resp.json()
     const caps = data.capabilities || {}
     totalCapabilities.value = Object.keys(caps).length
-    capabilitiesOnline.value = Object.values(caps).filter((v: any) => v.online !== false).length
+    capabilitiesOnline.value = countOnlineCapabilities(caps)
     capabilityStatus.value = formatCapabilityStatus(caps)
   } catch {
     // Keep existing values
@@ -498,19 +499,24 @@ function formatCapabilityStatus(caps: Record<string, unknown>): Record<string, {
     ak_sk: { label: 'AK/SK', fallback: '未配置' },
     openapi: { label: 'OpenAPI', fallback: '未连接' },
     maxcompute: { label: 'MaxCompute', fallback: '未连接' },
+    node_adapter: { label: '节点适配器', fallback: '不可用' },
     cookie_bff: { label: 'Cookie BFF', fallback: '未连接' },
     cdp_9222: { label: 'CDP 9222', fallback: '未连接' },
     official_mcp: { label: '官方 MCP', fallback: '未启用' },
     table_search: { label: '中文搜表', fallback: '不可用' },
     ida_query: { label: 'IDA 问数', fallback: '不可用' },
+    llm: { label: 'LLM', fallback: '不可用' },
   }
   const result: Record<string, { label: string; status: string; online: boolean }> = {}
   for (const [key, { label, fallback }] of Object.entries(mapping)) {
     const val = caps[key] as Record<string, unknown> | boolean | string
     const online = val === true || val === 'true' || (typeof val === 'object' && val?.online === true)
+    const observedStatus = typeof val === 'object' && val && typeof val.status === 'string'
+      ? val.status
+      : ''
     result[key] = {
       label,
-      status: online ? '就绪' : fallback,
+      status: observedStatus || (online ? '就绪' : fallback),
       online,
     }
   }

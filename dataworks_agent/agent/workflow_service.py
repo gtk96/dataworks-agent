@@ -725,29 +725,42 @@ class AgentWorkflowService:
             "ida_query": cookie_bff,
         }
 
+    async def observed_capability_status(self, *, force: bool = False) -> dict[str, Any]:
+        """Return probed capability health for UI and external health reporting."""
+
+        from dataworks_agent.agent.capabilities import capability_registry
+
+        return await capability_registry.snapshot_dict(force=force)
+
     async def _manage_cookie(self, message: str, mode: ExecutionMode) -> WorkflowResult:
-        status = self.capability_status()
-        official = status["official_mcp"]
+        status = await self.observed_capability_status()
+
+        def online(name: str) -> bool:
+            return bool((status.get(name) or {}).get("online"))
+
         steps = [
-            {"step": "check_ak_sk", "status": "completed" if status["ak_sk"] else "failed"},
+            {"step": "check_ak_sk", "status": "completed" if online("ak_sk") else "failed"},
             {
                 "step": "check_official_mcp",
-                "status": "completed" if official.get("connected") else "warning",
+                "status": "completed" if online("official_mcp") else "warning",
             },
             {
                 "step": "check_cookie_bff",
-                "status": "completed" if status["cookie_bff"] else "warning",
+                "status": "completed" if online("cookie_bff") else "warning",
             },
-            {"step": "check_cdp_9222", "status": "completed" if status["cdp_9222"] else "warning"},
+            {
+                "step": "check_cdp_9222",
+                "status": "completed" if online("cdp_9222") else "warning",
+            },
         ]
         if mode == "plan" or not any(
             k in message for k in ("提取", "刷新", "同步", "更新", "获取")
         ):
-            degraded = status["cookie_health"] == "degraded"
+            degraded = not online("cookie_bff") or not online("cdp_9222")
             message_text = (
-                "已检查执行底座：旧 Cookie MCP 登录态异常，但 BFF/CDP 兜底仍可用，当前为部分降级。"
+                "已检查执行底座：部分依赖的只读探针未通过，当前为降级状态，详情以能力卡为准。"
                 if degraded
-                else "已检查 AK/SK、9222 调试浏览器、Cookie 兜底和官方 MCP 通道。"
+                else "已通过只读探针检查 AK/SK、9222 调试浏览器、Cookie 兜底和官方 MCP 通道。"
             )
             return WorkflowResult(
                 True,
@@ -769,7 +782,7 @@ class AgentWorkflowService:
             "cookie_manage",
             mode,
             steps=[{"step": "cookie_refresh", **result}],
-            data={"capabilities": self.capability_status()},
+            data={"capabilities": await self.observed_capability_status(force=True)},
             errors=[] if ok else [str(result.get("detail", "cookie refresh failed"))],
         )
 

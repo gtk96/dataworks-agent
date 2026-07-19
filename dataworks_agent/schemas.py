@@ -398,6 +398,7 @@ class HealthResponse(BaseModel):
     version: str = "0.1.0"
     uptime_seconds: int = 0
     checks: HealthChecks = Field(default_factory=HealthChecks)
+    capabilities: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 # ═══════════════════════════════════════════════════════════════

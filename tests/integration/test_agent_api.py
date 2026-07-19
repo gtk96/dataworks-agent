@@ -346,3 +346,33 @@ def test_run_stream_emits_real_ordered_events_and_one_final_response(client):
         "response.completed",
     ]
     assert sum(item["type"] == "response.completed" for item in payloads) == 1
+
+
+def test_capabilities_endpoint_returns_only_observed_states(client, monkeypatch):
+    test_client, _mock_agent = client
+    snapshot = {
+        "agent_runtime": {
+            "configured": True,
+            "online": True,
+            "status": "ready",
+            "checked_at": "2026-07-20T00:00:00+00:00",
+        },
+        "llm": {
+            "configured": True,
+            "online": False,
+            "status": "model_not_found",
+            "checked_at": "2026-07-20T00:00:00+00:00",
+        },
+    }
+    import dataworks_agent.routers.agent as agent_module
+
+    monkeypatch.setattr(
+        agent_module.capability_registry,
+        "snapshot_dict",
+        AsyncMock(return_value=snapshot),
+    )
+
+    response = test_client.get("/agent/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == snapshot
