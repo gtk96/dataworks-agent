@@ -33,7 +33,7 @@
 - Produces `SideEffect`, `ToolContext`, `ToolResult`, `AgentTool`, and `ToolRegistry`.
 - `ToolResult.uncertain_write` is true only when `write_boundary_crossed` and the declared side effect is write-capable.
 
-- [ ] **Step 1: Write failing tool-policy tests**
+- [x] **Step 1: Write failing tool-policy tests**
 
 ```python
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py -q`
 
 Expected: collection fails because `dataworks_agent.agent.tools` does not exist.
 
-- [ ] **Step 3: Implement the contracts**
+- [x] **Step 3: Implement the contracts**
 
 ```python
 class SideEffect(StrEnum):
@@ -86,13 +86,13 @@ class ToolResult:
 
 `ToolRegistry.execute()` validates the name, emits no side effects itself, catches tool exceptions into a recoverable failure for `NONE/READ`, and applies `for_effect()`.
 
-- [ ] **Step 4: Verify tests pass**
+- [x] **Step 4: Verify tests pass**
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py -q`
 
 Expected: all Task 1 tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add dataworks_agent/agent/tools tests/integration/test_agent_run_tools.py
@@ -112,7 +112,7 @@ git commit -m "feat(agent): add typed tool side-effect policy"
 - Produces `ToolResult.data.interaction` with server-owned full table identifiers.
 - Never invokes `_build_query_plan()` or `LLMService`.
 
-- [ ] **Step 1: Add failing discovery tests**
+- [x] **Step 1: Add failing discovery tests**
 
 ```python
 @pytest.mark.asyncio
@@ -147,11 +147,11 @@ Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py -q`
 
 Expected: `TableDiscoveryTool` is missing.
 
-- [ ] **Step 3: Implement deterministic candidate shaping**
+- [x] **Step 3: Implement deterministic candidate shaping**
 
 The tool normalizes `keyword` by removing only leading intent verbs (`查找`, `搜索`, `找`, `查看`) and a trailing `表`, but rejects an empty keyword. It applies an optional exact layer filter, limits visible candidates to eight, groups larger sets by layer, and returns a free-text clarification when no evidence exists.
 
-- [ ] **Step 4: Make entry options carry an action**
+- [x] **Step 4: Make entry options carry an action**
 
 The `find_table` option payload becomes:
 
@@ -165,11 +165,11 @@ The `find_table` option payload becomes:
 
 Do not route this option through `ask_data`.
 
-- [ ] **Step 5: Verify tests**
+- [x] **Step 5: Verify tests**
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py tests/integration/test_agent_interaction.py -q --tb=short`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add dataworks_agent/agent/tools/table_discovery.py dataworks_agent/agent/interaction.py dataworks_agent/agent/response_policy.py tests/integration/test_agent_run_tools.py
@@ -190,7 +190,7 @@ git commit -m "feat(agent): make table discovery a first-class tool"
 - `AgentRunCoordinator.run(request, emit=...) -> ChatResponse`.
 - The coordinator is bounded to six decisions and persists one authoritative response.
 
-- [ ] **Step 1: Write failing journey tests**
+- [x] **Step 1: Write failing journey tests**
 
 ```python
 @pytest.mark.asyncio
@@ -214,21 +214,21 @@ async def test_broken_llm_does_not_block_deterministic_find_table(runtime):
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_coordinator.py -q`
 
-- [ ] **Step 3: Implement decisions and coordinator**
+- [x] **Step 3: Implement decisions and coordinator**
 
 Deterministic decisions cover greeting, explain, cancel/reset, active interaction answers, explicit `find_table`, physical table references, and health requests. The LLM receives only compact state and tool schemas. Any invalid or unavailable LLM result becomes `ClarifyDecision`.
 
 The coordinator emits events before and after every decision/tool, maps `ToolResult.uncertain_write` to the only `execution_unknown` path, and maps every read failure to `recoverable_error` with a new pending interaction.
 
-- [ ] **Step 4: Delegate ChatAgent**
+- [x] **Step 4: Delegate ChatAgent**
 
 Keep `ChatAgent.chat()` public API, but route supported page turns through the coordinator. Existing modeling workflows are registered through `WorkflowAdapterTool`; do not duplicate business implementations.
 
-- [ ] **Step 5: Verify focused backend journeys**
+- [x] **Step 5: Verify focused backend journeys**
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_coordinator.py tests/integration/test_agent_interaction.py tests/integration/test_context_resolver.py -q --tb=short`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add dataworks_agent/agent/run_models.py dataworks_agent/agent/decision_provider.py dataworks_agent/agent/run_coordinator.py dataworks_agent/agent/core.py tests/integration/test_agent_run_coordinator.py
@@ -250,15 +250,15 @@ git commit -m "feat(agent): add bounded conversational run loop"
 - `POST /agent/runs/stream` accepts `ChatRequest` JSON and emits NDJSON `RunEvent` rows.
 - `streamAgentRun(request, onEvent, fetcher?)` parses chunk boundaries safely.
 
-- [ ] **Step 1: Write failing router and parser tests**
+- [x] **Step 1: Write failing router and parser tests**
 
 Backend asserts the sequence includes `run.started`, `tool.started`, `tool.completed`, `state.persisted`, and one final `response.completed`. Frontend feeds JSON split across arbitrary byte chunks and asserts ordered events plus exactly one final response.
 
-- [ ] **Step 2: Implement the streaming endpoint**
+- [x] **Step 2: Implement the streaming endpoint**
 
 Use an `asyncio.Queue[RunEvent]`, run the coordinator in a task, yield queue events as UTF-8 NDJSON, and cancel the task if the client disconnects. Legacy GET SSE and POST chat call the same coordinator.
 
-- [ ] **Step 3: Implement the stream client**
+- [x] **Step 3: Implement the stream client**
 
 ```ts
 export async function streamAgentRun(
@@ -268,11 +268,11 @@ export async function streamAgentRun(
 ): Promise<AgentPayload> { /* TextDecoder streaming buffer + final-event validation */ }
 ```
 
-- [ ] **Step 4: Migrate both text and card answers**
+- [x] **Step 4: Migrate both text and card answers**
 
 `handleSend()` and `handleInteractionAnswer()` call `streamAgentRun()`. The page shows actual tool/event labels, does not invent a fixed thinking phase, and leaves retry enabled on recoverable failures.
 
-- [ ] **Step 5: Run frontend and stream tests**
+- [x] **Step 5: Run frontend and stream tests**
 
 Run: `uv run python -m pytest tests/integration/test_agent_api.py tests/integration/test_agent_run_coordinator.py -q --tb=short`
 
@@ -280,7 +280,7 @@ Run from `frontend`: `npm run test:unit`
 
 Run from `frontend`: `npm run build`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add dataworks_agent/routers/agent.py dataworks_agent/routers/agent_sse.py frontend/src/components/agent/runStream.ts frontend/src/pages/SmartChatPage.vue frontend/src/components/agent/MessageBubble.vue frontend/src/__tests__
@@ -301,25 +301,25 @@ git commit -m "feat(frontend): stream real agent run events"
 - `CapabilityRegistry.snapshot(force=False) -> dict[str, CapabilityState]`.
 - Each state has `configured`, `online`, `status`, `checked_at`.
 
-- [ ] **Step 1: Write failing health-truth tests**
+- [x] **Step 1: Write failing health-truth tests**
 
 Assert that an instantiated but unreachable CDP client is offline, Cookie decrypt failure makes BFF/search/IDA offline, `model_not_found` makes LLM offline, and the frontend count includes only `online=True` capabilities.
 
-- [ ] **Step 2: Implement bounded cached probes**
+- [x] **Step 2: Implement bounded cached probes**
 
 Reuse existing read-only health checks where possible. Probe LLM configuration/model availability without exposing its key, and cache results for 15 seconds. `/api/health` and `/agent/capabilities` consume the same snapshot.
 
-- [ ] **Step 3: Render configured vs online accurately**
+- [x] **Step 3: Render configured vs online accurately**
 
 Remove `12/12 能力就绪` when dependencies are degraded. Show the exact non-secret status and never infer health from an object reference.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `uv run python -m pytest tests/integration/test_agent_capabilities.py tests/integration/test_settings_cookie_api.py -q --tb=short`
 
 Run from `frontend`: `npm run test:unit && npm run build`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add dataworks_agent/agent/capabilities.py dataworks_agent/agent/workflow_service.py dataworks_agent/routers/agent.py dataworks_agent/routers/health.py frontend/src/pages/SmartChatPage.vue tests/integration/test_agent_capabilities.py
@@ -332,29 +332,29 @@ git commit -m "fix(agent): report observed capability health"
 - Create: `tests/integration/test_agent_runtime_journeys.py`
 - Create: `dataworks_agent/scripts/verify_agent_runtime.py`
 
-- [ ] **Step 1: Implement a deterministic no-write provider**
+- [x] **Step 1: Implement a deterministic no-write provider**
 
 The fake lives in test/support code and records tool name, arguments, side effect, and call count. It provides stable order-table candidates and column metadata; every write-capable call raises the test immediately.
 
-- [ ] **Step 2: Implement eight backend journeys**
+- [x] **Step 2: Implement eight backend journeys**
 
 Cover the eight journeys in the design through the real coordinator, router, state store, and event sink. No `ChatAgent` or workflow method is mocked.
 
-- [ ] **Step 3: Implement the fifty-turn test**
+- [x] **Step 3: Implement the fifty-turn test**
 
 Alternate greetings, explanations, table refinements, selections, cancellations, and new goals. Assert monotonic versions, no repeated interaction consumption, bounded summaries, stable identifiers, and zero writes.
 
-- [ ] **Step 4: Replace print-only verification**
+- [x] **Step 4: Replace print-only verification**
 
 `verify_agent_runtime.py` exits nonzero on any failed assertion and writes a transcript plus backend events under a supplied report directory.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `uv run python -m pytest tests/integration/test_agent_runtime_journeys.py -q --tb=short`
 
 Run: `uv run python -m dataworks_agent.scripts.verify_agent_runtime --output reports/continuous-dialogue/backend-local`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add tests/integration/test_agent_runtime_journeys.py dataworks_agent/scripts/verify_agent_runtime.py
@@ -371,19 +371,19 @@ git commit -m "test(agent): verify multi-turn runtime stability"
 - Modify: `docs/product/conversational-dialog-design.md`
 - Modify: `docs/superpowers/plans/2026-07-18-strong-continuous-dialogue.md`
 
-- [ ] **Step 1: Configure a deterministic full-stack server**
+- [x] **Step 1: Configure a deterministic full-stack server**
 
 Start the real FastAPI app with `AGENT_ACCEPTANCE_MODE=deterministic`, a temporary SQLite path, and no external writes. The deterministic provider is selected only by this explicit test setting.
 
-- [ ] **Step 2: Implement eight five-to-ten-turn browser journeys**
+- [x] **Step 2: Implement eight five-to-ten-turn browser journeys**
 
 Use visible UI controls and network assertions. Include refresh, backend restart, stale-card two-page concurrency, dependency degradation, task switching, and natural-language selection.
 
-- [ ] **Step 3: Collect evidence**
+- [x] **Step 3: Collect evidence**
 
 The PowerShell runner creates the required timestamped bundle, captures Playwright screenshots/traces, browser console, network records, transcript, backend JSONL, JUnit XML, commit ID, commands, retry counts, and a no-write proof.
 
-- [ ] **Step 4: Run all gates**
+- [x] **Step 4: Run all gates**
 
 Run: `uv run ruff check .`
 
@@ -397,15 +397,15 @@ Run from `frontend`: `npm run test:e2e`
 
 Run: `powershell -ExecutionPolicy Bypass -File scripts/run_continuous_dialogue_acceptance.ps1`
 
-- [ ] **Step 5: Restart 8085 and run the live degradation journey**
+- [x] **Step 5: Restart 8085 and run the live degradation journey**
 
 Verify the running branch reports actual dependency health, the core table-discovery route returns candidates or a recoverable interaction, `什么意思` remains usable, and no DataWorks write call appears in network/backend events.
 
-- [ ] **Step 6: Inspect and synchronize documentation**
+- [x] **Step 6: Inspect and synchronize documentation**
 
 Remove every unsupported completion claim. Mark only gates whose files and successful outputs exist. Link the actual report bundle from the product design.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add frontend/playwright.config.ts frontend/e2e frontend/package.json scripts/run_continuous_dialogue_acceptance.ps1 docs/product/conversational-dialog-design.md docs/superpowers/plans/2026-07-18-strong-continuous-dialogue.md
@@ -418,3 +418,13 @@ git commit -m "test(e2e): gate the agent runtime on browser journeys"
 - Placeholder scan: clean; every implementation step names concrete behavior and verification.
 - Type consistency: `SideEffect`, `ToolResult`, `AgentRunRequest`, `RunEvent`, and `streamAgentRun` names are stable across tasks.
 - Scope: existing DataWorks workflows and guards are adapted, not rewritten; only the table-discovery vertical slice moves first.
+
+## Verified completion record (2026-07-20)
+
+- Valid bundle: `reports/continuous-dialogue/20260719T190357Z-1cb5007`.
+- Gates: Ruff PASS; backend integration `245 passed`; frontend unit `48 passed`; frontend build PASS; browser journeys `8 passed`; 50-turn verifier PASS; compileall PASS.
+- Browser evidence: 8 screenshots, 8 traces, 8 videos, 0 console errors, 428 network requests, 0 forbidden write requests.
+- Safety evidence: 22 recorded tool calls, all declared `read`; no real DataWorks folder/node/deploy/DDL write was executed.
+- Live 8085: health `degraded`; Agent Runtime/AK-SK/OpenAPI/MaxCompute/node adapter/official MCP online, Cookie BFF/CDP/table search/IDA/LLM offline. The page keeps the conversation usable and treats metadata failure as recoverable.
+- Invalid bundle: `20260719T184628Z-1ab8836` is superseded because two pytest failures were hidden by a missing PowerShell `$LASTEXITCODE` check. Commit `c223f3d` corrected the runner.
+- Historical red-test confirmation steps remain unchecked where no retained artifact proves the transient failing run. The implementation, regression, browser, live-degradation, and commit steps are checked only where repository commits or the valid bundle provide evidence.

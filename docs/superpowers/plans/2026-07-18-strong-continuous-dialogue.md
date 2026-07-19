@@ -1,5 +1,7 @@
 ﻿# Strong Continuous Dialogue Implementation Plan
 
+> **Status (2026-07-20):** This plan is retained as the original interaction/state design record. Its proposed direct `ChatAgent` workflow was superseded by the bounded, typed-tool runtime in [`2026-07-20-agentic-web-runtime-corrective.md`](2026-07-20-agentic-web-runtime-corrective.md). Current completion claims must use the verified record at the end of this document, not unchecked historical implementation steps.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build reliable multi-turn dialogue that understands contextual short replies, renders mixed-strategy action cards, survives page/backend restarts, rejects stale interactions, and produces complete correlated test logs.
@@ -1628,3 +1630,21 @@ Do not commit generated logs containing real user text or environment details.
 - Safety: all automated end-to-end paths use a deterministic no-write provider; no task adds a DataWorks directory operation.
 - Scope: existing workflows, Cookie fallback, OpenAPI clients, and Publish Gate remain intact.
 - Verification: each task includes a failing-test step, implementation boundary, passing command, and commit boundary.
+
+## Verified implementation record (2026-07-20)
+
+The retained contracts for versioned state, pending interactions, refresh/restart recovery, stale-card rejection, correlated events, and bounded summaries are implemented. The current page entrypoint is `POST /agent/runs/stream` (NDJSON) backed by `AgentRunCoordinator`, a deterministic-first decision provider, and typed tools. `find_table` and `inspect_table` are explicit read-only tools; guarded legacy workflows remain adapters rather than being reimplemented.
+
+Only `reports/continuous-dialogue/20260719T190357Z-1cb5007` is a valid acceptance bundle:
+
+- backend integration: `245 passed`, 0 failure, 0 error;
+- frontend unit: `48 passed`;
+- frontend build and Ruff: PASS;
+- browser E2E: `8 passed`, 0 console errors;
+- 50-turn verifier and compileall: PASS;
+- network: 428 requests, 0 forbidden write requests;
+- tool audit: 22 calls, all `read`.
+
+The earlier `20260719T184628Z-1ab8836` bundle is invalid and superseded. It reported PASS despite two pytest failures because the PowerShell runner did not inspect `$LASTEXITCODE`; commit `c223f3d` fixed that false-green path.
+
+Live 8085 validation is intentionally described as degraded, not fully healthy: Agent Runtime, AK/SK, OpenAPI, MaxCompute, node adapter, and official MCP were online; Cookie BFF, CDP, table search, IDA, and LLM were offline. Greeting, read-only failure recovery, explanation, task switching, and continued conversation worked without `execution_unknown`. No real DataWorks write or directory creation was performed.

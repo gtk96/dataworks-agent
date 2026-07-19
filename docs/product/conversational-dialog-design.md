@@ -47,7 +47,7 @@ Agent：执行只读查询，展示结果、执行通道、耗时和校验状态
 
 当前项目已经具备对话式改造所需的主要基础组件：
 
-- `POST /agent/chat`、WebSocket `/agent/ws` 和 SSE `/agent/chat/stream`。
+- 页面主链路使用 `POST /agent/runs/stream`，以 NDJSON 输出真实 `RunEvent`；`POST /agent/chat`、WebSocket `/agent/ws` 和旧 SSE `/agent/chat/stream` 复用同一个 Agent 实例与协调器。
 - 前端持久化并发送 `conversation_id`。
 - 请求支持 `context_updates`。
 - `conversation_history` 保存用户和助手消息。
@@ -185,7 +185,7 @@ tb_dwd_ord_order_detail_di
 - 删除节点需要确认。
 - 生产发布必须进入 Publish Gate，由人工批准。
 
-## 5. 目标架构
+## 5. 当前运行时架构
 
 ```text
 ┌───────────────────────────────────────────────────────────────┐
@@ -195,25 +195,22 @@ tb_dwd_ord_order_detail_di
                                │ ChatRequest / InteractionAnswer
                                ▼
 ┌───────────────────────────────────────────────────────────────┐
-│ Conversation Coordinator                                      │
-│ 1. 恢复会话状态                                               │
-│ 2. 判断新目标或回答 pending interaction                       │
-│ 3. 合并结构化槽位                                             │
-│ 4. 决定 resume point                                          │
+│ AgentRunCoordinator（最多 6 次决策）                          │
+│ Observe → deterministic-first decide → typed tool → respond    │
 └───────────────┬───────────────────────────┬───────────────────┘
                 │                           │
                 ▼                           ▼
 ┌───────────────────────────┐   ┌───────────────────────────────┐
-│ Context Assembly Layer    │   │ Intent / Workflow Router      │
-│ Metadata / History        │   │ deterministic first           │
-│ Project / Capabilities    │   │ LLM-assisted when ambiguous   │
+│ ConversationGraph         │   │ DecisionProvider              │
+│ state / pending card      │   │ rules first, LLM optional     │
+│ version / selected asset  │   │ invalid result → clarify      │
 └───────────────┬───────────┘   └───────────────┬───────────────┘
                 └───────────────────────┬───────┘
                                         ▼
 ┌───────────────────────────────────────────────────────────────┐
-│ Resumable Workflow Graph                                      │
-│ UNDERSTAND → DISCOVER → CLARIFY → PLAN → CONFIRM              │
-│            → EXECUTE → VERIFY → RESULT / BLOCKED              │
+│ Typed Tool Registry                                           │
+│ find_table (read) / inspect_table (read) / guarded legacy     │
+│ workflow adapters (declared side effect + write boundary)     │
 └──────────────────────────────┬────────────────────────────────┘
                                ▼
 ┌───────────────────────────────────────────────────────────────┐
@@ -223,27 +220,27 @@ tb_dwd_ord_order_detail_di
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### 5.1 Conversation Coordinator
+### 5.1 AgentRunCoordinator
 
-建议新增一个薄协调层，不重写现有 WorkflowService：
+已实现的协调层不重写现有 WorkflowService。它恢复权威会话状态，在最多 6 次决策内执行确定性判断或受约束的 LLM 判断，只能通过注册的类型化工具行动，并最终持久化一个权威响应：
 
 ```python
-class ConversationCoordinator:
-    async def handle(self, request: ChatRequest) -> ChatResponse:
-        state = await self.state_store.load(request.conversation_id)
-
-        if request.interaction_answer:
-            transition = self.interaction_resolver.resolve(
-                state.pending_interaction,
-                request.interaction_answer,
-            )
-        else:
-            transition = await self.intent_router.resolve(request.message, state)
-
-        state = self.state_reducer.apply(state, transition)
-        result = await self.workflow_runner.resume(state)
-        return self.response_builder.build(state, result)
+class AgentRunCoordinator:
+    async def run(self, request: AgentRunRequest, emit: EventEmitter) -> ChatResponse:
+        state = await self.agent.get_conversation_context(request.conversation_id)
+        for _ in range(self.max_decisions):
+            decision = await self.decisions.decide(request, state, self.tools.schemas())
+            if isinstance(decision, ToolDecision):
+                result = await self.tools.execute(decision.tool_name, decision.arguments, context)
+                if result.uncertain_write:
+                    return await self._complete_execution_unknown(request, state, result, emit)
+                state = self._observe_tool_result(state, result)
+                continue
+            return await self._complete_response(request, state, decision, emit)
+        return await self._complete_bounded_stop(request, state, emit)
 ```
+
+`SideEffect.READ` 工具失败始终是可恢复失败。只有声明为写能力的工具已经越过写边界、且结果不确定时，才允许进入 `execution_unknown`。LLM 不持有 DataWorks 客户端，也不能绕过工具注册表直接执行。
 
 该层只负责状态转换和工作流恢复，不复制问数、建模或诊断业务逻辑。
 
@@ -586,17 +583,14 @@ EXECUTE → VERIFY → RESULT / BLOCKED
 正在理解目标 → 正在搜索元数据 → 找到 32 张候选 → 等待选择
 ```
 
-SSE 应发送真实阶段事件，而不是连接后只显示一个统一的“思考中”。建议事件：
+页面通过 NDJSON 接收真实运行事件，而不是连接后只显示一个统一的“思考中”。当前事件包括：
 
-- `conversation.started`
-- `intent.resolved`
-- `metadata.search.started`
-- `metadata.search.completed`
-- `interaction.required`
-- `workflow.resumed`
-- `execution.started`
-- `execution.channel_changed`
-- `verification.completed`
+- `run.started`
+- `decision.started`
+- `decision.completed`
+- `tool.started`
+- `tool.completed`
+- `state.persisted`
 - `response.completed`
 
 ## 10. 上下文与 Token 预算
@@ -720,7 +714,7 @@ conversation_interactions
 
 ### Phase 4：真实 Streaming 和恢复
 
-1. SSE 输出真实阶段事件（conversation.started → intent.resolved → metadata.search → interaction.required → ...）。
+1. `POST /agent/runs/stream` 输出真实 NDJSON 事件（run.started → decision/tool events → state.persisted → response.completed）。
 2. 长查询显示通道切换和耗时。
 3. 页面刷新后恢复 pending interaction、进度和结果。
 4. 支持失败后从 checkpoint 重试。
@@ -917,28 +911,39 @@ Agent 正在等待用户选表
 
 上下文注入让 Agent 看得见，结构化交互让 Agent 问得清，状态机让 Agent 接得上，Workflow 与 Verifier 让 Agent 做得对。
 
-## 21. 实施状态（2026-07-20）
+## 21. 实施状态（2026-07-20，v0.1.1）
 
-本期已在 `feat/strong-continuous-dialogue` 分支完成以下闭环：
+本期已在 `feat/strong-continuous-dialogue` 分支完成可验收的页面 Agent 纵切：
 
-1. **结构化交互协议**：`/agent/chat` 和 `/agent/ws` 支持 `interaction_answer`，服务端用 `interaction_id + option_id + state_version` 解析选项，不信任前端回传的表名或目录路径。
-2. **可恢复会话状态**：`ConversationGraph` 持久化 `selected_resources`、`pending_interaction`、`last_result` 和 `state_version`；页面刷新或进程重启后可恢复当前待回答问题。
-3. **找表连续对话**：候选数超过 8 时先按 ODS/DWD/DWS/DMR 等分层，选择分层后继续过滤；候选数不超过 8 时直接返回精确表选项，并始终保留完整 `project.table`。
-4. **选表后动作**：已提供查看字段、预览数据、查看分区、查看血缘、生成 ODS 节点、生成 DWD 节点和自定义回答。
-5. **前端交互卡**：`MessageBubble.vue` 渲染当前有效的选项和自定义输入；旧交互保留展示但不可重复提交，请求失败时可解锁重试。
-6. **节点安全落位**：测试环境仅使用已只读确认的广告报告目录 `00_ODS`、`02_DWD`、`03_DWS`、`04_DMR`；`01_DIM` 未被确认，因此必须阻断。生产环境仅保留通过 Cookie/DataStudio 在线只读证据确认的候选目录；无证据、证据过期或候选不唯一时停止。
-7. **节点写入确认**：先返回节点名、父目录、完整路径、创建/更新模式和发布边界；用户确认后再次检查目录和同路径同名节点，写入开发草稿后回读校验。`CreateNode` 固定使用 `container_id=None` 和 `scene="DATAWORKS_PROJECT"`，不调用任何目录创建接口，不自动发布。
-8. **兼容与真实性校验**：`SmartChatPage.vue` 和备用 `AgentChat.vue` 均可恢复、提交和失败重试结构化交互；测试环境目录断言使用真实路径 `业务流程/106_广告报告/MaxCompute/数据开发/...`，不再使用占位字符串。
-9. **逐轮事件链**：每轮对话生成 `request_id + turn_id`，按序记录上下文加载、分类、引用解析、工作流、交互与状态持久化事件；事件入库和独立 UTF-8 JSONL 轮转日志均执行字段脱敏，可通过 `GET /api/logs/conversations` 精确查询。
+1. **有界 Agent 运行循环**：`AgentRunCoordinator` 负责 observe/decide/act，单轮最多 6 次决策；问候、解释、取消、重置、有效交互回答、找表、物理表引用和健康查询采用确定性路由，LLM 只作为可选增强。
+2. **类型化工具与副作用策略**：首批一等工具为只读 `find_table` 和 `inspect_table`；遗留建模能力通过受护栏约束的 adapter 复用。读失败不会进入 `execution_unknown`，只有写能力越过写边界后状态不确定才允许进入该状态。
+3. **单一真实事件流**：页面文字输入和卡片回答统一调用 `POST /agent/runs/stream`，按 NDJSON 消费真实运行事件；旧 Chat/SSE 入口复用同一个 Agent 和事件源。
+4. **可恢复状态与交互**：`ConversationGraph` 持久化 pending interaction、选择资源和单调递增版本；刷新、后端重启、旧卡并发、任务切换、问候插入和解释均通过端到端旅程覆盖。
+5. **真实能力健康**：15 秒缓存的只读探针区分 configured 与 online；前端不再根据对象存在或配置数量显示“全部就绪”。
+6. **验收脚本可信化**：PowerShell runner 现在检查每个原生命令的 `$LASTEXITCODE`，任一 pytest、Vitest、build 或 Playwright 回归都会终止并产生失败报告，不能继续汇总成 PASS。
 
-### 21.1 验证结果
+### 21.1 唯一有效验证结果
 
-- 后端集成测试：`220 passed`。
-- Ruff：`uv run ruff check .` 通过。
-- 前端单元测试：`45 passed`。
+有效证据包：[`reports/continuous-dialogue/20260719T190357Z-1cb5007`](../../reports/continuous-dialogue/20260719T190357Z-1cb5007/summary.md)（本地验收产物，因含 trace/video/环境记录而不提交 Git）。
+
+- Ruff：通过。
+- 后端集成测试：`245 passed`，0 failure，0 error。
+- 前端单元测试：`48 passed`。
 - TypeScript/Vite 生产构建：通过。
-- 目录创建审计：本期改动路径中无 Folder/create-directory/createPackage 调用；节点创建只在新鲜、精确且为真的目录证据之后发生。
+- 浏览器 E2E：`8 passed`；8 张最终截图、8 份 trace、8 段 video；浏览器 console error 为 0。
+- 后端 50 轮稳定性验证：通过。
+- 浏览器网络记录：428 个请求，0 个禁止写请求。
+- `no-write-proof.json`：22 次工具调用，副作用全部为 `read`。
+- `compileall`：通过。
 
-### 21.2 本期未执行的真实写入
+`20260719T184628Z-1ab8836` **无效并已被取代**：该轮有 2 个 pytest 失败，但旧 runner 未检查 PowerShell 原生命令的 `$LASTEXITCODE`，仍错误生成 PASS。`c223f3d` 修复该验收漏洞；只有上述 `20260719T190357Z-1cb5007` 可作为完成证据。
+
+### 21.2 真实 8085 降级验证
+
+在当前分支重启 8085 后，`/api/health` 如实返回 `degraded`：Agent Runtime、AK/SK、OpenAPI、MaxCompute、节点适配器和官方 MCP 在线；Cookie BFF、CDP、table search、IDA 与 LLM 离线。真实页面旅程仍可完成“你好 → 查找数据表 → 订单 → 可恢复无结果 → 什么意思 → 找退款表 → 你好”，不会出现 `execution_unknown`，浏览器 console error 为 0。
+
+这不是“完整业务能力可用”：由于真实元数据搜索依赖离线，当前 8085 找不到候选表。验收通过证明的是页面 Agent 能如实暴露依赖健康、保持基本连续对话并从只读失败恢复；恢复 Cookie/BFF 或提供可用的搜表通道后，才具备真实候选表发现能力。
+
+### 21.3 本期未执行的真实写入
 
 本期只使用 mock 和只读证据验证，**没有创建真实 DataWorks 测试节点**，没有删除节点，没有发布生产。这符合“未经明确授权不做真实 DataWorks 写入测试”的项目约束。
