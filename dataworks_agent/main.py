@@ -376,6 +376,7 @@ def create_app() -> FastAPI:
         batch_deploy,
         cookie,
         dwd,
+        evolution,
         governance,
         import_sql,
         lineage,
@@ -406,6 +407,7 @@ def create_app() -> FastAPI:
     app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["协调处置"])
     app.include_router(artifacts.router, prefix="/api/artifacts", tags=["产物管理"])
     app.include_router(rag.router, prefix="/api", tags=["RAG 知识检索"])
+    app.include_router(evolution.router, tags=["进化模块"])
 
     if settings.enable_experimental_platform_routes:
         from dataworks_agent.routers import mcp_server, semantic
