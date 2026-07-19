@@ -135,6 +135,7 @@ npm run dev
 | `GET /agent/status` | 查看最近任务状态 |
 | `GET /agent/status/{task_id}` | 查看指定任务状态 |
 | `WS /agent/ws` | 实时对话与状态更新 |
+| `GET /api/logs/conversations` | 按会话、请求、轮次、交互和时间范围查询脱敏事件链 |
 | `GET /agent/publish-gate/requests` | 查看待审批发布请求 |
 | `POST /agent/publish-gate/{request_id}/approve` | 人工批准并发布 |
 | `POST /agent/publish-gate/{request_id}/reject` | 人工拒绝发布 |

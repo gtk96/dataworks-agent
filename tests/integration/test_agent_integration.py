@@ -62,11 +62,12 @@ def test_unknown_intent(client):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is False
-    assert data["error"] == "unsupported intent"
+    assert data["error"] == "ambiguous_context"
     assert data["data"]["agent_mode"] == "needs_context"
-    assert data["data"]["verification"]["status"] == "failed"
-    assert data["data"]["plan"]["steps"] == []
-    assert data["data"]["clarifying_questions"]
+    assert "verification" not in data["data"]
+    assert "plan" not in data["data"]
+    assert data["data"]["interaction"]["purpose"] == "clarify_request"
+    assert data["data"]["interaction"]["options"]
 
 
 def test_dataworks_goal_fallback_plan(client):

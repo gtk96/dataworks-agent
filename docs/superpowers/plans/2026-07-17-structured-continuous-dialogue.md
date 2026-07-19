@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, FastAPI, Pydantic, SQLAlchemy, LangGraph SQLite checkpointer, Vue 3, TypeScript, Vitest, pytest, DataWorks OpenAPI 2024-05-18, Cookie/DataStudio read-only fallback.
 
-**Implementation Status (2026-07-17):** Tasks 1-8 are complete on `codex/continuous-conversation`. Verification uses mocks and read-only probes only; no real DataWorks node write, directory creation, deletion, or production publication was executed.
+**Implementation Status (2026-07-20):** Tasks 1-8 are complete on `feat/strong-continuous-dialogue`; correlated, masked per-turn event logging and query support were added as a follow-up hardening step. Verification uses mocks and read-only probes only; no real DataWorks node write, directory creation, deletion, or production publication was executed.
 
 ## Global Constraints
 

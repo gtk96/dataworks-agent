@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +23,8 @@ from sqlalchemy import func
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import CheckpointModel, EventModel, RunModel
 from dataworks_agent.eventlog.masking import mask_payload
+
+_EVENT_SEQ_LOCK = threading.Lock()
 
 
 def _utc_now() -> str:
@@ -85,6 +88,7 @@ class EventLog:
         self,
         session_id: str,
         *,
+        run_id: str | None = None,
         channel: str = "",
         actor_user_id: str = "",
         actor_team: str = "",
@@ -93,7 +97,7 @@ class EventLog:
         status: str = "submitted",
     ) -> str:
         """创建一次 Run，返回 run_id。"""
-        run_id = f"run_{uuid.uuid4().hex}"
+        run_id = run_id or f"run_{uuid.uuid4().hex}"
         now = _utc_now()
         with self._session() as db:
             db.add(
@@ -154,7 +158,7 @@ class EventLog:
         """追加一条事件（payload 脱敏后写入），分配全局单调 seq。"""
         masked = mask_payload(payload if payload is not None else {})
         event_id = f"evt_{uuid.uuid4().hex}"
-        with self._session() as db:
+        with _EVENT_SEQ_LOCK, self._session() as db:
             max_seq = db.query(func.max(EventModel.seq)).scalar() or 0
             seq = max_seq + 1
             row = EventModel(

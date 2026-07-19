@@ -526,6 +526,7 @@ async def test_single_process_lock_serializes_cas_across_graph_instances(
 
     db_path = tmp_path / "conversation.db"
     first = ConversationGraph(str(db_path))
+    monkeypatch.chdir(tmp_path)
     second = ConversationGraph(os.path.relpath(db_path, start=Path.cwd()))
     first_write_entered = asyncio.Event()
     release_first_write = asyncio.Event()

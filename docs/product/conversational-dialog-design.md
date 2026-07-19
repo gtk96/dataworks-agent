@@ -232,10 +232,10 @@ class ConversationCoordinator:
     async def handle(self, request: ChatRequest) -> ChatResponse:
         state = await self.state_store.load(request.conversation_id)
 
-        if request.interaction_response:
+        if request.interaction_answer:
             transition = self.interaction_resolver.resolve(
                 state.pending_interaction,
-                request.interaction_response,
+                request.interaction_answer,
             )
         else:
             transition = await self.intent_router.resolve(request.message, state)
@@ -414,10 +414,10 @@ EXECUTE → VERIFY → RESULT / BLOCKED
   "execution_mode": "auto",
   "initialize_data": false,
   "publish": false,
-  "interaction_response": {
+  "interaction_answer": {
     "interaction_id": "int_select_order_table_01",
     "option_id": "table_01",
-    "value": "giikin_aliyun.tb_dwd_ord_order_detail_di"
+    "state_version": 3
   },
   "context_updates": {
     "params": {
@@ -431,7 +431,7 @@ EXECUTE → VERIFY → RESULT / BLOCKED
 
 - 老客户端只发送 `message` 时仍可工作。
 - 如果会话存在 `pending_interaction`，文本优先按该问题解析，而不是重新识别整个任务。
-- 如果同时发送 `interaction_response` 和文本，以结构化回答为准，文本作为备注。
+- 如果同时发送 `interaction_answer` 和文本，以结构化回答为准，文本作为兼容历史正文。
 - `interaction_id` 不匹配或已过期时，返回可恢复提示，不能静默应用到其他问题。
 
 ### 7.2 响应
@@ -697,7 +697,7 @@ conversation_interactions
 ### Phase 1：结构化交互协议
 
 1. 扩展 ConversationState。
-2. 定义 `PendingInteraction` 和 `InteractionResponse`。
+2. 定义 `PendingInteraction` 和 `InteractionAnswer`。
 3. 在 `/agent/chat` 中支持结构化回答。
 4. 实现 ConversationCoordinator 薄协调层和状态 reducer。
 5. 保持纯文本请求向后兼容。
@@ -917,9 +917,9 @@ Agent 正在等待用户选表
 
 上下文注入让 Agent 看得见，结构化交互让 Agent 问得清，状态机让 Agent 接得上，Workflow 与 Verifier 让 Agent 做得对。
 
-## 21. 实施状态（2026-07-17）
+## 21. 实施状态（2026-07-20）
 
-本期已在 `codex/continuous-conversation` 分支完成以下闭环：
+本期已在 `feat/strong-continuous-dialogue` 分支完成以下闭环：
 
 1. **结构化交互协议**：`/agent/chat` 和 `/agent/ws` 支持 `interaction_answer`，服务端用 `interaction_id + option_id + state_version` 解析选项，不信任前端回传的表名或目录路径。
 2. **可恢复会话状态**：`ConversationGraph` 持久化 `selected_resources`、`pending_interaction`、`last_result` 和 `state_version`；页面刷新或进程重启后可恢复当前待回答问题。
@@ -929,12 +929,13 @@ Agent 正在等待用户选表
 6. **节点安全落位**：测试环境仅使用已只读确认的广告报告目录 `00_ODS`、`02_DWD`、`03_DWS`、`04_DMR`；`01_DIM` 未被确认，因此必须阻断。生产环境仅保留通过 Cookie/DataStudio 在线只读证据确认的候选目录；无证据、证据过期或候选不唯一时停止。
 7. **节点写入确认**：先返回节点名、父目录、完整路径、创建/更新模式和发布边界；用户确认后再次检查目录和同路径同名节点，写入开发草稿后回读校验。`CreateNode` 固定使用 `container_id=None` 和 `scene="DATAWORKS_PROJECT"`，不调用任何目录创建接口，不自动发布。
 8. **兼容与真实性校验**：`SmartChatPage.vue` 和备用 `AgentChat.vue` 均可恢复、提交和失败重试结构化交互；测试环境目录断言使用真实路径 `业务流程/106_广告报告/MaxCompute/数据开发/...`，不再使用占位字符串。
+9. **逐轮事件链**：每轮对话生成 `request_id + turn_id`，按序记录上下文加载、分类、引用解析、工作流、交互与状态持久化事件；事件入库和独立 UTF-8 JSONL 轮转日志均执行字段脱敏，可通过 `GET /api/logs/conversations` 精确查询。
 
 ### 21.1 验证结果
 
-- 后端集成测试：`138 passed`。
+- 后端集成测试：`220 passed`。
 - Ruff：`uv run ruff check .` 通过。
-- 前端单元测试：`41 passed`。
+- 前端单元测试：`45 passed`。
 - TypeScript/Vite 生产构建：通过。
 - 目录创建审计：本期改动路径中无 Folder/create-directory/createPackage 调用；节点创建只在新鲜、精确且为真的目录证据之后发生。
 

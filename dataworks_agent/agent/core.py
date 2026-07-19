@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import threading
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from weakref import WeakValueDictionary
@@ -17,6 +18,7 @@ from dataworks_agent.agent.context_resolver import (
     DialogueAction,
     LLMDialogueFallback,
 )
+from dataworks_agent.agent.conversation_events import ConversationEventRecorder, TurnTrace
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.interaction import (
@@ -32,6 +34,10 @@ from dataworks_agent.db.models import ConversationHistoryModel
 from dataworks_agent.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_TURN_TRACE: ContextVar[TurnTrace | None] = ContextVar(
+    "active_conversation_turn_trace", default=None
+)
 
 _CONTEXT_SUMMARY_MARKERS = (
     "\u603b\u7ed3",
@@ -113,6 +119,7 @@ class ChatAgent:
         self._conversation_graph = ConversationGraph()
         self._context_resolver = ContextResolver(LLMDialogueFallback())
         self._response_policy = ResponsePolicy()
+        self._conversation_events = ConversationEventRecorder()
         self._last_task_id: str | None = None
 
     async def chat(
@@ -129,6 +136,8 @@ class ChatAgent:
         interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
     ) -> ChatResponse:
         """Serialize a full conversation turn before any workflow side effect."""
+        trace = self._start_turn_trace(conversation_id, message)
+        token = _ACTIVE_TURN_TRACE.set(trace)
         kwargs = {
             "execution_mode": execution_mode,
             "initialize_data": initialize_data,
@@ -138,10 +147,26 @@ class ChatAgent:
             "context_updates": context_updates,
             "interaction_answer": interaction_answer,
         }
-        if not conversation_id:
-            return await self._chat_locked(message, request_type, **kwargs)
-        async with _turn_lock(conversation_id):
-            return await self._chat_locked(message, request_type, **kwargs)
+        try:
+            if not conversation_id:
+                response = await self._chat_locked(message, request_type, **kwargs)
+            else:
+                async with _turn_lock(conversation_id):
+                    response = await self._chat_locked(message, request_type, **kwargs)
+            self._attach_trace_metadata(response, trace)
+            self._finish_turn_trace(trace, response)
+            return response
+        except Exception as exc:
+            self._emit_conversation_event(
+                "turn_failed",
+                failure_stage="chat_wrapper",
+                error_type=type(exc).__name__,
+                write_workflow_started=False,
+            )
+            logger.exception("ChatAgent turn wrapper failed: %s", exc)
+            raise
+        finally:
+            _ACTIVE_TURN_TRACE.reset(token)
 
     async def _chat_locked(
         self,
@@ -167,6 +192,7 @@ class ChatAgent:
         previous_context: dict[str, Any] = {}
         consumed_interaction: dict[str, Any] | None = None
         workflow_started = False
+        failure_stage = "input_validation"
         try:
             incoming_message = message.strip()
             answer = (
@@ -184,8 +210,23 @@ class ChatAgent:
                 if answer is not None
                 else None,
             )
+            failure_stage = "context_load"
             previous_context = await self._conversation_graph.context(conversation_id)
+            self._emit_conversation_event(
+                "context_loaded",
+                state_version_before=int(previous_context.get("state_version") or 0),
+                task_status=str(previous_context.get("task_status") or "idle"),
+                has_pending_interaction=bool(previous_context.get("pending_interaction")),
+            )
+            failure_stage = "turn_classification"
             resolved_turn = await self._context_resolver.resolve(incoming_message, previous_context)
+            self._emit_conversation_event(
+                "turn_classified",
+                dialogue_action=resolved_turn.dialogue_action.value,
+                confidence=resolved_turn.confidence,
+                resolver=resolved_turn.resolver,
+                resolved_reference_count=len(resolved_turn.resolved_references),
+            )
             answer = answer or resolved_turn.interaction_answer
             merged_context_updates = self._merge_context_updates(
                 dict(context_updates or {}), resolved_turn.context_updates
@@ -368,6 +409,13 @@ class ChatAgent:
                 try:
                     resolved_answer = await self._conversation_graph.answer(conversation_id, answer)
                 except InteractionExpiredError as exc:
+                    self._emit_conversation_event(
+                        "turn_failed",
+                        failure_stage="interaction_answer",
+                        error_type=type(exc).__name__,
+                        state_version=int(previous_context.get("state_version") or 0),
+                        write_workflow_started=False,
+                    )
                     current = (
                         exc.current.model_dump()
                         if exc.current is not None
@@ -420,12 +468,20 @@ class ChatAgent:
             ):
                 workflow_message = str(previous_context["objective"])
 
+            failure_stage = "reference_resolution"
             workflow_message = await self._conversation_graph.resolve(
                 workflow_message,
                 conversation_id,
                 context_updates=merged_context_updates,
             )
             current_context = await self._conversation_graph.context(conversation_id)
+            self._emit_conversation_event(
+                "reference_resolved",
+                dialogue_action=resolved_turn.dialogue_action.value,
+                interaction_id=str((pending_interaction or {}).get("interaction_id") or ""),
+                state_version=int(current_context.get("state_version") or 0),
+            )
+            failure_stage = "nlu_parse"
             intent = self._intent_parser.parse(workflow_message)
             intent.params = self._merge_conversation_params(
                 current_context.get("params") or previous_context.get("params") or {},
@@ -475,6 +531,9 @@ class ChatAgent:
             if request_type and request_type != "auto":
                 intent.action = request_type
             logger.info("NLU parsed: action=%s, confidence=%.2f", intent.action, intent.confidence)
+            self._emit_conversation_event(
+                "nlu_parsed", action=intent.action, confidence=intent.confidence
+            )
 
             workflow_actions = {
                 "agent_workflow",
@@ -493,6 +552,13 @@ class ChatAgent:
                 or intent.action in {"ods_dwd_modeling", "forward_modeling", "any_ods_modeling"}
             ):
                 workflow_started = True
+                failure_stage = "workflow_execute"
+                self._emit_conversation_event(
+                    "workflow_started",
+                    action=intent.action,
+                    execution_mode=str(execution_mode or ""),
+                    write_workflow_started=True,
+                )
                 workflow = await self._workflow_service.execute(
                     message=workflow_message,
                     action=intent.action,
@@ -501,6 +567,13 @@ class ChatAgent:
                     initialize_data=initialize_data,
                     publish=publish,
                     client_ip=client_ip,
+                )
+                self._emit_conversation_event(
+                    "workflow_finished",
+                    action=intent.action,
+                    success=workflow.success,
+                    mode=workflow.mode,
+                    error_count=len(workflow.errors),
                 )
                 data = workflow.to_data()
                 data.update(
@@ -554,6 +627,13 @@ class ChatAgent:
                     context=turn_context,
                 )
 
+            failure_stage = "task_execution"
+            self._emit_conversation_event(
+                "workflow_started",
+                action=intent.action,
+                execution_mode="legacy_task_executor",
+                write_workflow_started=False,
+            )
             plan = self._task_planner.plan(intent)
             logger.info("Task planned: task_id=%s, steps=%d", plan.task_id, len(plan.steps))
             if not plan.steps:
@@ -562,6 +642,13 @@ class ChatAgent:
                 result = self._task_executor.execute(plan)
                 self._last_task_id = result.task_id
                 response = self._build_response(intent, plan, result)
+            self._emit_conversation_event(
+                "workflow_finished",
+                action=intent.action,
+                success=response.success,
+                mode="legacy_task_executor",
+                error_count=1 if response.error else 0,
+            )
             self._normalize_response_data(
                 response,
                 action=intent.action,
@@ -579,7 +666,14 @@ class ChatAgent:
                 context=turn_context,
             )
         except Exception as exc:
-            logger.exception("ChatAgent failed: %s", exc)
+            self._emit_conversation_event(
+                "turn_failed",
+                failure_stage=failure_stage,
+                error_type=type(exc).__name__,
+                state_version=int(previous_context.get("state_version") or 0),
+                write_workflow_started=workflow_started,
+            )
+            logger.exception("ChatAgent failed at %s: %s", failure_stage, exc)
             if conversation_id and workflow_started:
                 return await self._mark_execution_unknown(conversation_id, incoming_message, exc)
             if consumed_interaction and conversation_id:
@@ -591,6 +685,64 @@ class ChatAgent:
                     exc,
                 )
             return ChatResponse(message=f"处理失败：{exc}", success=False, error=str(exc))
+
+    def _start_turn_trace(self, conversation_id: str | None, message: str) -> TurnTrace | None:
+        try:
+            return self._conversation_events.start_turn(
+                conversation_id or "anonymous", input_text=message
+            )
+        except Exception:
+            logger.exception("Failed to start conversation trace")
+            return None
+
+    def _emit_conversation_event(self, event: str, **payload: Any) -> None:
+        trace = _ACTIVE_TURN_TRACE.get()
+        if trace is None:
+            return
+        try:
+            self._conversation_events.emit(trace, event, **payload)
+        except Exception:
+            logger.exception("Failed to persist conversation event: %s", event)
+
+    def _attach_trace_metadata(self, response: ChatResponse, trace: TurnTrace | None) -> None:
+        if trace is None:
+            return
+        conversation = response.data.get("conversation")
+        if not isinstance(conversation, dict):
+            conversation = {"conversation_id": trace.conversation_id}
+            response.data["conversation"] = conversation
+        conversation["request_id"] = trace.request_id
+        conversation["turn_id"] = trace.turn_id
+
+    def _finish_turn_trace(self, trace: TurnTrace | None, response: ChatResponse) -> None:
+        if trace is None:
+            return
+        try:
+            interaction = response.data.get("interaction") or {}
+            safe_error_codes = {
+                "ambiguous_context",
+                "empty message",
+                "execution_unknown",
+                "interaction_expired",
+            }
+            error_type = (
+                response.error
+                if response.error in safe_error_codes
+                else "response_error"
+                if response.error
+                else ""
+            )
+            self._conversation_events.finish(
+                trace,
+                success=response.success,
+                error_type=error_type,
+                state_version=int(
+                    (response.data.get("conversation") or {}).get("state_version") or 0
+                ),
+                interaction_id=str(interaction.get("interaction_id") or ""),
+            )
+        except Exception:
+            logger.exception("Failed to finish conversation trace")
 
     @staticmethod
     def _is_conversation_reset(message: str) -> bool:
@@ -847,6 +999,11 @@ class ChatAgent:
                 task_status="execution_unknown",
                 expected_version=int(current.get("state_version") or 0),
             )
+            self._emit_conversation_event(
+                "state_persisted",
+                state_version=int(remembered.get("state_version") or 0),
+                task_status="execution_unknown",
+            )
             response = ChatResponse(
                 message=(
                     "执行请求已经启动，但返回结果无法确认。为避免重复写入，请不要重复提交；"
@@ -862,6 +1019,7 @@ class ChatAgent:
                 },
                 error=str(error),
             )
+            self._attach_trace_metadata(response, _ACTIVE_TURN_TRACE.get())
             self._save_conversation_message(
                 conversation_id,
                 "assistant",
@@ -907,18 +1065,32 @@ class ChatAgent:
                 task_status="waiting_user",
                 expected_version=int(current.get("state_version") or 0),
             )
+            recovered_interaction = dict(restored.get("pending_interaction") or {})
+            self._emit_conversation_event(
+                "interaction_emitted",
+                interaction_id=str(recovered_interaction.get("interaction_id") or ""),
+                purpose=str(recovered_interaction.get("purpose") or ""),
+                interaction_type=str(recovered_interaction.get("type") or ""),
+                recovered=True,
+            )
+            self._emit_conversation_event(
+                "state_persisted",
+                state_version=int(restored.get("state_version") or 0),
+                task_status="waiting_user",
+            )
             response = ChatResponse(
                 message=f"执行当前选择时失败：{error}。候选卡片已恢复，你可以重试或补充说明。",
                 success=False,
                 data={
                     "agent_mode": "retryable_error",
-                    "interaction": dict(restored.get("pending_interaction") or {}),
+                    "interaction": recovered_interaction,
                     "conversation": self._response_policy.conversation_meta(
                         conversation_id, restored
                     ),
                 },
                 error=str(error),
             )
+            self._attach_trace_metadata(response, _ACTIVE_TURN_TRACE.get())
             self._save_conversation_message(
                 conversation_id,
                 "assistant",
@@ -1001,6 +1173,13 @@ class ChatAgent:
             if interaction
             else "active"
         )
+        if interaction is not None:
+            self._emit_conversation_event(
+                "interaction_emitted",
+                interaction_id=str(interaction.get("interaction_id") or ""),
+                purpose=str(interaction.get("purpose") or ""),
+                interaction_type=str(interaction.get("type") or ""),
+            )
         remembered = await self._conversation_graph.remember(
             conversation_id,
             objective,
@@ -1022,6 +1201,11 @@ class ChatAgent:
         )
         if not isinstance(remembered, dict):
             remembered = await self._conversation_graph.context(conversation_id)
+        self._emit_conversation_event(
+            "state_persisted",
+            state_version=int(remembered.get("state_version") or 0),
+            task_status=str(remembered.get("task_status") or ""),
+        )
         if interaction is not None:
             response.data["interaction"] = dict(
                 remembered.get("pending_interaction") or interaction
@@ -1029,6 +1213,7 @@ class ChatAgent:
         response.data["conversation"] = self._response_policy.conversation_meta(
             conversation_id, remembered
         )
+        self._attach_trace_metadata(response, _ACTIVE_TURN_TRACE.get())
         self._save_conversation_message(
             conversation_id,
             "assistant",
