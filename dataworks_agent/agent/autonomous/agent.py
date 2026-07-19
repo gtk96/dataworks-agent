@@ -35,12 +35,14 @@ class AutonomousAgent:
         context: AutonomousContext,
         openapi_client: Any,
         modeling_engine: Any,
+        rag_context_provider: Any | None = None,
     ) -> None:
         self._context = context
         self._planner = AutonomousPlanner(context)
         self._security_guard = _build_security_guard(context)
         self._executor = AutonomousExecutor(openapi_client, modeling_engine)
         self._verifier = AutonomousVerifier(openapi_client)
+        self._rag_context_provider = rag_context_provider
 
     async def process_request(self, intent: str, params: dict[str, Any]) -> AutonomousTask:
         """处理用户请求，完整走规划→执行→验证流程。
@@ -58,11 +60,24 @@ class AutonomousAgent:
         """
         logger.info("AutonomousAgent 收到请求: intent=%s, params=%s", intent, params)
 
-        # Step 1: 规划
+        # Step 1: RAG 增强规划上下文（可选）
+        rag_context = ""
+        if self._rag_context_provider is not None:
+            try:
+                rag_context = await self._rag_context_provider.enrich_planning_context(
+                    intent, params
+                )
+            except Exception as exc:
+                logger.warning("RAG planning context failed: %s", exc)
+        self._planner.attach_rag_context(rag_context)
+
+        # Step 2: 规划
         task = self._planner.generate_plan(intent, params)
+        if rag_context:
+            task.description = f"{task.description} [RAG参考: {len(rag_context)} chars]"
         logger.info("任务已规划: %s, 步骤数=%d", task.id, len(task.plan))
 
-        # Step 2: 安全预检
+        # Step 3: 安全预检
         try:
             await self._security_guard.validate_request(task.task_type, task.params)
         except SecurityViolationError as exc:
@@ -70,13 +85,13 @@ class AutonomousAgent:
             logger.warning("安全守卫拦截任务 %s: %s", task.id, exc)
             return task
 
-        # Step 3: 执行
+        # Step 4: 执行
         executed = await self._executor.execute_task(task)
         if not executed:
             logger.error("任务 %s 执行失败: %s", task.id, task.error_message)
             return task
 
-        # Step 4: 验证
+        # Step 5: 验证
         try:
             verification = await self._verifier.verify_task(task)
             logger.info(

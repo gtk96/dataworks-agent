@@ -21,8 +21,13 @@ class AutonomousPlanner:
     verifier 按相同维度回查。
     """
 
-    def __init__(self, context: AutonomousContext) -> None:
+    def __init__(self, context: AutonomousContext, rag_context: str | None = None) -> None:
         self._context = context
+        self._rag_context = rag_context or ""
+
+    @property
+    def rag_context(self) -> str:
+        return self._rag_context
 
     def plan_create_ods(self, params: dict[str, Any]) -> AutonomousTask:
         """规划 ODS 层创建任务。
@@ -146,7 +151,7 @@ class AutonomousPlanner:
         """根据意图字符串 + 参数生成对应任务计划。
 
         支持模糊匹配，例如 "帮我建 ODS 表"、"创建 dwd_xxx"、"修改节点"、
-        "配置调度"、"设置依赖"。
+        "配置调度"、"设置依赖"。RAG 上下文会作为规划参考附加到任务描述中。
         """
         lower = intent.lower()
 
@@ -171,3 +176,9 @@ class AutonomousPlanner:
         raise ValueError(
             f"无法识别意图 '{intent}'，请明确指定 ODS/DWD 创建、修改、调度或依赖配置。"
         )
+
+    def attach_rag_context(self, context: str) -> None:
+        """将 RAG 检索到的规范上下文注入规划器。"""
+        self._rag_context = context or ""
+        if context:
+            logger.info("RAG context attached to planner (%d chars)", len(context))

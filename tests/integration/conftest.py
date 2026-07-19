@@ -185,6 +185,7 @@ def build_test_app():
         modeling,
         monitor,
         pipeline,
+        rag,
         reconciliation,
         roots,
         schedule_config,
@@ -215,6 +216,7 @@ def build_test_app():
     app.include_router(lineage.router, prefix="/api/lineage", tags=["血缘"])
     app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["协调处置"])
     app.include_router(artifacts.router, prefix="/api/artifacts", tags=["产物管理"])
+    app.include_router(rag.router, prefix="/api", tags=["RAG 知识检索"])
     app.include_router(monitor.router, prefix="/api/monitor", tags=["监控"])
     app.include_router(import_sql.router, prefix="/api/import", tags=["批量导入"])
     app.include_router(schedule_config.router, prefix="/api/schedule", tags=["调度配置"])
