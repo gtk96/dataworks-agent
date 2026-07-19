@@ -123,7 +123,10 @@ class TableDiscoveryTool:
                     description=f"{full_name} · {layer.upper()}",
                     layer=layer,
                     payload={
-                        "params": {"table_name": full_name},
+                        "params": {
+                            "table_name": full_name,
+                            "tool_name": self.name,
+                        },
                         "selected_resources": {"table": full_name},
                     },
                 )

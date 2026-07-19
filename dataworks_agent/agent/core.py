@@ -7,7 +7,6 @@ import json
 import logging
 import threading
 from contextvars import ContextVar
-from dataclasses import dataclass, field
 from typing import Any
 from weakref import WeakValueDictionary
 
@@ -20,6 +19,7 @@ from dataworks_agent.agent.context_resolver import (
 )
 from dataworks_agent.agent.conversation_events import ConversationEventRecorder, TurnTrace
 from dataworks_agent.agent.conversation_graph import ConversationGraph
+from dataworks_agent.agent.decision_provider import DecisionProvider
 from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskExecutor
 from dataworks_agent.agent.interaction import (
     InteractionAnswer,
@@ -28,6 +28,11 @@ from dataworks_agent.agent.interaction import (
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 from dataworks_agent.agent.response_policy import ResponsePolicy
+from dataworks_agent.agent.run_coordinator import AgentRunCoordinator
+from dataworks_agent.agent.run_models import AgentRunRequest
+from dataworks_agent.agent.run_models import AgentRunResponse as ChatResponse
+from dataworks_agent.agent.tools.registry import ToolRegistry
+from dataworks_agent.agent.tools.table_discovery import TableDiscoveryTool
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ConversationHistoryModel
@@ -97,16 +102,6 @@ def _turn_lock(conversation_id: str) -> asyncio.Lock:
         return lock
 
 
-@dataclass
-class ChatResponse:
-    """Chat response."""
-
-    message: str
-    success: bool = True
-    data: dict[str, Any] = field(default_factory=dict)
-    error: str | None = None
-
-
 class ChatAgent:
     """Chat-oriented DataWorks Agent."""
 
@@ -120,6 +115,10 @@ class ChatAgent:
         self._context_resolver = ContextResolver(LLMDialogueFallback())
         self._response_policy = ResponsePolicy()
         self._conversation_events = ConversationEventRecorder()
+        self._run_coordinator = AgentRunCoordinator(
+            conversation_graph=self._conversation_graph,
+            tools=ToolRegistry([TableDiscoveryTool()]),
+        )
         self._last_task_id: str | None = None
 
     async def chat(
@@ -188,6 +187,36 @@ class ChatAgent:
                 success=False,
                 error="empty message",
             )
+
+        bounded_context = await self._conversation_graph.context(conversation_id)
+        if self._use_bounded_runtime(message, interaction_answer, bounded_context):
+            self._save_conversation_message(
+                conversation_id,
+                "user",
+                message.strip(),
+                payload={"interaction_answer": interaction_answer.model_dump(exclude_none=True)}
+                if isinstance(interaction_answer, InteractionAnswer)
+                else {"interaction_answer": interaction_answer}
+                if interaction_answer is not None
+                else None,
+            )
+            self._run_coordinator.conversation_graph = self._conversation_graph
+            response = await self._run_coordinator.run(
+                AgentRunRequest(
+                    conversation_id=str(conversation_id or ""),
+                    message=message.strip(),
+                    interaction_answer=interaction_answer,
+                    request_type=request_type,
+                    context_updates=dict(context_updates or {}),
+                )
+            )
+            self._save_conversation_message(
+                conversation_id,
+                "assistant",
+                response.message,
+                payload=response.data,
+            )
+            return response
 
         previous_context: dict[str, Any] = {}
         consumed_interaction: dict[str, Any] | None = None
@@ -685,6 +714,46 @@ class ChatAgent:
                     exc,
                 )
             return ChatResponse(message=f"处理失败：{exc}", success=False, error=str(exc))
+
+    @staticmethod
+    def _use_bounded_runtime(
+        message: str,
+        interaction_answer: InteractionAnswer | dict[str, Any] | None,
+        context: dict[str, Any],
+    ) -> bool:
+        if context.get("task_status") == "execution_unknown":
+            return False
+        pending = dict(context.get("pending_interaction") or {})
+        purpose = str(pending.get("purpose") or "")
+        if interaction_answer is not None:
+            raw = (
+                interaction_answer
+                if isinstance(interaction_answer, InteractionAnswer)
+                else InteractionAnswer.model_validate(interaction_answer)
+            )
+            if purpose == "choose_entry":
+                return raw.option_id == "find_table"
+            if purpose in {"refine_table_search", "select_layer", "select_table"}:
+                if context.get("action") == "find_table":
+                    return True
+                option = next(
+                    (
+                        item
+                        for item in pending.get("options") or []
+                        if isinstance(item, dict) and item.get("id") == raw.option_id
+                    ),
+                    {},
+                )
+                params = dict((option.get("payload") or {}).get("params") or {})
+                return params.get("tool_name") == "find_table"
+            return False
+        if (
+            context.get("action") == "find_table"
+            and purpose in {"refine_table_search", "select_layer", "select_table"}
+            and message.strip() in {"什么意思", "解释一下", "请解释一下", "没看懂"}
+        ):
+            return True
+        return DecisionProvider.handles_message(message)
 
     def _start_turn_trace(self, conversation_id: str | None, message: str) -> TurnTrace | None:
         try:
