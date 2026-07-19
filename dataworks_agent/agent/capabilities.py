@@ -43,19 +43,33 @@ class CapabilityRegistry:
         self._timeout_seconds = timeout_seconds
         self._cached_at = 0.0
         self._cached: dict[str, CapabilityState] = {}
+        self._cached_fingerprint: tuple[Any, ...] = ()
         self._lock = asyncio.Lock()
 
     async def snapshot(self, *, force: bool = False) -> dict[str, CapabilityState]:
         now = time.monotonic()
-        if not force and self._cached and now - self._cached_at < self._ttl_seconds:
+        fingerprint = self._fingerprint()
+        if (
+            not force
+            and self._cached
+            and fingerprint == self._cached_fingerprint
+            and now - self._cached_at < self._ttl_seconds
+        ):
             return dict(self._cached)
         async with self._lock:
             now = time.monotonic()
-            if not force and self._cached and now - self._cached_at < self._ttl_seconds:
+            fingerprint = self._fingerprint()
+            if (
+                not force
+                and self._cached
+                and fingerprint == self._cached_fingerprint
+                and now - self._cached_at < self._ttl_seconds
+            ):
                 return dict(self._cached)
             snapshot = await self._probe_all()
             self._cached = snapshot
             self._cached_at = now
+            self._cached_fingerprint = fingerprint
             return dict(snapshot)
 
     async def snapshot_dict(self, *, force: bool = False) -> dict[str, dict[str, Any]]:
@@ -200,6 +214,20 @@ class CapabilityRegistry:
     @staticmethod
     def _safe_error(exc: Exception) -> str:
         return str(mask_payload(str(exc))).replace("\n", " ")[:200] or type(exc).__name__
+
+    def _fingerprint(self) -> tuple[Any, ...]:
+        official = getattr(self._state, "_official_mcp_client", None)
+        return (
+            id(getattr(self._state, "_bff_client", None)),
+            id(getattr(self._state, "_cdp_client", None)),
+            id(getattr(self._state, "_openapi_client", None)),
+            id(getattr(self._state, "_maxcompute_client", None)),
+            id(getattr(self._state, "_node_client", None)),
+            id(official),
+            bool(getattr(getattr(official, "status", None), "connected", False)),
+            bool(getattr(self._settings, "llm_api_key", "")),
+            str(getattr(self._settings, "llm_model", "")),
+        )
 
 
 capability_registry = CapabilityRegistry()

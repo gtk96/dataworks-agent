@@ -3,6 +3,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Assert-NativeSuccess([string]$Name) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name failed with exit code $LASTEXITCODE"
+    }
+}
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $commit = (git -C $root rev-parse --short HEAD).Trim()
@@ -29,9 +36,13 @@ $commit | Set-Content -Encoding utf8 (Join-Path $runDir "commit.txt")
 try {
     Push-Location $root
     uv run ruff check .
+    Assert-NativeSuccess "ruff"
     uv run python -m pytest tests/integration/ -q --tb=short --junitxml (Join-Path $runDir "test-results.xml")
+    Assert-NativeSuccess "integration pytest"
     uv run python -m compileall -q dataworks_agent
+    Assert-NativeSuccess "compileall"
     uv run python -m dataworks_agent.scripts.verify_agent_runtime --output (Join-Path $runDir "backend")
+    Assert-NativeSuccess "backend runtime verifier"
     Pop-Location
 
     Copy-Item (Join-Path $runDir "backend/conversation-transcript.json") (Join-Path $runDir "conversation-transcript.json")
@@ -45,8 +56,11 @@ try {
 
     Push-Location (Join-Path $root "frontend")
     npm run test:unit
+    Assert-NativeSuccess "frontend unit tests"
     npm run build
+    Assert-NativeSuccess "frontend build"
     npm run test:e2e
+    Assert-NativeSuccess "browser E2E"
     Pop-Location
 
     $console = @()

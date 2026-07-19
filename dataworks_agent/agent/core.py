@@ -194,6 +194,20 @@ class ChatAgent:
 
         bounded_context = await self._conversation_graph.context(conversation_id)
         if self._use_bounded_runtime(message, interaction_answer, bounded_context):
+            self._emit_conversation_event(
+                "context_loaded",
+                state_version_before=int(bounded_context.get("state_version") or 0),
+                task_status=str(bounded_context.get("task_status") or "idle"),
+                has_pending_interaction=bool(bounded_context.get("pending_interaction")),
+            )
+            resolved_turn = await self._context_resolver.resolve(message.strip(), bounded_context)
+            self._emit_conversation_event(
+                "turn_classified",
+                dialogue_action=resolved_turn.dialogue_action.value,
+                confidence=resolved_turn.confidence,
+                resolver=resolved_turn.resolver,
+                resolved_reference_count=len(resolved_turn.resolved_references),
+            )
             self._save_conversation_message(
                 conversation_id,
                 "user",
@@ -214,6 +228,20 @@ class ChatAgent:
                     context_updates=dict(context_updates or {}),
                 ),
                 emit=run_event_sink,
+            )
+            interaction = response.data.get("interaction") or {}
+            if interaction:
+                self._emit_conversation_event(
+                    "interaction_emitted",
+                    interaction_id=str(interaction.get("interaction_id") or ""),
+                    purpose=str(interaction.get("purpose") or ""),
+                    interaction_type=str(interaction.get("type") or ""),
+                )
+            conversation = response.data.get("conversation") or {}
+            self._emit_conversation_event(
+                "state_persisted",
+                state_version=int(conversation.get("state_version") or 0),
+                task_status=str(conversation.get("status") or ""),
             )
             self._save_conversation_message(
                 conversation_id,
