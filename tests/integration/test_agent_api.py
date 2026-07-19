@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from dataworks_agent.agent.core import ChatAgent, ChatResponse
+from dataworks_agent.agent.run_models import RunEvent
 from dataworks_agent.routers.agent import router
 
 
@@ -286,3 +287,62 @@ def test_websocket_preserves_same_complete_agent_payload(client):
         "error": None,
     }
     mock_agent.get_conversation_context.assert_not_awaited()
+
+
+def test_run_stream_emits_real_ordered_events_and_one_final_response(client):
+    test_client, mock_agent = client
+
+    async def run_with_events(_message, **kwargs):
+        sink = kwargs["run_event_sink"]
+        await sink(RunEvent("run.started", "run-1", 1, {"conversation_id": "conv-1"}))
+        await sink(RunEvent("tool.started", "run-1", 2, {"tool": "find_table"}))
+        await sink(
+            RunEvent(
+                "tool.completed",
+                "run-1",
+                3,
+                {"tool": "find_table", "success": True},
+            )
+        )
+        await sink(RunEvent("state.persisted", "run-1", 4, {"state_version": 2}))
+        response = ChatResponse(
+            message="请选择订单表",
+            success=True,
+            data={"agent_mode": "tool_result"},
+        )
+        await sink(
+            RunEvent(
+                "response.completed",
+                "run-1",
+                5,
+                {
+                    "response": {
+                        "message": response.message,
+                        "success": response.success,
+                        "data": response.data,
+                        "error": response.error,
+                    }
+                },
+            )
+        )
+        return response
+
+    mock_agent.chat.side_effect = run_with_events
+
+    response = test_client.post(
+        "/agent/runs/stream",
+        json={"message": "找订单表", "conversation_id": "conv-1"},
+    )
+    events = [line for line in response.text.splitlines() if line.strip()]
+    payloads = [__import__("json").loads(line) for line in events]
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert [item["type"] for item in payloads] == [
+        "run.started",
+        "tool.started",
+        "tool.completed",
+        "state.persisted",
+        "response.completed",
+    ]
+    assert sum(item["type"] == "response.completed" for item in payloads) == 1

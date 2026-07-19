@@ -27,6 +27,24 @@ const latestInteraction: AgentInteraction = {
   state_version: 3,
 }
 
+function ndjsonResponse(events: Record<string, unknown>[]): Response {
+  const bytes = new TextEncoder().encode(`${events.map(event => JSON.stringify(event)).join('\n')}\n`)
+  let consumed = false
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (consumed) return { done: true, value: undefined }
+          consumed = true
+          return { done: false, value: bytes }
+        },
+      }),
+    },
+  } as unknown as Response
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -105,26 +123,30 @@ describe('conversation interaction lifecycle', () => {
       if (url === '/agent/capabilities') {
         return { ok: true, json: async () => ({ capabilities: {} }) } as Response
       }
-      if (url === '/agent/chat') {
-        return {
-          ok: true,
-          json: async () => ({
-            success: false,
-            message: 'The previous option expired. Continue with the latest card.',
-            error: 'interaction_expired',
-            data: {
-              interaction: replacement,
-              conversation: {
-                conversation_id: 'conv-smart-chat',
-                active_goal: '',
-                action: '',
-                status: 'idle',
-                state_version: 4,
-                selected_resources: {},
+      if (url === '/agent/runs/stream') {
+        return ndjsonResponse([{
+          type: 'response.completed',
+          run_id: 'run-test',
+          sequence: 1,
+          data: {
+            response: {
+              success: false,
+              message: 'The previous option expired. Continue with the latest card.',
+              error: 'interaction_expired',
+              data: {
+                interaction: replacement,
+                conversation: {
+                  conversation_id: 'conv-smart-chat',
+                  active_goal: '',
+                  action: '',
+                  status: 'idle',
+                  state_version: 4,
+                  selected_resources: {},
+                },
               },
             },
-          }),
-        } as Response
+          },
+        }])
       }
       throw new Error(`unexpected request: ${url}`)
     })

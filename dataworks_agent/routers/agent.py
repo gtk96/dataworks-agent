@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from contextlib import suppress
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from dataworks_agent.agent.core import ChatAgent
 from dataworks_agent.agent.interaction import InteractionAnswer
+from dataworks_agent.agent.run_models import RunEvent
 from dataworks_agent.runtime.publish_gate import PublishGate, PublishRequest
 from dataworks_agent.state import app_state
 
@@ -132,11 +138,12 @@ async def _response_data_with_conversation(
     return data
 
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
-    """Handle conversational planning and development execution."""
-    logger.info("Received chat request: %s", payload.message[:50])
-    client_ip = request.client.host if request.client else "127.0.0.1"
+async def _execute_chat(
+    payload: ChatRequest,
+    *,
+    client_ip: str,
+    run_event_sink: Any | None = None,
+) -> Any:
     workflow_options_explicit = bool(
         {"execution_mode", "initialize_data", "publish"} & payload.model_fields_set
     )
@@ -147,23 +154,34 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         }
         if payload.interaction_answer is not None:
             kwargs["interaction_answer"] = payload.interaction_answer
+        if run_event_sink is not None:
+            kwargs["run_event_sink"] = run_event_sink
         if payload.request_type is None:
-            response = await _agent.chat(payload.message, **kwargs)
-        else:
-            response = await _agent.chat(payload.message, payload.request_type, **kwargs)
-    else:
-        kwargs: dict[str, Any] = {
-            "execution_mode": payload.execution_mode,
-            "initialize_data": payload.initialize_data,
-            "publish": payload.publish,
-            "client_ip": client_ip,
-            "conversation_id": payload.conversation_id,
-        }
-        if payload.context_updates is not None:
-            kwargs["context_updates"] = payload.context_updates
-        if payload.interaction_answer is not None:
-            kwargs["interaction_answer"] = payload.interaction_answer
-        response = await _agent.chat(payload.message, payload.request_type, **kwargs)
+            return await _agent.chat(payload.message, **kwargs)
+        return await _agent.chat(payload.message, payload.request_type, **kwargs)
+
+    kwargs = {
+        "execution_mode": payload.execution_mode,
+        "initialize_data": payload.initialize_data,
+        "publish": payload.publish,
+        "client_ip": client_ip,
+        "conversation_id": payload.conversation_id,
+    }
+    if payload.context_updates is not None:
+        kwargs["context_updates"] = payload.context_updates
+    if payload.interaction_answer is not None:
+        kwargs["interaction_answer"] = payload.interaction_answer
+    if run_event_sink is not None:
+        kwargs["run_event_sink"] = run_event_sink
+    return await _agent.chat(payload.message, payload.request_type, **kwargs)
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    """Handle conversational planning and development execution."""
+    logger.info("Received chat request: %s", payload.message[:50])
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    response = await _execute_chat(payload, client_ip=client_ip)
     logger.info("Chat response: success=%s", response.success)
     response_data = await _response_data_with_conversation(response, payload.conversation_id)
     return ChatResponse(
@@ -171,6 +189,103 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         success=response.success,
         data=response_data,
         error=response.error,
+    )
+
+
+@router.post("/runs/stream")
+async def run_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
+    """Stream one authoritative Agent run as newline-delimited JSON."""
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    async def event_generator():
+        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
+        seen: set[str] = set()
+        fallback_run_id = f"run_{uuid4().hex}"
+        fallback_sequence = 0
+
+        async def emit(event: RunEvent) -> None:
+            seen.add(event.type)
+            await queue.put(event)
+
+        async def produce() -> None:
+            nonlocal fallback_sequence
+            try:
+                response = await _execute_chat(
+                    payload,
+                    client_ip=client_ip,
+                    run_event_sink=emit,
+                )
+                if "run.started" not in seen:
+                    fallback_sequence += 1
+                    await emit(
+                        RunEvent(
+                            "run.started",
+                            fallback_run_id,
+                            fallback_sequence,
+                            {"conversation_id": payload.conversation_id or ""},
+                        )
+                    )
+                if "response.completed" not in seen:
+                    fallback_sequence += 1
+                    await emit(
+                        RunEvent(
+                            "response.completed",
+                            fallback_run_id,
+                            fallback_sequence,
+                            {
+                                "response": {
+                                    "message": response.message,
+                                    "success": response.success,
+                                    "data": await _response_data_with_conversation(
+                                        response, payload.conversation_id
+                                    ),
+                                    "error": response.error,
+                                }
+                            },
+                        )
+                    )
+            except Exception as exc:
+                logger.exception("Agent run stream failed")
+                fallback_sequence += 1
+                await emit(
+                    RunEvent(
+                        "response.completed",
+                        fallback_run_id,
+                        fallback_sequence,
+                        {
+                            "response": {
+                                "message": f"Agent 执行失败：{exc}",
+                                "success": False,
+                                "data": {"agent_mode": "recoverable_error"},
+                                "error": "run_failed",
+                            }
+                        },
+                    )
+                )
+            finally:
+                await queue.put(None)
+
+        producer = asyncio.create_task(produce())
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield json.dumps(event.to_dict(), ensure_ascii=False) + "\n"
+                if await request.is_disconnected():
+                    producer.cancel()
+                    break
+        finally:
+            if not producer.done():
+                producer.cancel()
+            with suppress(asyncio.CancelledError):
+                await producer
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

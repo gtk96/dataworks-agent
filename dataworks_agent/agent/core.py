@@ -28,7 +28,7 @@ from dataworks_agent.agent.interaction import (
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 from dataworks_agent.agent.response_policy import ResponsePolicy
-from dataworks_agent.agent.run_coordinator import AgentRunCoordinator
+from dataworks_agent.agent.run_coordinator import AgentRunCoordinator, EventSink
 from dataworks_agent.agent.run_models import AgentRunRequest
 from dataworks_agent.agent.run_models import AgentRunResponse as ChatResponse
 from dataworks_agent.agent.tools.registry import ToolRegistry
@@ -133,6 +133,7 @@ class ChatAgent:
         conversation_id: str | None = None,
         context_updates: dict[str, Any] | None = None,
         interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
+        run_event_sink: EventSink | None = None,
     ) -> ChatResponse:
         """Serialize a full conversation turn before any workflow side effect."""
         trace = self._start_turn_trace(conversation_id, message)
@@ -145,6 +146,7 @@ class ChatAgent:
             "conversation_id": conversation_id,
             "context_updates": context_updates,
             "interaction_answer": interaction_answer,
+            "run_event_sink": run_event_sink,
         }
         try:
             if not conversation_id:
@@ -179,6 +181,7 @@ class ChatAgent:
         conversation_id: str | None = None,
         context_updates: dict[str, Any] | None = None,
         interaction_answer: InteractionAnswer | dict[str, Any] | None = None,
+        run_event_sink: EventSink | None = None,
     ) -> ChatResponse:
         """Process one context-aware user turn."""
         if not message or not message.strip():
@@ -208,7 +211,8 @@ class ChatAgent:
                     interaction_answer=interaction_answer,
                     request_type=request_type,
                     context_updates=dict(context_updates or {}),
-                )
+                ),
+                emit=run_event_sink,
             )
             self._save_conversation_message(
                 conversation_id,

@@ -8,16 +8,17 @@ import logging
 import uuid
 from collections import deque
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from dataworks_agent.agent.core import ChatAgent
+from dataworks_agent.agent.run_models import RunEvent
+from dataworks_agent.routers.agent import _agent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent"])
-_agent = ChatAgent()
 
 
 class StreamBuffer:
@@ -136,6 +137,67 @@ async def chat_stream(request: Request) -> StreamingResponse:
     _stream_buffers[stream_id] = buffer
 
     async def event_generator() -> AsyncGenerator[str, None]:
+        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
+        seen: set[str] = set()
+
+        async def emit(event: RunEvent) -> None:
+            seen.add(event.type)
+            await queue.put(event)
+
+        async def produce() -> None:
+            try:
+                response = await _agent.chat(
+                    q,
+                    execution_mode=execution_mode,
+                    conversation_id=conversation_id,
+                    run_event_sink=emit,
+                )
+                if "run.started" not in seen:
+                    await emit(
+                        RunEvent(
+                            "run.started",
+                            stream_id,
+                            1,
+                            {"conversation_id": conversation_id},
+                        )
+                    )
+                if "response.completed" not in seen:
+                    await emit(
+                        RunEvent(
+                            "response.completed",
+                            stream_id,
+                            2,
+                            {
+                                "response": {
+                                    "message": response.message,
+                                    "success": response.success,
+                                    "data": _sanitize_response_data(response.data),
+                                    "error": response.error,
+                                }
+                            },
+                        )
+                    )
+            except Exception as exc:
+                logger.exception("Agent chat failed")
+                await emit(
+                    RunEvent(
+                        "response.completed",
+                        stream_id,
+                        1,
+                        {
+                            "response": {
+                                "message": f"Agent 执行失败: {exc}",
+                                "success": False,
+                                "data": {"agent_mode": "recoverable_error"},
+                                "error": "run_failed",
+                            }
+                        },
+                    )
+                )
+            finally:
+                await queue.put(None)
+
+        producer: asyncio.Task | None = None
         try:
             yield _format_sse(
                 _safe_json_dumps(
@@ -147,55 +209,24 @@ async def chat_stream(request: Request) -> StreamingResponse:
                 ),
                 event="connect",
             )
-
-            yield _format_sse(
-                _safe_json_dumps(
-                    {"type": "thinking", "message": "正在分析您的需求并制定执行路径..."}
-                ),
-                event="status",
-            )
-
-            try:
-                response = await _agent.chat(
-                    q,
-                    execution_mode=execution_mode,
-                    conversation_id=conversation_id,
-                )
-            except Exception as e:
-                logger.exception("Agent chat failed")
+            producer = asyncio.create_task(produce())
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
                 yield _format_sse(
-                    _safe_json_dumps({"type": "error", "message": f"Agent 执行失败: {e}"}),
-                    event="error",
+                    _safe_json_dumps(event.to_dict()),
+                    event=event.type,
                 )
-                return
-
-            try:
-                payload = {
-                    "type": "response",
-                    "message": response.message,
-                    "success": response.success,
-                    "data": _sanitize_response_data(response.data),
-                    "error": response.error,
-                    "conversation_id": conversation_id,
-                }
-                body = _safe_json_dumps(payload)
-            except Exception as e:
-                logger.exception("Failed to build SSE response payload")
-                yield _format_sse(
-                    _safe_json_dumps({"type": "error", "message": f"结果封装失败: {e}"}),
-                    event="error",
-                )
-                return
-
-            # If sanitizer fell back to an error envelope, surface it as error event.
-            try:
-                parsed = json.loads(body)
-                event_name = "error" if parsed.get("type") == "error" else "response"
-            except Exception:
-                event_name = "response"
-            yield _format_sse(body, event=event_name)
-
+                if await request.is_disconnected():
+                    producer.cancel()
+                    break
         finally:
+            if producer is not None and not producer.done():
+                producer.cancel()
+            if producer is not None:
+                with suppress(asyncio.CancelledError):
+                    await producer
             buffer.close()
             _stream_buffers.pop(stream_id, None)
 

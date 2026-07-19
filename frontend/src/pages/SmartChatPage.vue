@@ -206,20 +206,19 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue'
+import { nextTick, onMounted, ref, computed } from 'vue'
 import MessageBubble from '@/components/agent/MessageBubble.vue'
 import Composer from '@/components/agent/Composer.vue'
 import WelcomePanel from '@/components/agent/WelcomePanel.vue'
-import { createSSEStream, type SSEEvent } from '@/utils/sse-client'
 import { idempotencyKey } from '@/utils/request'
 import {
   buildAgentChatRequest,
   reconcileActiveInteraction,
-  requestAgentChat,
   type AgentInteraction,
   type ConversationMeta,
   type InteractionAnswer,
 } from '@/components/agent/chatInteraction'
+import { streamAgentRun, type RunEvent } from '@/components/agent/runStream'
 
 interface ChatMessage {
   id: string
@@ -347,59 +346,61 @@ async function handleSend(text: string) {
   })
 
   isStreaming.value = true
+  await runAgentTurn(text, assistantMsgId)
+}
 
-  const controller = createSSEStream(text, {
-    conversationId: conversationId.value,
-    executionMode: 'auto',
-    onEvent: (event: SSEEvent) => {
-      if (event.type === 'connected') {
-        isConnected.value = true
-        conversationId.value = event.conversation_id
-        localStorage.setItem('conversation_id', conversationId.value)
-      } else if (event.type === 'thinking') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx].content = event.message
-        }
-      } else if (event.type === 'response') {
-        applyAgentResponse({
-          message: event.message,
-          success: event.success,
-          data: event.data,
-          error: event.error,
-        }, assistantMsgId)
-        isStreaming.value = false
-        nextTick(scrollToBottom)
-      } else if (event.type === 'error') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx] = {
-            id: assistantMsgId,
-            role: 'assistant',
-            content: `❌ ${event.message}`,
-            streaming: false,
-          }
-        }
-        isStreaming.value = false
-        nextTick(scrollToBottom)
-      }
-    },
-    onError: (err: Error) => {
-      const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-      if (idx >= 0) {
-        messages.value[idx] = {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: `❌ 连接失败: ${err.message}`,
-          streaming: false,
-        }
-      }
-      isStreaming.value = false
-      nextTick(scrollToBottom)
-    },
-  })
+function applyRunEvent(event: RunEvent, assistantMsgId: string) {
+  if (event.type === 'run.started') isConnected.value = true
+  const index = messages.value.findIndex(message => message.id === assistantMsgId)
+  if (index < 0) return
+  if (event.type === 'decision.started') {
+    messages.value[index].content = '正在理解本轮目标…'
+  } else if (event.type === 'tool.started') {
+    messages.value[index].content = `正在调用 ${humanizeStep(String(event.data.tool || '工具'))}…`
+  } else if (event.type === 'tool.completed') {
+    messages.value[index].content = event.data.success
+      ? '工具已返回，正在整理结果…'
+      : '工具返回了可处理的问题，正在生成恢复建议…'
+  } else if (event.type === 'state.persisted') {
+    messages.value[index].content = '会话状态已保存，正在生成回复…'
+  }
+}
 
-  onUnmounted(() => controller.abort())
+async function runAgentTurn(
+  text: string,
+  assistantMsgId: string,
+  interactionAnswer?: InteractionAnswer,
+) {
+  try {
+    const request = buildAgentChatRequest(
+      text,
+      'auto',
+      true,
+      false,
+      conversationId.value,
+      undefined,
+      interactionAnswer,
+    )
+    const response = await streamAgentRun<AgentPayload>(
+      request,
+      event => applyRunEvent(event, assistantMsgId),
+    )
+    applyAgentResponse(response, assistantMsgId)
+  } catch (error) {
+    if (interactionAnswer) await loadConversationHistory()
+    const index = messages.value.findIndex(message => message.id === assistantMsgId)
+    const failureMessage: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: `Agent 请求失败${interactionAnswer ? '，已重新同步会话状态' : ''}： ${error instanceof Error ? error.message : String(error)}`,
+      streaming: false,
+    }
+    if (index >= 0) messages.value[index] = failureMessage
+    else messages.value.push(failureMessage)
+  } finally {
+    isStreaming.value = false
+    nextTick(scrollToBottom)
+  }
 }
 
 function applyAgentResponse(response: AgentPayload, assistantMsgId?: string) {
@@ -440,32 +441,7 @@ async function handleInteractionAnswer(payload: { message: string; answer: Inter
   messages.value.push({ id: assistantMsgId, role: 'assistant', content: '', streaming: true })
   isStreaming.value = true
   await nextTick(scrollToBottom)
-
-  try {
-    const request = buildAgentChatRequest(
-      payload.message,
-      'auto',
-      true,
-      false,
-      conversationId.value,
-      undefined,
-      payload.answer,
-    )
-    applyAgentResponse(await requestAgentChat<AgentPayload>(request), assistantMsgId)
-  } catch (error) {
-    await loadConversationHistory()
-    const failureMessage: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: `Agent 请求失败，已重新同步会话状态： ${error instanceof Error ? error.message : String(error)}`,
-    }
-    const index = messages.value.findIndex(message => message.id === assistantMsgId)
-    if (index >= 0) messages.value[index] = failureMessage
-    else messages.value.push(failureMessage)
-  } finally {
-    isStreaming.value = false
-    nextTick(scrollToBottom)
-  }
+  await runAgentTurn(payload.message, assistantMsgId, payload.answer)
 }
 
 async function loadConversationHistory() {
