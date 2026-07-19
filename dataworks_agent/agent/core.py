@@ -33,6 +33,7 @@ from dataworks_agent.agent.run_models import AgentRunRequest
 from dataworks_agent.agent.run_models import AgentRunResponse as ChatResponse
 from dataworks_agent.agent.tools.registry import ToolRegistry
 from dataworks_agent.agent.tools.table_discovery import TableDiscoveryTool
+from dataworks_agent.agent.tools.table_inspection import TableInspectionTool
 from dataworks_agent.agent.workflow_service import AgentWorkflowService
 from dataworks_agent.db.database import SessionLocal
 from dataworks_agent.db.models import ConversationHistoryModel
@@ -117,7 +118,7 @@ class ChatAgent:
         self._conversation_events = ConversationEventRecorder()
         self._run_coordinator = AgentRunCoordinator(
             conversation_graph=self._conversation_graph,
-            tools=ToolRegistry([TableDiscoveryTool()]),
+            tools=ToolRegistry([TableDiscoveryTool(), TableInspectionTool()]),
         )
         self._last_task_id: str | None = None
 
@@ -737,7 +738,12 @@ class ChatAgent:
             )
             if purpose == "choose_entry":
                 return raw.option_id == "find_table"
-            if purpose in {"refine_table_search", "select_layer", "select_table"}:
+            if purpose in {
+                "refine_table_search",
+                "select_layer",
+                "select_table",
+                "table_next_action",
+            }:
                 if context.get("action") == "find_table":
                     return True
                 option = next(
@@ -751,11 +757,12 @@ class ChatAgent:
                 params = dict((option.get("payload") or {}).get("params") or {})
                 return params.get("tool_name") == "find_table"
             return False
-        if (
-            context.get("action") == "find_table"
-            and purpose in {"refine_table_search", "select_layer", "select_table"}
-            and message.strip() in {"什么意思", "解释一下", "请解释一下", "没看懂"}
-        ):
+        if context.get("action") == "find_table" and purpose in {
+            "refine_table_search",
+            "select_layer",
+            "select_table",
+            "table_next_action",
+        }:
             return True
         return DecisionProvider.handles_message(message)
 

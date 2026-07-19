@@ -6,6 +6,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from dataworks_agent.agent.context_resolver import ContextResolver, DialogueAction
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.decision_provider import (
     ClarifyDecision,
@@ -75,13 +76,39 @@ class AgentRunCoordinator:
 
         await publish("run.started", conversation_id=request.conversation_id)
         state = await self.conversation_graph.context(request.conversation_id)
+        if (
+            request.interaction_answer is None
+            and self.decisions.is_table_discovery(request.message)
+            and state.get("objective")
+            and request.message.strip() != str(state.get("objective") or "").strip()
+        ):
+            state = await self.conversation_graph.start_goal(
+                request.conversation_id, request.message.strip()
+            )
         pending = dict(state.get("pending_interaction") or {})
         resolved_answer: dict[str, Any] | None = None
-        if request.interaction_answer is not None:
+        answer_payload = request.interaction_answer
+        if answer_payload is None and pending:
+            resolved_turn = await ContextResolver().resolve(request.message, state)
+            answer_payload = resolved_turn.interaction_answer
+            if (
+                answer_payload is None
+                and pending.get("allow_custom_input")
+                and pending.get("purpose")
+                in {"refine_table_search", "select_layer", "select_table"}
+                and resolved_turn.dialogue_action
+                not in {DialogueAction.GREETING, DialogueAction.EXPLAIN}
+            ):
+                answer_payload = InteractionAnswer(
+                    interaction_id=str(pending.get("interaction_id") or ""),
+                    custom_text=request.message.strip(),
+                    state_version=int(pending.get("state_version") or 0),
+                )
+        if answer_payload is not None:
             answer = (
-                request.interaction_answer
-                if isinstance(request.interaction_answer, InteractionAnswer)
-                else InteractionAnswer.model_validate(request.interaction_answer)
+                answer_payload
+                if isinstance(answer_payload, InteractionAnswer)
+                else InteractionAnswer.model_validate(answer_payload)
             )
             try:
                 resolved_answer = await self.conversation_graph.answer(
@@ -191,10 +218,21 @@ class AgentRunCoordinator:
         else:
             mode = "recoverable_error" if result.recoverable else "blocked"
             error = result.error_code or "tool_failed"
+        data = dict(result.data)
+        if not result.success and result.recoverable and not data.get("interaction"):
+            data["interaction"] = PendingInteraction(
+                interaction_id=f"retry_{abs(hash((result.error_code, result.message)))}",
+                type="free_text",
+                purpose="refine_table_search",
+                prompt=result.message,
+                options=[],
+                custom_input_placeholder="输入新的表关键词，或直接开始另一个目标",
+                state_version=1,
+            ).model_dump()
         return AgentRunResponse(
             result.message,
             success=result.success,
-            data={"agent_mode": mode, **dict(result.data)},
+            data={"agent_mode": mode, **data},
             error=error,
         )
 

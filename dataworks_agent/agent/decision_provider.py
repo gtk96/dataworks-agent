@@ -71,6 +71,10 @@ class DecisionProvider:
             or cls._PHYSICAL_TABLE_RE.search(text)
         )
 
+    @classmethod
+    def is_table_discovery(cls, message: str) -> bool:
+        return bool(cls._FIND_TABLE_RE.search(message.strip()))
+
     async def decide(
         self,
         request: AgentRunRequest,
@@ -143,6 +147,10 @@ class DecisionProvider:
                     "selected_resources": {"table": table_name},
                 },
             )
+        if action == "inspect_table":
+            return ToolDecision("inspect_table", {"table_name": table_name})
+        if custom_text and purpose == "select_table":
+            return ToolDecision("find_table", {"keyword": custom_text})
         if action == "find_table" or purpose in {"refine_table_search", "select_layer"}:
             return ToolDecision(
                 "find_table",
