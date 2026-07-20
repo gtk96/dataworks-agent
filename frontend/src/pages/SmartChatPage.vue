@@ -206,18 +206,21 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue'
+import { nextTick, onMounted, ref, computed } from 'vue'
 import MessageBubble from '@/components/agent/MessageBubble.vue'
 import Composer from '@/components/agent/Composer.vue'
 import WelcomePanel from '@/components/agent/WelcomePanel.vue'
-import { createSSEStream, type SSEEvent } from '@/utils/sse-client'
 import { idempotencyKey } from '@/utils/request'
 import {
+  agentModeLabel,
   buildAgentChatRequest,
-  requestAgentChat,
+  reconcileActiveInteraction,
   type AgentInteraction,
+  type ConversationMeta,
   type InteractionAnswer,
 } from '@/components/agent/chatInteraction'
+import { streamAgentRun, type RunEvent } from '@/components/agent/runStream'
+import { countOnlineCapabilities } from '@/components/agent/capabilityStatus'
 
 interface ChatMessage {
   id: string
@@ -251,7 +254,8 @@ interface AgentPayload {
     publish_request?: Record<string, unknown>
     next_actions?: string[]
     agent_mode?: string
-    interaction?: AgentInteraction
+    interaction?: AgentInteraction | null
+    conversation?: ConversationMeta
     [key: string]: unknown
   }
   error?: string | null
@@ -278,6 +282,7 @@ const messagesContainer = ref<HTMLElement>()
 const storedConversationId = typeof localStorage !== 'undefined' ? localStorage.getItem('conversation_id') : null
 const conversationId = ref<string>(storedConversationId || idempotencyKey())
 const activeInteractionId = ref<string | null>(null)
+const conversationMeta = ref<ConversationMeta | null>(null)
 if (typeof localStorage !== 'undefined' && !storedConversationId) {
   localStorage.setItem('conversation_id', conversationId.value)
 }
@@ -309,6 +314,7 @@ function resetChat() {
   localStorage.setItem('conversation_id', conversationId.value)
   messages.value = []
   activeInteractionId.value = null
+  conversationMeta.value = null
   lastPayload.value = null
   isStreaming.value = false
 }
@@ -342,73 +348,85 @@ async function handleSend(text: string) {
   })
 
   isStreaming.value = true
+  await runAgentTurn(text, assistantMsgId)
+}
 
-  const controller = createSSEStream(text, {
-    conversationId: conversationId.value,
-    executionMode: 'auto',
-    onEvent: (event: SSEEvent) => {
-      if (event.type === 'connected') {
-        isConnected.value = true
-        conversationId.value = event.conversation_id
-        localStorage.setItem('conversation_id', conversationId.value)
-      } else if (event.type === 'thinking') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx].content = event.message
-        }
-      } else if (event.type === 'response') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx] = {
-            id: assistantMsgId,
-            role: 'assistant',
-            content: event.message,
-            streaming: false,
-            optionChips: (event.data?.option_chips ?? undefined) as ChatMessage['optionChips'],
-            interaction: event.data?.interaction as AgentInteraction | undefined,
-          }
-          activeInteractionId.value = event.data?.interaction
-            ? String((event.data.interaction as AgentInteraction).interaction_id)
-            : null
-          lastPayload.value = {
-            message: event.message,
-            success: event.success,
-            data: event.data,
-            error: event.error,
-          }
-        }
-        isStreaming.value = false
-        nextTick(scrollToBottom)
-      } else if (event.type === 'error') {
-        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-        if (idx >= 0) {
-          messages.value[idx] = {
-            id: assistantMsgId,
-            role: 'assistant',
-            content: `❌ ${event.message}`,
-            streaming: false,
-          }
-        }
-        isStreaming.value = false
-        nextTick(scrollToBottom)
-      }
-    },
-    onError: (err: Error) => {
-      const idx = messages.value.findIndex(m => m.id === assistantMsgId)
-      if (idx >= 0) {
-        messages.value[idx] = {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: `❌ 连接失败: ${err.message}`,
-          streaming: false,
-        }
-      }
-      isStreaming.value = false
-      nextTick(scrollToBottom)
-    },
-  })
+function applyRunEvent(event: RunEvent, assistantMsgId: string) {
+  if (event.type === 'run.started') isConnected.value = true
+  const index = messages.value.findIndex(message => message.id === assistantMsgId)
+  if (index < 0) return
+  if (event.type === 'decision.started') {
+    messages.value[index].content = '正在理解本轮目标…'
+  } else if (event.type === 'tool.started') {
+    messages.value[index].content = `正在调用 ${humanizeStep(String(event.data.tool || '工具'))}…`
+  } else if (event.type === 'tool.completed') {
+    messages.value[index].content = event.data.success
+      ? '工具已返回，正在整理结果…'
+      : '工具返回了可处理的问题，正在生成恢复建议…'
+  } else if (event.type === 'state.persisted') {
+    messages.value[index].content = '会话状态已保存，正在生成回复…'
+  }
+}
 
-  onUnmounted(() => controller.abort())
+async function runAgentTurn(
+  text: string,
+  assistantMsgId: string,
+  interactionAnswer?: InteractionAnswer,
+) {
+  try {
+    const request = buildAgentChatRequest(
+      text,
+      'auto',
+      true,
+      false,
+      conversationId.value,
+      undefined,
+      interactionAnswer,
+    )
+    const response = await streamAgentRun<AgentPayload>(
+      request,
+      event => applyRunEvent(event, assistantMsgId),
+    )
+    applyAgentResponse(response, assistantMsgId)
+  } catch (error) {
+    if (interactionAnswer) await loadConversationHistory()
+    const index = messages.value.findIndex(message => message.id === assistantMsgId)
+    const failureMessage: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: `Agent 请求失败${interactionAnswer ? '，已重新同步会话状态' : ''}： ${error instanceof Error ? error.message : String(error)}`,
+      streaming: false,
+    }
+    if (index >= 0) messages.value[index] = failureMessage
+    else messages.value.push(failureMessage)
+  } finally {
+    isStreaming.value = false
+    nextTick(scrollToBottom)
+  }
+}
+
+function applyAgentResponse(response: AgentPayload, assistantMsgId?: string) {
+  const interaction = response.data?.interaction ?? null
+  const assistantMessage: ChatMessage = {
+    id: assistantMsgId || idempotencyKey(),
+    role: 'assistant',
+    content: response.message,
+    streaming: false,
+    interaction: interaction ?? undefined,
+    optionChips: response.data?.option_chips as ChatMessage['optionChips'],
+  }
+  const index = assistantMsgId
+    ? messages.value.findIndex(message => message.id === assistantMsgId)
+    : -1
+  if (index >= 0) messages.value[index] = assistantMessage
+  else messages.value.push(assistantMessage)
+
+  messages.value = reconcileActiveInteraction(messages.value, interaction)
+  activeInteractionId.value = interaction?.status === 'pending'
+    ? interaction.interaction_id
+    : null
+  if (response.data?.conversation) conversationMeta.value = response.data.conversation
+  lastPayload.value = response
 }
 
 async function handleInteractionAnswer(payload: { message: string; answer: InteractionAnswer }) {
@@ -416,7 +434,6 @@ async function handleInteractionAnswer(payload: { message: string; answer: Inter
   const source = messages.value.find(
     message => message.interaction?.interaction_id === payload.answer.interaction_id,
   )
-  const originalInteraction = source?.interaction
   if (source?.interaction) {
     source.interaction = { ...source.interaction, status: 'answered' }
   }
@@ -426,46 +443,7 @@ async function handleInteractionAnswer(payload: { message: string; answer: Inter
   messages.value.push({ id: assistantMsgId, role: 'assistant', content: '', streaming: true })
   isStreaming.value = true
   await nextTick(scrollToBottom)
-
-  try {
-    const request = buildAgentChatRequest(
-      payload.message,
-      'auto',
-      true,
-      false,
-      conversationId.value,
-      undefined,
-      payload.answer,
-    )
-    const response = await requestAgentChat<AgentPayload>(request)
-    const interaction = response.data?.interaction
-    const index = messages.value.findIndex(message => message.id === assistantMsgId)
-    if (index >= 0) {
-      messages.value[index] = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: response.message,
-        interaction,
-        optionChips: response.data?.option_chips as ChatMessage['optionChips'],
-      }
-    }
-    activeInteractionId.value = interaction?.status === 'pending' ? interaction.interaction_id : null
-    lastPayload.value = response
-  } catch (error) {
-    if (source && originalInteraction) source.interaction = originalInteraction
-    activeInteractionId.value = originalInteraction?.interaction_id ?? null
-    const index = messages.value.findIndex(message => message.id === assistantMsgId)
-    if (index >= 0) {
-      messages.value[index] = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: `❌ Agent 请求失败：${error instanceof Error ? error.message : String(error)}`,
-      }
-    }
-  } finally {
-    isStreaming.value = false
-    nextTick(scrollToBottom)
-  }
+  await runAgentTurn(payload.message, assistantMsgId, payload.answer)
 }
 
 async function loadConversationHistory() {
@@ -484,15 +462,9 @@ async function loadConversationHistory() {
         }))
       : []
     const active = data.active_interaction as AgentInteraction | null
-    if (active) {
-      const target = [...restored].reverse().find(
-        message => message.role === 'assistant'
-          && message.interaction?.interaction_id === active.interaction_id,
-      ) || [...restored].reverse().find(message => message.role === 'assistant')
-      if (target) target.interaction = active
-    }
-    messages.value = restored
-    activeInteractionId.value = active?.interaction_id ?? null
+    messages.value = reconcileActiveInteraction(restored, active)
+    conversationMeta.value = (data.conversation as ConversationMeta | undefined) ?? null
+    activeInteractionId.value = active?.status === 'pending' ? active.interaction_id : null
     await nextTick(scrollToBottom)
   } catch {
     // A missing history endpoint must not block a new conversation.
@@ -506,7 +478,7 @@ async function loadCapabilities() {
     const data = await resp.json()
     const caps = data.capabilities || {}
     totalCapabilities.value = Object.keys(caps).length
-    capabilitiesOnline.value = Object.values(caps).filter((v: any) => v.online !== false).length
+    capabilitiesOnline.value = countOnlineCapabilities(caps)
     capabilityStatus.value = formatCapabilityStatus(caps)
   } catch {
     // Keep existing values
@@ -528,19 +500,24 @@ function formatCapabilityStatus(caps: Record<string, unknown>): Record<string, {
     ak_sk: { label: 'AK/SK', fallback: '未配置' },
     openapi: { label: 'OpenAPI', fallback: '未连接' },
     maxcompute: { label: 'MaxCompute', fallback: '未连接' },
+    node_adapter: { label: '节点适配器', fallback: '不可用' },
     cookie_bff: { label: 'Cookie BFF', fallback: '未连接' },
     cdp_9222: { label: 'CDP 9222', fallback: '未连接' },
     official_mcp: { label: '官方 MCP', fallback: '未启用' },
     table_search: { label: '中文搜表', fallback: '不可用' },
     ida_query: { label: 'IDA 问数', fallback: '不可用' },
+    llm: { label: 'LLM', fallback: '不可用' },
   }
   const result: Record<string, { label: string; status: string; online: boolean }> = {}
   for (const [key, { label, fallback }] of Object.entries(mapping)) {
     const val = caps[key] as Record<string, unknown> | boolean | string
     const online = val === true || val === 'true' || (typeof val === 'object' && val?.online === true)
+    const observedStatus = typeof val === 'object' && val && typeof val.status === 'string'
+      ? val.status
+      : ''
     result[key] = {
       label,
-      status: online ? '就绪' : fallback,
+      status: observedStatus || (online ? '就绪' : fallback),
       online,
     }
   }
@@ -558,14 +535,7 @@ const agentMode = computed(() => {
   return d?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle')
 })
 
-const modeText = computed(() => ({
-  idle: '等待目标',
-  proposal: '计划完成',
-  needs_context: '待确认',
-  approval_required: '等待审批',
-  blocked: '执行受阻',
-  executed: '开发完成',
-}[agentMode.value] ?? agentMode.value))
+const modeText = computed(() => agentModeLabel(agentMode.value))
 
 const resultTitle = computed(() => {
   const d = lastPayload.value?.data

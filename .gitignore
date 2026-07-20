@@ -1,5 +1,5 @@
 .env
-.venv/
+.venv*/
 __pycache__/
 *.pyc
 *.pyo
@@ -84,3 +84,6 @@ playwright-report/
 test-results/
 *.har
 trace.zip
+
+# Local isolated implementation worktrees
+.worktrees/

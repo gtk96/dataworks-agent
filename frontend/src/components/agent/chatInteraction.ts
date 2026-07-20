@@ -28,6 +28,82 @@ export interface AgentInteraction {
   state_version: number
 }
 
+export interface ConversationMeta {
+  conversation_id: string
+  active_goal: string
+  action: string
+  status: string
+  state_version: number
+  selected_resources: Record<string, unknown>
+}
+
+const agentModeLabels: Record<string, string> = {
+  idle: '等待目标',
+  greeting: '开始对话',
+  explain: '说明',
+  proposal: '计划完成',
+  needs_context: '待确认',
+  waiting_user: '等待补充',
+  approval_required: '等待审批',
+  blocked: '执行受阻',
+  rejected: '已拒绝',
+  recoverable_error: '依赖待恢复',
+  execution_unknown: '执行结果待确认',
+  tool_result: '查询完成',
+  table_selected: '已选表',
+  read_only: '只读结果',
+  bounded_stop: '已暂停',
+  cancelled: '已取消',
+  executed: '开发完成',
+}
+
+export function agentModeLabel(mode: string): string {
+  return agentModeLabels[mode] ?? mode
+}
+
+export interface InteractionMessage {
+  role?: 'user' | 'assistant'
+  isUser?: boolean
+  interaction?: AgentInteraction
+}
+
+function isAssistantMessage(message: InteractionMessage): boolean {
+  return message.role === 'assistant' || message.isUser === false
+}
+
+export function reconcileActiveInteraction<T extends InteractionMessage>(
+  messages: T[],
+  active: AgentInteraction | null | undefined,
+): T[] {
+  const reconciled = messages.map(message => ({
+    ...message,
+    ...(message.interaction ? { interaction: { ...message.interaction } } : {}),
+  })) as T[]
+
+  let activeIndex = -1
+  for (let index = 0; index < reconciled.length; index += 1) {
+    const interaction = reconciled[index].interaction
+    if (!interaction) continue
+    if (active && interaction.interaction_id === active.interaction_id) {
+      activeIndex = index
+      reconciled[index].interaction = { ...active }
+    } else if (interaction.status === 'pending') {
+      reconciled[index].interaction = { ...interaction, status: 'expired' }
+    }
+  }
+
+  if (active && activeIndex < 0) {
+    for (let index = reconciled.length - 1; index >= 0; index -= 1) {
+      if (isAssistantMessage(reconciled[index])) {
+        reconciled[index].interaction = { ...active }
+        break
+      }
+    }
+  }
+
+  return reconciled
+}
+
 export interface AgentChatRequest {
   message: string
   execution_mode: AgentExecutionMode

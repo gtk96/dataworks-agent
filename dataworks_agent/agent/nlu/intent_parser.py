@@ -102,9 +102,12 @@ class IntentParser:
                         is_negated=is_negated,
                     )
 
+        # Try multiple extraction strategies for table/entity name
         table_name = self._extractor.extract_table_name(text)
-        # Also try to extract plain table names like "订单表" -> "订单"
         if not table_name:
+            table_name = self._extract_fuzzy_table_name(text)
+        if not table_name:
+            # Also try plain table names like "订单表" -> "订单"
             plain_match = re.search(
                 r"(?:查|查看|查询|检索|找|看)[\s\S]*(?:一下|一|下)?[\s\S]*([^\s,，。；;\n]+?)表",
                 text,
@@ -157,6 +160,27 @@ class IntentParser:
             raw_text=text,
             is_negated=is_negated,
         )
+
+    def _extract_fuzzy_table_name(self, text: str) -> str | None:
+        """Extract a Chinese business entity name from loose phrasing like '查一下订单'.
+
+        Handles patterns such as:
+          - "我想查一下订单" -> "订单"
+          - "看看用户数据" -> "用户"
+          - "查一下商品" -> "商品"
+          - "统计一下GMV" -> "gmv"
+        """
+        # Pattern: verb(s) + optional filler + entity + optional "表/数据/量"
+        # Strip common prefixes first
+        stripped = re.sub(r"^(我想|请|帮|帮我|我要|能|能不能|怎么|如何)\s*", "", text)
+        stripped = re.sub(r"^(查|查看|查询|检索|找|看|统计)\s*(一下|一|下)?\s*", "", stripped)
+        # Now strip trailing qualifiers
+        stripped = re.sub(r"\s*(的)?\s*(表|数据|量|数|信息|记录)$", "", stripped)
+        # Remaining should be the entity name
+        entity = stripped.strip()
+        if entity and len(entity) >= 1:
+            return entity
+        return None
 
     def _looks_like_dataworks_goal(self, text_lower: str) -> bool:
         return any(word in text_lower for word in DATAWORKS_GOAL_WORDS)

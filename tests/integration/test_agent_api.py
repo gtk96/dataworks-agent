@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from dataworks_agent.agent.core import ChatAgent, ChatResponse
+from dataworks_agent.agent.run_models import RunEvent
 from dataworks_agent.routers.agent import router
 
 
@@ -170,6 +171,10 @@ def test_messages_returns_active_interaction_and_state_version(client):
         }
     ]
     mock_agent.get_conversation_context.return_value = {
+        "objective": "查订单",
+        "action": "ask_data",
+        "task_status": "waiting_user",
+        "selected_resources": {"table": "dw.orders"},
         "pending_interaction": interaction,
         "state_version": 3,
     }
@@ -181,5 +186,193 @@ def test_messages_returns_active_interaction_and_state_version(client):
         "messages": mock_agent.get_conversation_history.return_value,
         "active_interaction": interaction,
         "state_version": 3,
+        "conversation": {
+            "conversation_id": "conv-1",
+            "active_goal": "查订单",
+            "action": "ask_data",
+            "status": "waiting_user",
+            "state_version": 3,
+            "selected_resources": {"table": "dw.orders"},
+        },
     }
     mock_agent.get_conversation_context.assert_awaited_once_with("conv-1")
+
+
+def test_expired_answer_preserves_agent_snapshot_without_second_read(client):
+    test_client, mock_agent = client
+    latest_interaction = {
+        "interaction_id": "int_latest",
+        "type": "single_select",
+        "purpose": "select_table",
+        "prompt": "请选择最新候选",
+        "options": [],
+        "allow_custom_input": True,
+        "custom_input_placeholder": "",
+        "status": "pending",
+        "state_version": 9,
+    }
+    conversation = {
+        "conversation_id": "conv-1",
+        "active_goal": "查订单",
+        "action": "ask_data",
+        "status": "waiting_user",
+        "state_version": 9,
+        "selected_resources": {"table": "dw.orders"},
+    }
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="当前候选已经更新，请根据最新选项继续。",
+            success=False,
+            data={
+                "interaction": latest_interaction,
+                "conversation": conversation,
+            },
+            error="interaction_expired",
+        )
+    )
+    mock_agent.get_conversation_context.side_effect = AssertionError(
+        "complete agent snapshot must not be reread"
+    )
+
+    response = test_client.post(
+        "/agent/chat",
+        json={"message": "第二个", "conversation_id": "conv-1"},
+    )
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["success"] is False
+    assert payload["error"] == "interaction_expired"
+    assert payload["data"]["interaction"] == latest_interaction
+    assert payload["data"]["conversation"] == conversation
+    mock_agent.get_conversation_context.assert_not_awaited()
+
+
+def test_websocket_preserves_same_complete_agent_payload(client):
+    test_client, mock_agent = client
+    conversation = {
+        "conversation_id": "conv-ws",
+        "active_goal": "查订单",
+        "action": "ask_data",
+        "status": "active",
+        "state_version": 4,
+        "selected_resources": {},
+    }
+    agent_data = {
+        "task_id": "task-ws",
+        "status": {"state": "running"},
+        "interaction": None,
+        "conversation": conversation,
+    }
+    mock_agent.chat = AsyncMock(
+        return_value=ChatResponse(
+            message="继续处理",
+            success=True,
+            data=agent_data,
+        )
+    )
+    mock_agent.get_conversation_context.side_effect = AssertionError(
+        "complete agent snapshot must not be reread"
+    )
+
+    with test_client.websocket_connect("/agent/ws") as websocket:
+        websocket.send_json({"message": "继续", "conversation_id": "conv-ws"})
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "response"
+    assert payload["data"] == {
+        "message": "继续处理",
+        "success": True,
+        "data": agent_data,
+        "error": None,
+    }
+    mock_agent.get_conversation_context.assert_not_awaited()
+
+
+def test_run_stream_emits_real_ordered_events_and_one_final_response(client):
+    test_client, mock_agent = client
+
+    async def run_with_events(_message, **kwargs):
+        sink = kwargs["run_event_sink"]
+        await sink(RunEvent("run.started", "run-1", 1, {"conversation_id": "conv-1"}))
+        await sink(RunEvent("tool.started", "run-1", 2, {"tool": "find_table"}))
+        await sink(
+            RunEvent(
+                "tool.completed",
+                "run-1",
+                3,
+                {"tool": "find_table", "success": True},
+            )
+        )
+        await sink(RunEvent("state.persisted", "run-1", 4, {"state_version": 2}))
+        response = ChatResponse(
+            message="请选择订单表",
+            success=True,
+            data={"agent_mode": "tool_result"},
+        )
+        await sink(
+            RunEvent(
+                "response.completed",
+                "run-1",
+                5,
+                {
+                    "response": {
+                        "message": response.message,
+                        "success": response.success,
+                        "data": response.data,
+                        "error": response.error,
+                    }
+                },
+            )
+        )
+        return response
+
+    mock_agent.chat.side_effect = run_with_events
+
+    response = test_client.post(
+        "/agent/runs/stream",
+        json={"message": "找订单表", "conversation_id": "conv-1"},
+    )
+    events = [line for line in response.text.splitlines() if line.strip()]
+    payloads = [__import__("json").loads(line) for line in events]
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert [item["type"] for item in payloads] == [
+        "run.started",
+        "tool.started",
+        "tool.completed",
+        "state.persisted",
+        "response.completed",
+    ]
+    assert sum(item["type"] == "response.completed" for item in payloads) == 1
+
+
+def test_capabilities_endpoint_returns_only_observed_states(client, monkeypatch):
+    test_client, _mock_agent = client
+    snapshot = {
+        "agent_runtime": {
+            "configured": True,
+            "online": True,
+            "status": "ready",
+            "checked_at": "2026-07-20T00:00:00+00:00",
+        },
+        "llm": {
+            "configured": True,
+            "online": False,
+            "status": "model_not_found",
+            "checked_at": "2026-07-20T00:00:00+00:00",
+        },
+    }
+    import dataworks_agent.routers.agent as agent_module
+
+    monkeypatch.setattr(
+        agent_module.capability_registry,
+        "snapshot_dict",
+        AsyncMock(return_value=snapshot),
+    )
+
+    response = test_client.get("/agent/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == snapshot

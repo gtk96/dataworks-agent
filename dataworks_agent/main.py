@@ -31,6 +31,19 @@ from dataworks_agent.state import app_state
 logger = logging.getLogger("dataworks_agent")
 
 
+class ConversationJsonFormatter(logging.Formatter):
+    """Format dedicated conversation records as one UTF-8 JSON object per line."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json
+
+        payload = getattr(record, "conversation_event", None)
+        return json.dumps(
+            payload or {"event": "log", "message": record.getMessage()},
+            ensure_ascii=False,
+        )
+
+
 def _setup_logging() -> None:
     """配置结构化日志：控制台文本 + 文件 JSON 轮转。"""
     from logging.handlers import RotatingFileHandler
@@ -39,17 +52,40 @@ def _setup_logging() -> None:
     root.setLevel(logging.INFO)
 
     fmt = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    console = logging.StreamHandler()
-    console.setFormatter(fmt)
-    root.addHandler(console)
+    if not any(getattr(handler, "_agent_console_handler", False) for handler in root.handlers):
+        console = logging.StreamHandler()
+        console.setFormatter(fmt)
+        console._agent_console_handler = True
+        root.addHandler(console)
 
     log_dir = Path(settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    file_handler = RotatingFileHandler(
-        log_dir / "agent.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-    )
-    file_handler.setFormatter(fmt)
-    root.addHandler(file_handler)
+    if not any(getattr(handler, "_agent_file_handler", False) for handler in root.handlers):
+        file_handler = RotatingFileHandler(
+            log_dir / "agent.log",
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(fmt)
+        file_handler._agent_file_handler = True
+        root.addHandler(file_handler)
+
+    conversation_logger = logging.getLogger("dataworks_agent.conversation")
+    conversation_logger.propagate = False
+    if not any(
+        getattr(handler, "_conversation_jsonl_handler", False)
+        for handler in conversation_logger.handlers
+    ):
+        conversation_handler = RotatingFileHandler(
+            log_dir / "conversation-events.jsonl",
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        conversation_handler.setFormatter(ConversationJsonFormatter())
+        conversation_handler._conversation_jsonl_handler = True
+        conversation_logger.addHandler(conversation_handler)
 
 
 _setup_logging()

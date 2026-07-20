@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from dataworks_agent.api_clients.provider_errors import ProviderError, ProviderUnavailableError
 from dataworks_agent.config import settings
 from dataworks_agent.state import app_state
 
@@ -183,25 +184,14 @@ class MetadataProvider:
 
         try:
             tables = await bff.search_tables(keyword)
+        except ProviderError:
+            raise
         except Exception as exc:
-            if not _is_cookie_auth_error(exc):
-                logger.warning("BFF search_tables(%s) 失败: %s", keyword, exc)
-                tables = []
-            else:
-                refresh = await _refresh_cookie_auth(bff)
-                if refresh.get("status") not in {"success", "refreshed", "extracted_unverified"}:
-                    logger.warning("BFF search_tables(%s) Cookie 失效: %s", keyword, exc)
-                    tables = []
-                else:
-                    try:
-                        tables = await bff.search_tables(keyword)
-                    except Exception as retry_exc:
-                        logger.warning(
-                            "BFF search_tables(%s) 刷新后仍失败: %s",
-                            keyword,
-                            retry_exc,
-                        )
-                        tables = []
+            raise ProviderUnavailableError(
+                "bff_search_failed",
+                type(exc).__name__,
+                provider="cookie_bff",
+            ) from exc
 
         merged, candidates = self._merge(
             keyword=keyword,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCapabilityBadges } from '@/components/agent/capabilityStatus'
+import { buildCapabilityBadges, countOnlineCapabilities } from '@/components/agent/capabilityStatus'
 
 describe('Agent capability status', () => {
   const base = {
@@ -46,5 +46,14 @@ describe('Agent capability status', () => {
     const badges = buildCapabilityBadges({ ...base, cookie_health: 'healthy' })
     expect(badges.find((item) => item.label === '中文搜表')).toEqual({ label: '中文搜表', online: true })
     expect(badges.find((item) => item.label === 'IDA 问数')).toEqual({ label: 'IDA 问数', online: true })
+  })
+
+  it('counts only explicitly observed online capabilities', () => {
+    expect(countOnlineCapabilities({
+      runtime: { configured: true, online: true },
+      bff: { configured: true, online: false },
+      legacy: true,
+      unknown: {},
+    })).toBe(1)
   })
 })

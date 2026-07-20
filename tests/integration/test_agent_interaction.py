@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,6 +19,272 @@ from dataworks_agent.agent.interaction import (
     build_interaction,
     resolve_interaction_answer,
 )
+from dataworks_agent.agent.response_policy import ConversationMeta, ResponsePolicy
+
+ENTRY_OPTION_IDS = ["ask_data", "find_table", "modeling", "diagnose"]
+
+
+def test_conversation_meta_selected_resources_defaults_are_independent() -> None:
+    first = ConversationMeta()
+    second = ConversationMeta()
+
+    first.selected_resources["table"] = "dw.orders"
+
+    assert second.selected_resources == {}
+
+
+def test_greeting_returns_entry_cards() -> None:
+    data = ResponsePolicy().greeting({}, state_version=1)
+
+    assert [item["id"] for item in data["interaction"]["options"]] == ENTRY_OPTION_IDS
+    assert data["interaction"]["allow_custom_input"] is True
+
+
+def test_greeting_preserves_active_interaction() -> None:
+    pending = {
+        "interaction_id": "int_orders",
+        "type": "single_select",
+        "purpose": "select_table",
+        "prompt": "请选择候选表",
+        "options": [],
+        "allow_custom_input": True,
+        "custom_input_placeholder": "",
+        "state_version": 2,
+        "status": "pending",
+    }
+
+    data = ResponsePolicy().greeting({"pending_interaction": pending}, state_version=3)
+
+    assert data["interaction"] == pending
+
+
+def test_explanation_preserves_active_interaction() -> None:
+    context = {
+        "pending_interaction": {
+            "interaction_id": "int_orders",
+            "type": "single_select",
+            "purpose": "select_table",
+            "prompt": "请选择候选表",
+            "options": [
+                {
+                    "id": "detail",
+                    "label": "订单明细表",
+                    "value": "dw.detail",
+                    "description": "一单一行",
+                    "payload": {},
+                }
+            ],
+            "allow_custom_input": True,
+            "custom_input_placeholder": "",
+            "state_version": 2,
+            "status": "pending",
+        }
+    }
+
+    message, data = ResponsePolicy().explain(context)
+
+    assert "一单一行" in message
+    assert data["interaction"]["interaction_id"] == "int_orders"
+
+
+def test_explanation_without_pending_or_previous_content_requests_clarification() -> None:
+    message, data = ResponsePolicy().explain({})
+
+    assert message
+    assert message != "上一条的意思是："
+    assert "补充" in message or "说明" in message
+    assert data["interaction"] is None
+
+
+def test_clarify_returns_stable_entry_cards() -> None:
+    data = ResponsePolicy().clarify(state_version=4)
+
+    assert data["interaction"]["purpose"] == "clarify_request"
+    assert [item["id"] for item in data["interaction"]["options"]] == ENTRY_OPTION_IDS
+
+
+def test_string_next_actions_become_structured_options_without_mutating_input() -> None:
+    original = {"next_actions": ["查看字段", "查询数据"]}
+    snapshot = {"next_actions": list(original["next_actions"])}
+
+    data = ResponsePolicy().normalize_workflow_data(
+        original,
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert original == snapshot
+    assert [item["label"] for item in data["interaction"]["options"]] == [
+        "查看字段",
+        "查询数据",
+    ]
+    assert [item["id"] for item in data["interaction"]["options"]] == [
+        "action_0",
+        "action_1",
+    ]
+    assert all(item["payload"]["value"] == item["value"] for item in data["interaction"]["options"])
+    assert all(
+        item["payload"]["params"]["follow_up_action"] == item["value"]
+        for item in data["interaction"]["options"]
+    )
+    pending = PendingInteraction.model_validate(data["interaction"])
+    resolved = resolve_interaction_answer(
+        pending,
+        InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="action_0",
+            state_version=pending.state_version,
+        ),
+    )
+    assert resolved["params"]["follow_up_action"] == "查看字段"
+
+
+def test_normalize_workflow_data_without_useful_options_has_no_interaction() -> None:
+    original = {"next_actions": ["", "   ", None]}
+    snapshot = {"next_actions": list(original["next_actions"])}
+
+    data = ResponsePolicy().normalize_workflow_data(
+        original,
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert original == snapshot
+    assert data["option_chips"] == []
+    assert data["interaction"] is None
+
+
+def test_legacy_string_options_are_preserved() -> None:
+    pending = build_interaction(
+        {"next_actions": ["查看字段", "查询数据"]},
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert pending is not None
+    assert [item.label for item in pending.options] == ["查看字段", "查询数据"]
+    assert [item.id for item in pending.options] == ["action_0", "action_1"]
+
+
+def test_action_option_payload_is_structured() -> None:
+    pending = build_interaction(
+        {
+            "next_actions": [
+                {
+                    "id": "inspect",
+                    "type": "action",
+                    "label": "查看字段",
+                    "value": "查看字段",
+                }
+            ]
+        },
+        purpose="next_step",
+        state_version=5,
+    )
+
+    assert pending is not None
+    assert pending.options[0].payload == {
+        "value": "查看字段",
+        "params": {"follow_up_action": "查看字段"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_greeting_emits_and_persists_entry_cards(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    agent = ChatAgent()
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    try:
+        response = await agent.chat("你好", conversation_id="conv-greeting")
+        restored = await agent.get_conversation_context("conv-greeting")
+
+        assert response.data["interaction"]["purpose"] == "choose_entry"
+        assert restored["pending_interaction"]["purpose"] == "choose_entry"
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+        assert response.data["conversation"]["active_goal"] == ""
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_explain_preserves_current_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    agent = ChatAgent()
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    try:
+        remembered = await graph.remember(
+            "conv-explain",
+            "查找订单相关表",
+            needs_clarification=True,
+            action="ask_data",
+            pending_interaction={
+                "interaction_id": "int_orders",
+                "type": "single_select",
+                "purpose": "select_table",
+                "prompt": "请选择候选表",
+                "options": [
+                    {
+                        "id": "detail",
+                        "label": "订单明细表",
+                        "value": "dw.detail",
+                        "description": "一单一行",
+                        "payload": {},
+                    }
+                ],
+                "allow_custom_input": True,
+                "custom_input_placeholder": "",
+                "state_version": 1,
+                "status": "pending",
+            },
+            last_assistant_turn={"content": "请选择订单表"},
+        )
+        response = await agent.chat("什么意思", conversation_id="conv-explain")
+        restored = await graph.context("conv-explain")
+
+        assert "一单一行" in response.message
+        assert response.data["interaction"]["interaction_id"] == "int_orders"
+        assert restored["pending_interaction"]["interaction_id"] == "int_orders"
+        assert restored["state_version"] == remembered["state_version"] + 1
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_query_frame_survives_new_agent_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    path = tmp_path / "conversation.db"
+    first = ChatAgent()
+    first_graph = ConversationGraph(str(path))
+    first._conversation_graph = first_graph
+    second = ChatAgent()
+    second_graph = ConversationGraph(str(path))
+    second._conversation_graph = second_graph
+    try:
+        await first_graph.remember(
+            "conv-query",
+            "查询订单量",
+            needs_clarification=False,
+            query_frame={"metric_id": "order_count", "filters": {"layer": "dwd"}},
+        )
+
+        restored = await second.get_conversation_context("conv-query")
+        assert restored["query_frame"]["metric_id"] == "order_count"
+        assert not hasattr(first, "_query_frames")
+        assert not hasattr(second, "_query_frames")
+    finally:
+        await first_graph.aclose()
+        await second_graph.aclose()
 
 
 def test_build_interaction_from_table_option_chips() -> None:
@@ -188,6 +457,164 @@ async def test_pending_interaction_survives_new_graph_instance(tmp_path) -> None
 
 
 @pytest.mark.asyncio
+async def test_rich_context_survives_new_graph_instance(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    db_path = str(tmp_path / "conversation.db")
+    first = ConversationGraph(db_path)
+    current = await first.remember(
+        "conv-rich",
+        "查找订单相关表",
+        needs_clarification=False,
+        action="ask_data",
+        params={"layer": "dwd"},
+        selected_resources={"table": "dw.dwd_order_detail"},
+        last_assistant_turn={"content": "已选择订单明细表"},
+        conversation_summary="目标：查订单；分层：DWD",
+        query_frame={"metric": "order_count"},
+        task_status="active",
+    )
+
+    restored = await ConversationGraph(db_path).context("conv-rich")
+    empty = await first.context("conv-empty")
+
+    assert current["state_version"] == 1
+    assert restored["last_assistant_turn"] == {"content": "已选择订单明细表"}
+    assert restored["conversation_summary"] == "目标：查订单；分层：DWD"
+    assert restored["query_frame"] == {"metric": "order_count"}
+    assert restored["task_status"] == "active"
+    assert empty["last_assistant_turn"] == {}
+    assert empty["conversation_summary"] == ""
+    assert empty["query_frame"] == {}
+    assert empty["task_status"] == ""
+
+
+@pytest.mark.asyncio
+async def test_remember_rejects_stale_expected_version(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import (
+        ConversationGraph,
+        ConversationStateConflictError,
+    )
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    current = await graph.remember(
+        "conv-cas",
+        "查订单",
+        needs_clarification=False,
+    )
+
+    with pytest.raises(ConversationStateConflictError) as exc_info:
+        await graph.remember(
+            "conv-cas",
+            "查订单",
+            needs_clarification=False,
+            expected_version=current["state_version"] - 1,
+        )
+
+    assert exc_info.value.current == current
+    assert (await graph.context("conv-cas"))["state_version"] == current["state_version"]
+
+
+@pytest.mark.asyncio
+async def test_single_process_lock_serializes_cas_across_graph_instances(
+    tmp_path, monkeypatch
+) -> None:
+    from dataworks_agent.agent.conversation_graph import (
+        ConversationGraph,
+        ConversationStateConflictError,
+    )
+
+    db_path = tmp_path / "conversation.db"
+    first = ConversationGraph(str(db_path))
+    monkeypatch.chdir(tmp_path)
+    second = ConversationGraph(os.path.relpath(db_path, start=Path.cwd()))
+    first_write_entered = asyncio.Event()
+    release_first_write = asyncio.Event()
+    second_read_entered = asyncio.Event()
+    tasks = []
+
+    try:
+        current = await first.remember(
+            "conv-shared-lock",
+            "query orders",
+            needs_clarification=False,
+        )
+        await second.context("conv-shared-lock")
+        first_update = first._graph.aupdate_state
+        second_context = second._context_unlocked
+
+        async def delayed_first_update(*args, **kwargs):
+            first_write_entered.set()
+            await release_first_write.wait()
+            return await first_update(*args, **kwargs)
+
+        async def observed_second_context(*args, **kwargs):
+            second_read_entered.set()
+            return await second_context(*args, **kwargs)
+
+        monkeypatch.setattr(first._graph, "aupdate_state", delayed_first_update)
+        monkeypatch.setattr(second, "_context_unlocked", observed_second_context)
+        tasks.append(
+            asyncio.create_task(
+                first.remember(
+                    "conv-shared-lock",
+                    "query orders",
+                    needs_clarification=False,
+                    params={"writer": "first"},
+                    expected_version=current["state_version"],
+                )
+            )
+        )
+        await first_write_entered.wait()
+        tasks.append(
+            asyncio.create_task(
+                second.remember(
+                    "conv-shared-lock",
+                    "query orders",
+                    needs_clarification=False,
+                    params={"writer": "second"},
+                    expected_version=current["state_version"],
+                )
+            )
+        )
+        await asyncio.sleep(0)
+        if second_read_entered.is_set():
+            await tasks[1]
+        release_first_write.set()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        final = await first.context("conv-shared-lock")
+
+        assert sum(isinstance(result, dict) for result in results) == 1
+        assert sum(isinstance(result, ConversationStateConflictError) for result in results) == 1
+        assert final["state_version"] == current["state_version"] + 1
+    finally:
+        release_first_write.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await first.aclose()
+        await second.aclose()
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_connection_idempotently(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    try:
+        await graph.context("conv-close")
+        connection = graph._connection
+        assert connection is not None
+
+        await graph.aclose()
+        await graph.aclose()
+
+        with pytest.raises(ValueError, match="connection"):
+            await connection.execute("SELECT 1")
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
 async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
 
@@ -225,10 +652,126 @@ async def test_answer_updates_selected_resources_and_clears_pending(tmp_path) ->
     state = await graph.context("conv-1")
 
     assert resolved["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
+    assert resolved["state_version"] == 2
     assert state["selected_resources"]["table"] == "giikin_aliyun.tb_dwd_order"
     assert state["params"]["table_name"] == "giikin_aliyun.tb_dwd_order"
     assert state["pending_interaction"] == {}
+    assert state["pending_objective"] == ""
     assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_resolve_cancel_serializes_with_answer(tmp_path, monkeypatch) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "type": "pick_table",
+                    "id": "table_1",
+                    "label": "query orders",
+                    "value": "giikin_aliyun.tb_dwd_order",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    answer_write_entered = asyncio.Event()
+    release_answer_write = asyncio.Event()
+    resolve_entered = asyncio.Event()
+    tasks = []
+
+    try:
+        current = await graph.remember(
+            "conv-resolve-race",
+            "find orders",
+            needs_clarification=True,
+            pending_interaction=pending.model_dump(),
+        )
+        update_state = graph._graph.aupdate_state
+        resolve_unlocked = graph._resolve_unlocked
+
+        async def delayed_answer_update(*args, **kwargs):
+            answer_write_entered.set()
+            await release_answer_write.wait()
+            return await update_state(*args, **kwargs)
+
+        async def observed_resolve(*args, **kwargs):
+            resolve_entered.set()
+            return await resolve_unlocked(*args, **kwargs)
+
+        monkeypatch.setattr(graph._graph, "aupdate_state", delayed_answer_update)
+        monkeypatch.setattr(graph, "_resolve_unlocked", observed_resolve)
+        tasks.append(
+            asyncio.create_task(
+                graph.answer(
+                    "conv-resolve-race",
+                    InteractionAnswer(
+                        interaction_id=pending.interaction_id,
+                        option_id="table_1",
+                        state_version=current["state_version"],
+                    ),
+                )
+            )
+        )
+        await answer_write_entered.wait()
+        tasks.append(asyncio.create_task(graph.resolve("取消", "conv-resolve-race")))
+        await asyncio.sleep(0)
+        if resolve_entered.is_set():
+            await tasks[1]
+        release_answer_write.set()
+        answer_result, resolve_result = await asyncio.gather(*tasks, return_exceptions=True)
+        final = await graph.context("conv-resolve-race")
+
+        assert resolve_result == "取消"
+        assert final["pending_interaction"] == {}
+        if isinstance(answer_result, InteractionExpiredError):
+            assert final["state_version"] == current["state_version"] + 1
+        else:
+            assert answer_result["state_version"] == current["state_version"] + 1
+            assert final["state_version"] == current["state_version"] + 2
+    finally:
+        release_answer_write.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cancel_atomically_clears_pending_and_increments_version(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    pending = PendingInteraction(
+        interaction_id="int-cancel",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择表",
+        state_version=1,
+    )
+    remembered = await graph.remember(
+        "conv-cancel",
+        "找订单表",
+        needs_clarification=True,
+        pending_interaction=pending.model_dump(),
+        selected_resources={"table": "giikin_aliyun.tb_dwd_order"},
+        task_status="waiting_user",
+    )
+
+    cancelled = await graph.cancel("conv-cancel")
+    restored = await graph.context("conv-cancel")
+
+    assert remembered["state_version"] == 1
+    assert cancelled["state_version"] == 2
+    assert cancelled["pending_interaction"] == {}
+    assert cancelled["pending_objective"] == ""
+    assert cancelled["task_status"] == "cancelled"
+    assert cancelled["selected_resources"] == {"table": "giikin_aliyun.tb_dwd_order"}
+    assert restored == cancelled
 
 
 @pytest.mark.asyncio
@@ -258,6 +801,443 @@ async def test_cancel_clears_interaction_and_selected_resources(tmp_path) -> Non
     assert state["pending_interaction"] == {}
     assert state["selected_resources"] == {}
     assert state["state_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_text_reset_clears_active_objective(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    try:
+        await graph.remember(
+            "conv-reset-objective",
+            "查找订单表",
+            needs_clarification=False,
+            params={"layer": "dwd"},
+        )
+        await graph.resolve("重新开始", "conv-reset-objective")
+        state = await graph.context("conv-reset-objective")
+
+        assert state["objective"] == ""
+        assert state["params"] == {}
+        assert state["task_status"] == "idle"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_new_goal_is_not_hijacked_by_old_custom_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="diagnose_issue", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="诊断完成",
+            workflow_type="diagnose_issue",
+            mode="plan",
+        )
+    )
+    pending = PendingInteraction(
+        interaction_id="int-old",
+        type="free_text",
+        purpose="select_table",
+        prompt="请选择订单表",
+        allow_custom_input=True,
+        state_version=1,
+    )
+    try:
+        await graph.remember(
+            "conv-switch-goal",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            params={"layer": "dwd"},
+            selected_resources={"table": "dw.old_orders"},
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "诊断昨天失败的任务",
+            conversation_id="conv-switch-goal",
+            execution_mode="plan",
+        )
+        restored = await graph.context("conv-switch-goal")
+
+        assert response.success is True
+        assert restored["objective"] == "诊断昨天失败的任务"
+        assert restored["action"] == "diagnose_issue"
+        assert restored["selected_resources"] == {}
+        assert "layer" not in restored["params"]
+        assert agent._workflow_service.execute.await_args.kwargs["action"] == "diagnose_issue"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_pre_workflow_failure_restores_consumed_interaction(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.side_effect = RuntimeError("temporary failure")
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock()
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "table_1",
+                    "type": "pick_table",
+                    "label": "订单表",
+                    "value": "dw.orders",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-recover-answer",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            params={},
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "订单表",
+            conversation_id="conv-recover-answer",
+            execution_mode="auto",
+            interaction_answer=InteractionAnswer(
+                interaction_id=pending.interaction_id,
+                option_id="table_1",
+                state_version=remembered["state_version"],
+            ),
+        )
+        restored = await graph.context("conv-recover-answer")
+
+        assert response.success is False
+        assert response.data["agent_mode"] == "retryable_error"
+        assert response.data["interaction"]["interaction_id"] == pending.interaction_id
+        assert response.data["interaction"]["state_version"] == restored["state_version"]
+        assert restored["pending_interaction"]["interaction_id"] == pending.interaction_id
+        assert restored["params"] == {}
+        assert restored["selected_resources"] == {}
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_risky_workflow_failure_marks_execution_unknown_without_retry_card(
+    tmp_path,
+) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="forward_modeling", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(side_effect=RuntimeError("timeout"))
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "confirm_model",
+                    "type": "action",
+                    "label": "确认执行",
+                    "value": "确认执行",
+                }
+            ]
+        },
+        purpose="confirm_modeling",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-risky-failure",
+            "创建订单模型",
+            needs_clarification=True,
+            action="forward_modeling",
+            pending_interaction=pending.model_dump(),
+        )
+        response = await agent.chat(
+            "确认执行",
+            conversation_id="conv-risky-failure",
+            execution_mode="dev_execute",
+            interaction_answer=InteractionAnswer(
+                interaction_id=pending.interaction_id,
+                option_id="confirm_model",
+                state_version=remembered["state_version"],
+            ),
+        )
+        restored = await graph.context("conv-risky-failure")
+
+        assert response.success is False
+        assert response.data["agent_mode"] == "execution_unknown"
+        assert "interaction" not in response.data
+        assert restored["pending_interaction"] == {}
+        assert restored["task_status"] == "execution_unknown"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_execution_unknown_blocks_continue_without_restarting_workflow(
+    tmp_path,
+) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.execute = AsyncMock()
+    try:
+        await graph.remember(
+            "conv-unknown-continue",
+            "创建订单模型",
+            needs_clarification=False,
+            action="forward_modeling",
+            params={"source_table": "dw.orders"},
+            task_status="execution_unknown",
+        )
+        response = await agent.chat(
+            "继续",
+            conversation_id="conv-unknown-continue",
+            execution_mode="dev_execute",
+        )
+        restored = await graph.context("conv-unknown-continue")
+
+        assert response.success is False
+        assert response.error == "execution_unknown"
+        assert response.data["agent_mode"] == "execution_unknown"
+        assert restored["task_status"] == "execution_unknown"
+        agent._workflow_service.execute.assert_not_awaited()
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interlude", ["你好", "什么意思"])
+async def test_execution_unknown_survives_greeting_or_explanation(tmp_path, interlude) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.execute = AsyncMock()
+    try:
+        await graph.remember(
+            "conv-unknown-interlude",
+            "创建订单模型",
+            needs_clarification=False,
+            action="forward_modeling",
+            params={"source_table": "dw.orders"},
+            task_status="execution_unknown",
+        )
+        interlude_response = await agent.chat(
+            interlude,
+            conversation_id="conv-unknown-interlude",
+        )
+        after_interlude = await graph.context("conv-unknown-interlude")
+        continue_response = await agent.chat(
+            "继续",
+            conversation_id="conv-unknown-interlude",
+            execution_mode="dev_execute",
+        )
+
+        assert interlude_response.error == "execution_unknown"
+        assert "interaction" not in interlude_response.data
+        assert after_interlude["task_status"] == "execution_unknown"
+        assert continue_response.error == "execution_unknown"
+        agent._workflow_service.execute.assert_not_awaited()
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_find_table_llm_failure_recovers_from_execution_unknown(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._run_coordinator.conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    recorder = MagicMock()
+    recorder.events.return_value = [
+        {
+            "event": "workflow_started",
+            "action": "ask_data",
+            "write_workflow_started": True,
+        },
+        {
+            "event": "turn_failed",
+            "error_type": "LLMError",
+            "write_boundary_crossed": False,
+        },
+    ]
+    agent._conversation_events = recorder
+    try:
+        await graph.remember(
+            "legacy-read",
+            "查找数据表",
+            needs_clarification=False,
+            action="",
+            task_status="execution_unknown",
+            last_result={"error": "LLMError", "agent_mode": "execution_unknown"},
+        )
+
+        response = await agent.chat("你好", conversation_id="legacy-read")
+        restored = await graph.context("legacy-read")
+
+        assert response.error != "execution_unknown"
+        assert restored["task_status"] == "recoverable_error"
+        assert restored["action"] == "find_table"
+        assert restored["pending_interaction"]["purpose"] == "refine_table_search"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unknown_with_write_boundary_remains_blocked(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._run_coordinator.conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    recorder = MagicMock()
+    recorder.events.return_value = [
+        {"event": "workflow_started", "action": "forward_modeling"},
+        {
+            "event": "tool.completed",
+            "tool": "create_node",
+            "write_boundary_crossed": True,
+        },
+        {"event": "turn_failed", "error_type": "TimeoutError"},
+    ]
+    agent._conversation_events = recorder
+    try:
+        await graph.remember(
+            "legacy-write",
+            "创建 DWD 节点",
+            needs_clarification=False,
+            action="forward_modeling",
+            task_status="execution_unknown",
+        )
+
+        response = await agent.chat("你好", conversation_id="legacy-write")
+
+        assert response.error == "execution_unknown"
+        assert (await graph.context("legacy-write"))["task_status"] == "execution_unknown"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_old_card_click_executes_workflow_once(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+    from dataworks_agent.agent.nlu.intent_parser import Intent
+    from dataworks_agent.agent.workflow_service import WorkflowResult
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    agent._intent_parser = MagicMock()
+    agent._intent_parser.parse.return_value = Intent(action="ask_data", confidence=0.95)
+    agent._workflow_service = MagicMock()
+    agent._workflow_service.understand_business_query.return_value = None
+    agent._workflow_service.execute = AsyncMock(
+        return_value=WorkflowResult(
+            success=True,
+            message="查询完成",
+            workflow_type="ask_data",
+            mode="dev_execute",
+        )
+    )
+    pending = build_interaction(
+        {
+            "option_chips": [
+                {
+                    "id": "table_1",
+                    "type": "pick_table",
+                    "label": "订单表",
+                    "value": "dw.orders",
+                }
+            ]
+        },
+        purpose="select_table",
+        state_version=1,
+    )
+    assert pending is not None
+    try:
+        remembered = await graph.remember(
+            "conv-double-click",
+            "查找订单表",
+            needs_clarification=True,
+            action="ask_data",
+            pending_interaction=pending.model_dump(),
+        )
+        answer = InteractionAnswer(
+            interaction_id=pending.interaction_id,
+            option_id="table_1",
+            state_version=remembered["state_version"],
+        )
+        first, second = await asyncio.gather(
+            agent.chat(
+                "订单表",
+                conversation_id="conv-double-click",
+                execution_mode="auto",
+                interaction_answer=answer,
+            ),
+            agent.chat(
+                "订单表",
+                conversation_id="conv-double-click",
+                execution_mode="auto",
+                interaction_answer=answer,
+            ),
+        )
+
+        assert sorted([first.success, second.success]) == [False, True]
+        assert {first.error, second.error} >= {"interaction_expired"}
+        assert agent._workflow_service.execute.await_count == 1
+    finally:
+        await graph.aclose()
 
 
 @pytest.mark.asyncio
@@ -781,6 +1761,7 @@ async def test_layer_option_refines_previous_objective_text() -> None:
     assert "找订单表" in parsed_message
     assert "只要 dwd" in parsed_message
     assert agent._workflow_service.execute.await_args.kwargs["params"]["layer"] == "dwd"
+
 
 @pytest.mark.parametrize("message", ["取消", "重新开始", "新任务", "cancel", "reset"])
 def test_conversation_reset_recognizes_supported_commands(message: str) -> None:
