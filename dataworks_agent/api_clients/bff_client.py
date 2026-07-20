@@ -18,6 +18,11 @@ import time
 
 import httpx
 
+from dataworks_agent.api_clients.provider_errors import (
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderUnavailableError,
+)
 from dataworks_agent.config import settings
 from dataworks_agent.cookie.crypto import decrypt_cookie
 from dataworks_agent.middleware.circuit_breaker import bff_breaker
@@ -752,8 +757,19 @@ class _MetadataLineageMixin:
                 "pageSize": str(page_size),
             },
         )
-        if resp.get("code") != 200:
-            return []
+        code = resp.get("code")
+        if code in (403001, "403001"):
+            raise ProviderAuthenticationError(
+                "cookie_auth_required",
+                str(resp.get("reason") or resp.get("message") or "USER_NOT_LOGGED_IN"),
+                provider="cookie_bff",
+            )
+        if code not in (200, "200"):
+            raise ProviderUnavailableError(
+                "bff_business_error",
+                str(resp.get("reason") or resp.get("message") or code or "unknown"),
+                provider="cookie_bff",
+            )
         page = resp.get("data") or {}
         items = page.get("data") if isinstance(page, dict) else []
         return [
@@ -908,7 +924,14 @@ class DataWorksClient(
 
     async def _refresh_cookie(self) -> str:
         if not self._cookie:
-            self._cookie = decrypt_cookie()
+            cookie = decrypt_cookie()
+            if not cookie:
+                raise ProviderAuthenticationError(
+                    "cookie_decrypt_failed",
+                    "Encrypted Cookie is unavailable for the current key",
+                    provider="cookie_bff",
+                )
+            self._cookie = cookie
         return self._cookie
 
     async def _refresh_csrf(self) -> str:
@@ -923,6 +946,8 @@ class DataWorksClient(
                 data = resp.json()
                 self._csrf_token = data.get("data", {}).get("token", "")
                 self._csrf_time = time.time()
+        except ProviderError:
+            raise
         except Exception:
             pass
         return self._csrf_token

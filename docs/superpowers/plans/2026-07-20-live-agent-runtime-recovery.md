@@ -32,7 +32,7 @@
 - Produces `ProviderError`, `ProviderAuthenticationError`, and `ProviderUnavailableError` with safe `code`, `reason`, and `provider` fields.
 - `DataWorksClient.search_tables(keyword, page_size=50)` still returns `list[dict]` on success and raises a typed error otherwise.
 
-- [ ] **Step 1: Add failing business-code and empty-Cookie tests**
+- [x] **Step 1: Add failing business-code and empty-Cookie tests**
 
 ```python
 @pytest.mark.asyncio
@@ -55,21 +55,21 @@ async def test_empty_decrypted_cookie_stops_before_http(monkeypatch):
     http.get.assert_not_awaited()
 ```
 
-- [ ] **Step 2: Run tests and confirm current silent-empty behavior fails**
+- [x] **Step 2: Run tests and confirm current silent-empty behavior fails**
 
 Run: `uv run python -m pytest tests/integration/test_bff_search_errors.py -q --tb=short`
 
 Expected: typed error imports fail or `search_tables()` returns `[]`.
 
-- [ ] **Step 3: Implement typed errors and fail-fast auth loading**
+- [x] **Step 3: Implement typed errors and fail-fast auth loading**
 
 `_refresh_cookie()` raises `ProviderAuthenticationError("cookie_decrypt_failed", ...)` for an empty decrypted Cookie. `_refresh_csrf()` re-raises typed provider errors instead of swallowing them. `search_tables()` maps `403001` to `cookie_auth_required` and other non-200 business codes to `ProviderUnavailableError`.
 
-- [ ] **Step 4: Verify focused tests**
+- [x] **Step 4: Verify focused tests**
 
 Run: `uv run python -m pytest tests/integration/test_bff_search_errors.py tests/integration/test_data_integration_api.py -q --tb=short`
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add dataworks_agent/api_clients/provider_errors.py dataworks_agent/api_clients/bff_client.py tests/integration/test_bff_search_errors.py
@@ -328,4 +328,3 @@ git commit -m "test(agent): gate live discovery recovery"
 - Type consistency: `ProviderAuthenticationError`, `ProviderUnavailableError`, `DiscoveryStatus`, `DiscoveryResult`, and `TableDiscoveryService.search()` are defined once and consumed consistently.
 - Scope: unrestricted LLM autonomy and a broad tool catalog remain explicit non-goals; this plan repairs the observed live vertical slice without claiming more.
 - Placeholder scan: clean; every implementation and verification step names concrete files, behavior, commands, and expected evidence.
-
