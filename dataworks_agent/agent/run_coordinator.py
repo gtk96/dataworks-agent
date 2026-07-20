@@ -155,6 +155,7 @@ class AgentRunCoordinator:
                     success=result.success,
                     error_code=result.error_code,
                     uncertain_write=result.uncertain_write,
+                    provider=str(result.data.get("provider") or ""),
                 )
                 response = self._tool_response(result)
                 break

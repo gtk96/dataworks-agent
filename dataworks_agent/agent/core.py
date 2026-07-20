@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import threading
@@ -30,7 +31,7 @@ from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
 from dataworks_agent.agent.response_policy import ResponsePolicy
 from dataworks_agent.agent.run_coordinator import AgentRunCoordinator, EventSink
-from dataworks_agent.agent.run_models import AgentRunRequest
+from dataworks_agent.agent.run_models import AgentRunRequest, RunEvent
 from dataworks_agent.agent.run_models import AgentRunResponse as ChatResponse
 from dataworks_agent.agent.tools.registry import ToolRegistry
 from dataworks_agent.agent.tools.table_discovery import TableDiscoveryTool
@@ -224,6 +225,14 @@ class ChatAgent:
                 else None,
             )
             self._run_coordinator.conversation_graph = self._conversation_graph
+
+            async def emit_run_event(event: RunEvent) -> None:
+                self._persist_run_event(event)
+                if run_event_sink is not None:
+                    outcome = run_event_sink(event)
+                    if inspect.isawaitable(outcome):
+                        await outcome
+
             response = await self._run_coordinator.run(
                 AgentRunRequest(
                     conversation_id=str(conversation_id or ""),
@@ -232,7 +241,7 @@ class ChatAgent:
                     request_type=request_type,
                     context_updates=dict(context_updates or {}),
                 ),
-                emit=run_event_sink,
+                emit=emit_run_event,
             )
             interaction = response.data.get("interaction") or {}
             if interaction:
@@ -937,6 +946,9 @@ class ChatAgent:
                 "empty message",
                 "execution_unknown",
                 "interaction_expired",
+                "table_not_found",
+                "table_search_auth_required",
+                "table_search_unavailable",
             }
             error_type = (
                 response.error
@@ -1240,6 +1252,7 @@ class ChatAgent:
                 payload=response.data,
             )
             return response
+
         except Exception:
             logger.exception("Failed to persist unknown execution state")
             return ChatResponse(
@@ -1250,6 +1263,43 @@ class ChatAgent:
                 data={"agent_mode": "execution_unknown"},
                 error=str(error),
             )
+
+    def _persist_run_event(self, event: RunEvent) -> None:
+        """Mirror safe NDJSON lifecycle fields into the conversation audit log."""
+        data = dict(event.data or {})
+        payload: dict[str, Any] = {}
+        if event.type == "run.started":
+            payload = {"run_id": event.run_id}
+        elif event.type == "decision.started":
+            payload = {"decision_index": int(data.get("index") or 0)}
+        elif event.type == "decision.completed":
+            payload = {"decision": str(data.get("decision") or "")}
+        elif event.type == "tool.started":
+            tool_name = str(data.get("tool") or "")
+            tool = self._run_coordinator.tools.get(tool_name)
+            payload = {
+                "tool": tool_name,
+                "side_effect": str(getattr(tool, "side_effect", "")),
+            }
+        elif event.type == "tool.completed":
+            payload = {
+                "tool": str(data.get("tool") or ""),
+                "success": bool(data.get("success")),
+                "error_code": str(data.get("error_code") or ""),
+                "uncertain_write": bool(data.get("uncertain_write")),
+                "provider": str(data.get("provider") or ""),
+            }
+        elif event.type == "state.persisted":
+            payload = {"state_version": int(data.get("state_version") or 0)}
+        elif event.type == "response.completed":
+            response = dict(data.get("response") or {})
+            payload = {
+                "success": bool(response.get("success")),
+                "error_code": str(response.get("error") or ""),
+            }
+        else:
+            return
+        self._emit_conversation_event(event.type, **payload)
 
     async def _recover_consumed_interaction(
         self,

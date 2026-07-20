@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from dataworks_agent.api_clients.provider_errors import ProviderError
 from dataworks_agent.config import settings
 from dataworks_agent.eventlog.masking import mask_payload
 from dataworks_agent.state import app_state
@@ -133,12 +134,7 @@ class CapabilityRegistry:
                 "connected" if official_online else "not connected",
                 checked_at,
             ),
-            "table_search": CapabilityState(
-                bff_state.configured,
-                bff_state.online,
-                "ready" if bff_state.online else "Cookie BFF unavailable",
-                bff_state.checked_at,
-            ),
+            "table_search": self._table_search_state(bff_state, maxcompute_state),
             "ida_query": CapabilityState(
                 bff_state.configured,
                 bff_state.online,
@@ -167,7 +163,10 @@ class CapabilityRegistry:
     async def _probe_bff(client: Any) -> bool:
         if client is None:
             return False
-        await client._refresh_csrf()
+        token = await client._refresh_csrf()
+        if not token:
+            return False
+        await client.search_tables("__agent_health_probe_no_match__", page_size=1)
         return True
 
     @staticmethod
@@ -213,7 +212,26 @@ class CapabilityRegistry:
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
+        if isinstance(exc, ProviderError):
+            return exc.code
         return str(mask_payload(str(exc))).replace("\n", " ")[:200] or type(exc).__name__
+
+    @staticmethod
+    def _table_search_state(
+        bff_state: CapabilityState,
+        maxcompute_state: CapabilityState,
+    ) -> CapabilityState:
+        configured = bff_state.configured or maxcompute_state.configured
+        online = bff_state.online or maxcompute_state.online
+        if bff_state.online and maxcompute_state.online:
+            status = "exact-name and free-text ready"
+        elif maxcompute_state.online:
+            status = f"exact-name ready; free-text unavailable: {bff_state.status}"
+        elif bff_state.online:
+            status = "free-text ready; exact-name MaxCompute unavailable"
+        else:
+            status = f"unavailable: {bff_state.status}"
+        return CapabilityState(configured, online, status, bff_state.checked_at)
 
     def _fingerprint(self) -> tuple[Any, ...]:
         official = getattr(self._state, "_official_mcp_client", None)

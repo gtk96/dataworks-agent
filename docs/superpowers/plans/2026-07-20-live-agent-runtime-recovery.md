@@ -204,27 +204,27 @@ git commit -m "fix(dialogue): recover proven read-only unknown states"
 - BFF probe validates a non-empty CSRF token and one bounded read-only business request.
 - Persisted tool events contain only tool name, declared side effect, provider, success, safe error code, and uncertainty flag.
 
-- [ ] **Step 1: Add failing health and event tests**
+- [x] **Step 1: Add failing health and event tests**
 
 Assert `403001` becomes `cookie_auth_required`, exact-name discovery remains partially available through MaxCompute, and a live bounded run persists ordered `tool.started/tool.completed` events without arguments or raw messages.
 
-- [ ] **Step 2: Run focused tests and confirm missing semantics**
+- [x] **Step 2: Run focused tests and confirm missing semantics**
 
 Run: `uv run python -m pytest tests/integration/test_agent_capabilities.py tests/integration/test_chat_agent_event_chain.py -q --tb=short`
 
-- [ ] **Step 3: Implement business-aware health**
+- [x] **Step 3: Implement business-aware health**
 
 Replace unconditional `_probe_bff()` success with token/business validation. Report stable safe codes and represent exact-name versus free-text search availability without claiming unrestricted search.
 
-- [ ] **Step 4: Tee NDJSON events into the conversation recorder**
+- [x] **Step 4: Tee NDJSON events into the conversation recorder**
 
 Persist only safe event fields. Add discovery error codes to the recorder allowlist so `table_search_auth_required`, `table_search_unavailable`, and `table_not_found` are not collapsed to `response_error`.
 
-- [ ] **Step 5: Verify health and event tests**
+- [x] **Step 5: Verify health and event tests**
 
 Run: `uv run python -m pytest tests/integration/test_agent_capabilities.py tests/integration/test_chat_agent_event_chain.py tests/integration/test_conversation_events.py -q --tb=short`
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 ```powershell
 git add dataworks_agent/agent/capabilities.py dataworks_agent/agent/core.py dataworks_agent/agent/run_coordinator.py dataworks_agent/agent/conversation_events.py tests/integration/test_agent_capabilities.py tests/integration/test_chat_agent_event_chain.py

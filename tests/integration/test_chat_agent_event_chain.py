@@ -4,10 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from dataworks_agent.agent.context.metadata_provider import MetadataQueryResult
 from dataworks_agent.agent.conversation_events import TurnTrace
 from dataworks_agent.agent.conversation_graph import ConversationGraph
 from dataworks_agent.agent.core import ChatAgent
 from dataworks_agent.agent.nlu.intent_parser import Intent
+from dataworks_agent.agent.tools.registry import ToolRegistry
+from dataworks_agent.agent.tools.table_discovery import TableDiscoveryTool
 from dataworks_agent.agent.workflow_service import WorkflowResult
 
 
@@ -54,6 +57,11 @@ async def test_chat_agent_emits_ordered_greeting_trace_and_response_ids(tmp_path
         "turn_received",
         "context_loaded",
         "turn_classified",
+        "run.started",
+        "decision.started",
+        "decision.completed",
+        "state.persisted",
+        "response.completed",
         "interaction_emitted",
         "state_persisted",
         "response_sent",
@@ -128,3 +136,34 @@ async def test_chat_agent_emits_complete_workflow_trace(tmp_path):
         "response_sent",
     ]
     await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_bounded_tool_events_are_persisted_without_arguments(tmp_path):
+    recorder = FakeConversationEventRecorder()
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    provider = AsyncMock()
+    provider.search_table.return_value = MetadataQueryResult(
+        keyword="订单",
+        candidates=[{"full_name": "dw.dwd_orders", "layer": "dwd"}],
+    )
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._run_coordinator.conversation_graph = graph
+    agent._run_coordinator.tools = ToolRegistry([TableDiscoveryTool(provider)])
+    agent._conversation_events = recorder
+    try:
+        response = await agent.chat("找订单表", conversation_id="conv-tool-trace")
+
+        assert response.success is True
+        events = [event for event, _payload in recorder.records]
+        assert "tool.started" in events
+        assert "tool.completed" in events
+        started = next(payload for event, payload in recorder.records if event == "tool.started")
+        completed = next(payload for event, payload in recorder.records if event == "tool.completed")
+        assert started == {"tool": "find_table", "side_effect": "read"}
+        assert "arguments" not in started
+        assert completed["tool"] == "find_table"
+        assert completed["success"] is True
+    finally:
+        await graph.aclose()
