@@ -1,5 +1,7 @@
 param(
-    [string]$OutputRoot = "reports/continuous-dialogue"
+    [string]$OutputRoot = "reports/continuous-dialogue",
+    [string]$LiveBaseUrl = "",
+    [string]$LiveCanary = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +32,13 @@ $commands = @(
     "npm run build",
     "npm run test:e2e"
 )
+if ($LiveBaseUrl) {
+    $liveCommand = "uv run python -m dataworks_agent.scripts.verify_live_table_discovery --base-url $LiveBaseUrl --output <run>/live"
+    if ($LiveCanary) {
+        $liveCommand += " --canary $LiveCanary"
+    }
+    $commands += $liveCommand
+}
 $commands | Set-Content -Encoding utf8 (Join-Path $runDir "commands.txt")
 $commit | Set-Content -Encoding utf8 (Join-Path $runDir "commit.txt")
 
@@ -63,6 +72,24 @@ try {
     Assert-NativeSuccess "browser E2E"
     Pop-Location
 
+    $liveResult = "NOT RUN"
+    if ($LiveBaseUrl) {
+        Push-Location $root
+        $liveArgs = @(
+            "run", "python", "-m", "dataworks_agent.scripts.verify_live_table_discovery",
+            "--base-url", $LiveBaseUrl,
+            "--output", (Join-Path $runDir "live")
+        )
+        if ($LiveCanary) {
+            $liveArgs += @("--canary", $LiveCanary)
+        }
+        & uv @liveArgs
+        Assert-NativeSuccess "live read-only table discovery"
+        Pop-Location
+        $liveVerdict = Get-Content -Raw -Encoding utf8 (Join-Path $runDir "live/verdict.json") | ConvertFrom-Json
+        $liveResult = "PASS ($($liveVerdict.classification))"
+    }
+
     $console = @()
     Get-ChildItem -LiteralPath $rawEvidence -Filter "*-console.json" | ForEach-Object {
         $console += [PSCustomObject]@{ test = $_.BaseName; entries = @(Get-Content -Raw -Encoding utf8 $_.FullName | ConvertFrom-Json) }
@@ -94,6 +121,7 @@ try {
 - Frontend unit tests: PASS
 - Frontend build: PASS
 - Browser journeys: 8/8 PASS
+- Live read-only verification: $liveResult
 - DataWorks write-capable calls: 0
 - Result: PASS
 "@

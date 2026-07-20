@@ -280,21 +280,22 @@ git commit -m "fix(frontend): distinguish discovery recovery states"
 **Files:**
 - Modify: `scripts/run_continuous_dialogue_acceptance.ps1`
 - Create: `dataworks_agent/scripts/verify_live_table_discovery.py`
+- Test: `tests/integration/test_verify_live_table_discovery.py`
 - Modify: `docs/product/conversational-dialog-design.md`
 - Modify: `docs/superpowers/plans/2026-07-20-live-agent-runtime-recovery.md`
 
 **Interfaces:**
 - `verify_live_table_discovery.py --base-url http://127.0.0.1:8085 --output <dir> [--canary project.table]` exits nonzero for false no-match, write evidence, or an expected canary miss.
 
-- [ ] **Step 1: Implement assertion-based live verifier**
+- [x] **Step 1: Implement assertion-based live verifier**
 
 Record health, transcript, run events, provider provenance, and write audit. Classify runs without a configured canary as dependency-only, never full live success.
 
-- [ ] **Step 2: Run focused backend verification**
+- [x] **Step 2: Run focused backend verification**
 
 Run: `uv run python -m pytest tests/integration/test_bff_search_errors.py tests/integration/test_agent_run_tools.py tests/integration/test_agent_capabilities.py tests/integration/test_agent_interaction.py tests/integration/test_chat_agent_event_chain.py -q --tb=short`
 
-- [ ] **Step 3: Run all regression gates**
+- [x] **Step 3: Run all regression gates**
 
 Run: `uv run ruff check .`
 
