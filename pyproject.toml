@@ -64,6 +64,12 @@ dev = [
     "build>=1.2.0",
 ]
 
+[project.optional-dependencies]
+rag = [
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests/integration"]

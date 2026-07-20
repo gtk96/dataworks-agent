@@ -446,4 +446,39 @@ class UserDirectoryModel(Base):
     source: Mapped[str] = mapped_column(String(20), default="")  # dingtalk/web/ip
     created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
     updated_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
+
+
+class ExecutionEpisodeModel(Base):
+    """情景记忆 — 记录一次自主任务的完整执行过程与反思结果。"""
+
+    __tablename__ = "execution_episodes"
+
+    episode_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_type: Mapped[str] = mapped_column(String(32), index=True)
+    intent: Mapped[str] = mapped_column(Text, default="")
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
+    plan_steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    execution_log_json: Mapped[str] = mapped_column(Text, default="[]")
+    final_status: Mapped[str] = mapped_column(String(20), default="", index=True)
+    verification_result_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
+    lessons_learned_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class LearnedRuleModel(Base):
+    """学习规则 — 从历史案例中提炼的可复用策略，支持置信度追踪。"""
+
+    __tablename__ = "learned_rules"
+
+    rule_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rule_type: Mapped[str] = mapped_column(
+        String(20), default="", index=True
+    )  # planning/execution/verification
+    condition: Mapped[str] = mapped_column(Text, default="")
+    action: Mapped[str] = mapped_column(Text, default="")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5, index=True)
+    source_episode_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[str] = mapped_column(String(32), default=_utc_now)
     updated_at: Mapped[str] = mapped_column(String(32), default=_utc_now)

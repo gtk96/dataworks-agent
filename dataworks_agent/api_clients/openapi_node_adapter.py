@@ -295,7 +295,7 @@ class OpenAPINodeAdapter:
             paging = _to_map(body).get("PagingInfo") or {}
             nodes = paging.get("Nodes") or []
             records.extend(n for n in nodes if isinstance(n, dict))
-            if not nodes or page * 100 >= (paging.get("TotalCount") or 0):
+            if not nodes or page * 100 >= int(paging.get("TotalCount") or 0):
                 break
         if infer_existing_directory(records, target):
             return ExistingDirectoryEvidence.from_check(target, "node_path", True)
@@ -319,7 +319,7 @@ class OpenAPINodeAdapter:
                 path = (n.get("Script") or {}).get("Path")
                 if path and path.rstrip("/") == target:
                     return str(n.get("Id"))
-            total = paging.get("TotalCount") or 0
+            total = int(paging.get("TotalCount") or 0)
             if page * 100 >= total:
                 break
         return None
