@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -33,6 +34,8 @@ from dataworks_agent.agent.tools.registry import ToolRegistry
 
 EventSink = Callable[[RunEvent], Awaitable[None] | None]
 LegacyDelegate = Callable[[AgentRunRequest], Awaitable[AgentRunResponse]]
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRunCoordinator:
@@ -132,63 +135,84 @@ class AgentRunCoordinator:
                 return response
 
         response: AgentRunResponse | None = None
-        for index in range(self._max_decisions):
-            await publish("decision.started", index=index + 1)
-            decision = await self.decisions.decide(
-                request,
-                state,
-                resolved_answer=resolved_answer,
-                interaction_purpose=str(pending.get("purpose") or ""),
-            )
-            await publish("decision.completed", decision=type(decision).__name__)
 
-            if isinstance(decision, ToolDecision):
-                await publish("tool.started", tool=decision.tool_name, arguments=decision.arguments)
-                result = await self.tools.execute(
-                    decision.tool_name,
-                    decision.arguments,
-                    ToolContext(request.conversation_id, state),
+        # Greeting bypass: handle directly without going through the decision loop,
+        # so greetings work regardless of pending interactions.
+        if self.decisions._GREETING_RE.fullmatch(request.message.strip()):
+            data = self._responses.greeting(
+                state, state_version=int(state.get("state_version") or 0) + 1
+            )
+            greeting_msg = (
+                "你好，我们可以继续当前任务。"
+                if state.get("objective")
+                else "你好！我可以协助你查表、问数、建模和排障。"
+            )
+            response = AgentRunResponse(
+                greeting_msg,
+                success=True,
+                data={"agent_mode": "greeting", **data},
+            )
+
+        if response is None:
+            for index in range(self._max_decisions):
+                await publish("decision.started", index=index + 1)
+                decision = await self.decisions.decide(
+                    request,
+                    state,
+                    resolved_answer=resolved_answer,
+                    interaction_purpose=str(pending.get("purpose") or ""),
                 )
-                await publish(
-                    "tool.completed",
-                    tool=decision.tool_name,
-                    success=result.success,
-                    error_code=result.error_code,
-                    uncertain_write=result.uncertain_write,
-                    provider=str(result.data.get("provider") or ""),
-                )
-                response = self._tool_response(result)
-                break
-            if isinstance(decision, RespondDecision):
-                response = AgentRunResponse(
-                    decision.message,
-                    success=decision.success,
-                    data=dict(decision.data),
-                    error=decision.error,
-                )
-                break
-            if isinstance(decision, ClarifyDecision):
-                response = AgentRunResponse(
-                    decision.message,
-                    success=False,
-                    data={"agent_mode": "needs_context", **dict(decision.data)},
-                    error=decision.error,
-                )
-                break
-            if isinstance(decision, DelegateDecision):
-                if self._legacy_delegate is not None:
-                    response = await self._legacy_delegate(request)
-                else:
-                    data = self._responses.clarify(
-                        state_version=int(state.get("state_version") or 0) + 1
+                await publish("decision.completed", decision=type(decision).__name__)
+
+                if isinstance(decision, ToolDecision):
+                    await publish(
+                        "tool.started", tool=decision.tool_name, arguments=decision.arguments
                     )
+                    result = await self.tools.execute(
+                        decision.tool_name,
+                        decision.arguments,
+                        ToolContext(request.conversation_id, state),
+                    )
+                    await publish(
+                        "tool.completed",
+                        tool=decision.tool_name,
+                        success=result.success,
+                        error_code=result.error_code,
+                        uncertain_write=result.uncertain_write,
+                        provider=str(result.data.get("provider") or ""),
+                    )
+                    response = self._tool_response(result)
+                    break
+                if isinstance(decision, RespondDecision):
                     response = AgentRunResponse(
-                        "我还不能确定你的具体目标，请选择一个入口或补充说明。",
-                        success=False,
-                        data={"agent_mode": "needs_context", **data},
-                        error="ambiguous_context",
+                        decision.message,
+                        success=decision.success,
+                        data=dict(decision.data),
+                        error=decision.error,
                     )
-                break
+                    break
+                if isinstance(decision, ClarifyDecision):
+                    response = AgentRunResponse(
+                        decision.message,
+                        success=False,
+                        data={"agent_mode": "needs_context", **dict(decision.data)},
+                        error=decision.error,
+                    )
+                    break
+                if isinstance(decision, DelegateDecision):
+                    if self._legacy_delegate is not None:
+                        response = await self._legacy_delegate(request)
+                    else:
+                        data = self._responses.clarify(
+                            state_version=int(state.get("state_version") or 0) + 1
+                        )
+                        response = AgentRunResponse(
+                            "我还不能确定你的具体目标，请选择一个入口或补充说明。",
+                            success=False,
+                            data={"agent_mode": "needs_context", **data},
+                            error="ambiguous_context",
+                        )
+                    break
 
         if response is None:
             response = AgentRunResponse(
@@ -208,7 +232,9 @@ class AgentRunCoordinator:
         response.data["conversation"] = self._responses.conversation_meta(
             request.conversation_id, persisted
         )
-        if persisted.get("pending_interaction"):
+        # Don't overwrite greeting responses with stale pending interactions
+        is_greeting = response.data.get("agent_mode") == "greeting"
+        if not is_greeting and persisted.get("pending_interaction"):
             response.data["interaction"] = dict(persisted["pending_interaction"])
         await publish("state.persisted", state_version=int(persisted.get("state_version") or 0))
         await publish("response.completed", response=self._response_data(response))
