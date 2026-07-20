@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SmartChatPage from '@/pages/SmartChatPage.vue'
 import {
+  agentModeLabel,
   reconcileActiveInteraction,
   type AgentInteraction,
   type InteractionMessage,
@@ -52,6 +53,12 @@ afterEach(() => {
 })
 
 describe('conversation interaction lifecycle', () => {
+  it('labels recovery and uncertainty modes without exposing backend identifiers', () => {
+    expect(agentModeLabel('waiting_user')).toBe('等待补充')
+    expect(agentModeLabel('recoverable_error')).toBe('依赖待恢复')
+    expect(agentModeLabel('execution_unknown')).toBe('执行结果待确认')
+  })
+
   it('expires historical pending cards and installs the server-owned active card', () => {
     const messages: InteractionMessage[] = [
       { role: 'assistant', interaction: firstInteraction },

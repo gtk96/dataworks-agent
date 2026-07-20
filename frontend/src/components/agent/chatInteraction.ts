@@ -37,6 +37,23 @@ export interface ConversationMeta {
   selected_resources: Record<string, unknown>
 }
 
+const agentModeLabels: Record<string, string> = {
+  idle: '等待目标',
+  proposal: '计划完成',
+  needs_context: '待确认',
+  waiting_user: '等待补充',
+  approval_required: '等待审批',
+  blocked: '执行受阻',
+  rejected: '已拒绝',
+  recoverable_error: '依赖待恢复',
+  execution_unknown: '执行结果待确认',
+  executed: '开发完成',
+}
+
+export function agentModeLabel(mode: string): string {
+  return agentModeLabels[mode] ?? mode
+}
+
 export interface InteractionMessage {
   role?: 'user' | 'assistant'
   isUser?: boolean

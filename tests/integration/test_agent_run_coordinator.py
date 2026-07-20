@@ -60,6 +60,7 @@ async def test_greeting_find_table_and_explain_survive_read_failure(runtime) -> 
     assert find.data["conversation"]["status"] != "execution_unknown"
     assert explain.error != "execution_unknown"
     assert explain.data["interaction"]["purpose"] == "refine_table_search"
+    assert context["action"] == "find_table"
     assert context["pending_interaction"]["purpose"] == "refine_table_search"
     provider.search_table.assert_not_awaited()
 

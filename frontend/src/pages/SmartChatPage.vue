@@ -212,6 +212,7 @@ import Composer from '@/components/agent/Composer.vue'
 import WelcomePanel from '@/components/agent/WelcomePanel.vue'
 import { idempotencyKey } from '@/utils/request'
 import {
+  agentModeLabel,
   buildAgentChatRequest,
   reconcileActiveInteraction,
   type AgentInteraction,
@@ -534,14 +535,7 @@ const agentMode = computed(() => {
   return d?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle')
 })
 
-const modeText = computed(() => ({
-  idle: '等待目标',
-  proposal: '计划完成',
-  needs_context: '待确认',
-  approval_required: '等待审批',
-  blocked: '执行受阻',
-  executed: '开发完成',
-}[agentMode.value] ?? agentMode.value))
+const modeText = computed(() => agentModeLabel(agentMode.value))
 
 const resultTitle = computed(() => {
   const d = lastPayload.value?.data

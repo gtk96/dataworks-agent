@@ -77,8 +77,41 @@ async def health():
 
 @app.post("/acceptance/degrade")
 async def degrade(payload: dict):
-    provider.fail_search = bool(payload.get("enabled"))
-    return {"enabled": provider.fail_search}
+    mode = str(payload.get("mode") or ("unavailable" if payload.get("enabled") else ""))
+    if mode not in {"", "auth", "unavailable", "no_match"}:
+        return {"error": "unsupported_mode", "mode": provider.failure_mode}
+    provider.failure_mode = mode
+    provider.fail_search = False
+    return {"mode": provider.failure_mode}
+
+
+@app.post("/acceptance/poison-read-only")
+async def poison_read_only(payload: dict):
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    if not conversation_id:
+        return {"error": "conversation_id_required"}
+    chat_agent = agent_router._agent
+    context = await chat_agent._conversation_graph.context(conversation_id)
+    await chat_agent._conversation_graph.remember(
+        conversation_id,
+        "查找数据表",
+        needs_clarification=False,
+        action="",
+        pending_interaction=None,
+        task_status="execution_unknown",
+        last_result={"error": "ProviderAuthenticationError", "agent_mode": "execution_unknown"},
+        expected_version=int(context.get("state_version") or 0),
+    )
+    trace = chat_agent._conversation_events.start_turn(conversation_id)
+    chat_agent._conversation_events.emit(trace, "workflow_started", action="ask_data")
+    chat_agent._conversation_events.emit(
+        trace,
+        "turn_failed",
+        error_type="ProviderAuthenticationError",
+        write_boundary_crossed=False,
+    )
+    chat_agent._conversation_events.finish(trace, success=False)
+    return {"conversation_id": conversation_id, "status": "execution_unknown"}
 
 
 @app.post("/acceptance/restart")

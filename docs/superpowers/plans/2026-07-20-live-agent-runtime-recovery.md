@@ -235,36 +235,40 @@ git commit -m "fix(observability): expose live discovery failures"
 
 **Files:**
 - Modify: `frontend/src/pages/SmartChatPage.vue`
+- Modify: `frontend/src/components/agent/AgentChat.vue`
+- Modify: `frontend/src/components/agent/chatInteraction.ts`
 - Modify: `frontend/e2e/agent-runtime.spec.ts`
 - Modify: `tests/e2e/dialogue_server.py`
 - Modify: `tests/support/agent_runtime.py`
+- Modify: `dataworks_agent/agent/run_coordinator.py`
+- Test: `tests/integration/test_agent_run_coordinator.py`
 - Test: `frontend/src/__tests__/conversationLifecycle.spec.ts`
 
 **Interfaces:**
 - UI labels `waiting_user`, `recoverable_error`, and `execution_unknown` distinctly.
 - Acceptance server can deterministically return auth-required, unavailable, no-match, and found outcomes.
 
-- [ ] **Step 1: Add failing frontend mode and browser assertions**
+- [x] **Step 1: Add failing frontend mode and browser assertions**
 
 Assert the page renders `等待补充`, `依赖待恢复`, and `执行结果待确认`; auth-required copy must not contain `没有找到`.
 
-- [ ] **Step 2: Run frontend tests and confirm missing labels**
+- [x] **Step 2: Run frontend tests and confirm missing labels**
 
 Run from `frontend`: `npm run test:unit`
 
-- [ ] **Step 3: Implement labels and deterministic provider modes**
+- [x] **Step 3: Implement labels and deterministic provider modes**
 
 Map backend modes to Chinese UI labels and extend the no-write acceptance provider without adding production-only switches.
 
-- [ ] **Step 4: Add browser recovery journeys**
+- [x] **Step 4: Add browser recovery journeys**
 
 Extend the existing eight journeys without increasing the count: dependency degradation must distinguish authentication from no-match; restart journey must cover proven read-only poison recovery.
 
-- [ ] **Step 5: Verify frontend and browser tests**
+- [x] **Step 5: Verify frontend and browser tests**
 
 Run from `frontend`: `npm run test:unit`, `npm run build`, then `npm run test:e2e`.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```powershell
 git add frontend/src/pages/SmartChatPage.vue frontend/src/__tests__/conversationLifecycle.spec.ts frontend/e2e/agent-runtime.spec.ts tests/e2e/dialogue_server.py tests/support/agent_runtime.py

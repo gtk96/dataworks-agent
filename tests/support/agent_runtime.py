@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from dataworks_agent.agent.context.metadata_provider import MetadataQueryResult
+from dataworks_agent.api_clients.provider_errors import ProviderAuthenticationError
 
 
 class DeterministicNoWriteProvider:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.fail_search = False
+        self.failure_mode = ""
 
     async def search_table(self, keyword: str, message: str) -> MetadataQueryResult:
         self.calls.append(
@@ -20,8 +22,16 @@ class DeterministicNoWriteProvider:
                 "side_effect": "read",
             }
         )
-        if self.fail_search:
+        if self.failure_mode == "auth":
+            raise ProviderAuthenticationError(
+                "cookie_auth_required",
+                "USER_NOT_LOGGED_IN",
+                provider="cookie_bff",
+            )
+        if self.failure_mode == "unavailable" or self.fail_search:
             raise RuntimeError("deterministic metadata dependency unavailable")
+        if self.failure_mode == "no_match":
+            return MetadataQueryResult(keyword=keyword, candidates=[])
         domain = "refund" if "退款" in keyword else "orders"
         if "宽" in keyword:
             candidates = [
@@ -63,4 +73,3 @@ class DeterministicNoWriteProvider:
     def assert_no_writes(self) -> None:
         assert self.calls
         assert all(call["side_effect"] == "read" for call in self.calls)
-

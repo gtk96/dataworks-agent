@@ -34,7 +34,7 @@ function assistantMessage(page: Page, text: string | RegExp) {
 }
 
 test.beforeEach(async ({ page, request }, testInfo) => {
-  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { enabled: false } })
+  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { mode: '' } })
   const evidence: Evidence = { console: [], network: [] }
   ;(testInfo as TestInfo & { evidence: Evidence }).evidence = evidence
   page.on('console', entry => evidence.console.push(`${entry.type()}: ${entry.text()}`))
@@ -92,11 +92,13 @@ test('journey 2: layer and custom refinement remain conversational', async ({ pa
 })
 
 test('journey 3: dependency failure recovers and accepts a new goal', async ({ page, request }) => {
-  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { enabled: true } })
+  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { mode: 'auth' } })
   await send(page, '找订单表')
-  await expect(assistantMessage(page, /deterministic metadata dependency unavailable/)).toBeVisible()
+  const authMessage = assistantMessage(page, '当前表搜索鉴权不可用')
+  await expect(authMessage).toBeVisible()
+  await expect(authMessage).not.toContainText('没有找到')
   await send(page, '什么意思')
-  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { enabled: false } })
+  await request.post('http://127.0.0.1:18085/acceptance/degrade', { data: { mode: '' } })
   await send(page, '找退款表')
   await send(page, '第一个')
   await send(page, '查看字段')
@@ -127,10 +129,20 @@ test('journey 5: refresh restores the authoritative interaction', async ({ page 
 })
 
 test('journey 6: backend runtime restart restores SQLite state', async ({ page, request }) => {
-  await send(page, '找订单表')
+  const conversationId = await page.evaluate(() => localStorage.getItem('conversation_id'))
+  await request.post('http://127.0.0.1:18085/acceptance/poison-read-only', {
+    data: { conversation_id: conversationId },
+  })
   await request.post('http://127.0.0.1:18085/acceptance/restart')
   await page.reload()
   await page.waitForLoadState('networkidle')
+  await send(page, '你好')
+  const restored = await request.get(
+    `http://127.0.0.1:18085/agent/messages?conversation_id=${conversationId}`,
+  )
+  expect((await restored.json()).conversation.status).toBe('recoverable_error')
+  await expect(page.locator('body')).not.toContainText('execution_unknown')
+  await send(page, '找订单表')
   await send(page, '第二个')
   await send(page, '查看字段')
   await send(page, '什么意思')

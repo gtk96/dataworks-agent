@@ -268,7 +268,11 @@ class AgentRunCoordinator:
             request.conversation_id,
             objective,
             needs_clarification=bool(interaction),
-            action=("find_table" if mode in {"tool_result", "recoverable_error"} else None),
+            action=(
+                "find_table"
+                if mode in {"tool_result", "waiting_user", "recoverable_error"}
+                else None
+            ),
             pending_interaction=dict(interaction) if isinstance(interaction, dict) else {},
             selected_resources=selected,
             last_result={

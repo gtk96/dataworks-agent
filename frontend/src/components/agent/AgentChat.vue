@@ -304,6 +304,7 @@ import { agentStepMarker, summarizeAgentSteps } from './stepStatus'
 import { buildSourceDiscoveryView } from './sourceDiscovery'
 import { buildExecutionResources } from './executionResources'
 import {
+  agentModeLabel,
   buildAgentChatRequest,
   reconcileActiveInteraction,
   requestAgentChat,
@@ -462,7 +463,7 @@ const agentMode = computed(() => {
   if (publishRequest.value?.status === 'rejected') return 'rejected'
   return lastPayload.value?.data?.agent_mode ?? (lastPayload.value?.success ? 'executed' : 'idle')
 })
-const modeText = computed(() => ({ idle: '等待目标', proposal: '计划完成', needs_context: '待确认', approval_required: '等待审批', blocked: '执行受阻', rejected: '已拒绝', executed: '开发完成' }[agentMode.value] ?? agentMode.value))
+const modeText = computed(() => agentModeLabel(agentMode.value))
 const resultTitle = computed(() => lastPayload.value?.data?.plan?.summary || lastPayload.value?.message || 'Agent 执行结果')
 const stepSummary = computed(() => summarizeAgentSteps(planSteps.value))
 const completedStepCount = computed(() => planSteps.value.length ? stepSummary.value.completed : (currentStatus.value?.completed_steps ?? 0))
