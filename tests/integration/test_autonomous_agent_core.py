@@ -1,12 +1,17 @@
 """Autonomous Agent 核心框架集成测试。
 
-使用 MagicMock 模拟外部依赖，覆盖：
+使用 MagicMock 模拟 app_state 上的真实客户端，覆盖：
 - ODS/DWD 任务规划
 - 安全守卫拦截规则
-- AutonomousAgent 主流程骨架
+- Executor 真实步骤执行（mock MaxCompute / OpenAPI）
+- Verifier 真实验证（mock MaxCompute / OpenAPI）
+- AutonomousAgent 主流程
 """
 
 from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -33,23 +38,57 @@ def _make_context(
     )
 
 
-def _mock_openapi_client():
-    from unittest.mock import MagicMock
+def _mock_maxcompute_client() -> MagicMock:
+    mc = MagicMock()
+    mc.table_exists = AsyncMock(return_value=True)
+    mc.execute_ddl = AsyncMock(return_value=MagicMock(success=True, instance_id="inst_001", error=None))
+    return mc
 
+
+def _mock_node_client() -> MagicMock:
+    nc = MagicMock()
+    nc.get_node_uuid_by_path = AsyncMock(return_value=None)
+    nc.check_existing_directory = AsyncMock(return_value={"path": "业务流程/106_广告报告", "uuid": "dir_001"})
+    nc.create_node = AsyncMock(return_value="node_uuid_001")
+    nc.update_vertex = AsyncMock(return_value=True)
+    nc.update_node = AsyncMock(return_value=True)
+    nc._load_spec = AsyncMock(return_value={
+        "spec": {
+            "nodes": [{"trigger": {"cron": "0 2 * * *"}, "strategy": {"instanceMode": "Immediately"}}],
+            "flow": [{"depends": [{"type": "Normal", "output": "dataworks.ods_test"}]}],
+        }
+    })
+    nc._save_spec = AsyncMock(return_value=True)
+    return nc
+
+
+def _mock_openapi_client() -> MagicMock:
     client = MagicMock()
-    client.get_node.return_value = {"Node": {"Id": "999", "Name": "test_table"}}
-    client.list_nodes.return_value = {"PagingInfo": {"Nodes": []}}
-    client.create_node.return_value = {"NodeId": "999"}
-    client.update_node.return_value = {"Success": True}
+    client.get_node = AsyncMock(return_value={"Node": {"Id": "999", "Name": "test_table"}})
+    client.list_nodes = AsyncMock(return_value={"PagingInfo": {"Nodes": []}})
+    client.list_node_dependencies = AsyncMock(return_value={"PagingInfo": {"Nodes": []}})
     return client
 
 
-def _mock_modeling_engine():
-    from unittest.mock import MagicMock
-
+def _mock_modeling_engine() -> MagicMock:
     engine = MagicMock()
-    engine.create_task.return_value = "task_mock_001"
+    engine.create_task = AsyncMock(return_value="task_mock_001")
     return engine
+
+
+@pytest.fixture(autouse=True)
+def mock_app_state():
+    """Mock app_state 上的所有真实客户端。"""
+    mc = _mock_maxcompute_client()
+    nc = _mock_node_client()
+    oc = _mock_openapi_client()
+
+    with patch("dataworks_agent.agent.autonomous.executor._get_maxcompute_client", return_value=mc), \
+         patch("dataworks_agent.agent.autonomous.executor._get_node_client", return_value=nc), \
+         patch("dataworks_agent.agent.autonomous.executor._get_openapi_client", return_value=oc), \
+         patch("dataworks_agent.agent.autonomous.verifier._get_maxcompute_client", return_value=mc), \
+         patch("dataworks_agent.agent.autonomous.verifier._get_node_client", return_value=nc):
+        yield {"mc": mc, "nc": nc, "oc": oc}
 
 
 # ── Planner 测试 ──
@@ -57,7 +96,6 @@ def _mock_modeling_engine():
 
 @pytest.mark.asyncio
 async def test_planner_create_ods():
-    """ODS 创建任务应包含 validate_params → generate_ddl → create_table → create_node → configure_schedule → verify。"""
     from dataworks_agent.agent.autonomous.planner import AutonomousPlanner
 
     context = _make_context()
@@ -88,7 +126,6 @@ async def test_planner_create_ods():
 
 @pytest.mark.asyncio
 async def test_planner_create_dwd():
-    """DWD 创建任务应包含 discover_source_tables、generate_sql、configure_dependencies 等完整步骤链。"""
     from dataworks_agent.agent.autonomous.planner import AutonomousPlanner
 
     context = _make_context()
@@ -119,7 +156,6 @@ async def test_planner_create_dwd():
 
 @pytest.mark.asyncio
 async def test_planner_modify_task():
-    """修改任务应包含 read_current → apply_change 步骤。"""
     from dataworks_agent.agent.autonomous.planner import AutonomousPlanner
 
     context = _make_context()
@@ -136,33 +172,26 @@ async def test_planner_modify_task():
 
 @pytest.mark.asyncio
 async def test_planner_generate_plan_by_intent():
-    """generate_plan 应根据意图字符串路由到正确的规划方法。"""
     from dataworks_agent.agent.autonomous.planner import AutonomousPlanner
 
     context = _make_context()
     planner = AutonomousPlanner(context)
 
-    # ODS 意图
     task = planner.generate_plan("帮我创建一张 ODS 表", {"target_table": "ods_xxx"})
     assert task.task_type == TaskType.CREATE_ODS
 
-    # DWD 意图
     task = planner.generate_plan("创建 dwd_order_detail", {"target_table": "dwd_order_detail"})
     assert task.task_type == TaskType.CREATE_DWD
 
-    # 修改意图
     task = planner.generate_plan("修改节点 SQL", {"target_table": "dwd_xxx"})
     assert task.task_type == TaskType.MODIFY_TASK
 
-    # 调度意图
     task = planner.generate_plan("配置调度周期", {"target_table": "dwd_xxx", "cron": "0 3 * * *"})
     assert task.task_type == TaskType.CONFIGURE_SCHEDULE
 
-    # 依赖意图
     task = planner.generate_plan("设置上游依赖", {"target_table": "dwd_xxx"})
     assert task.task_type == TaskType.CONFIGURE_DEPENDENCY
 
-    # 兜底：从 target_table 前缀推断
     task = planner.generate_plan("建表", {"target_table": "ods_auto_infer"})
     assert task.task_type == TaskType.CREATE_ODS
 
@@ -172,7 +201,6 @@ async def test_planner_generate_plan_by_intent():
 
 @pytest.mark.asyncio
 async def test_planner_generate_plan_unknown_raises():
-    """无法识别的意图应抛出 ValueError。"""
     from dataworks_agent.agent.autonomous.planner import AutonomousPlanner
 
     context = _make_context()
@@ -187,7 +215,6 @@ async def test_planner_generate_plan_unknown_raises():
 
 @pytest.mark.asyncio
 async def test_security_guard_blocks_publish():
-    """安全守卫应阻止发布意图。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context()
@@ -202,7 +229,6 @@ async def test_security_guard_blocks_publish():
 
 @pytest.mark.asyncio
 async def test_security_guard_blocks_new_directory():
-    """安全守卫应阻止不在白名单内的业务文件夹。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context()
@@ -220,7 +246,6 @@ async def test_security_guard_blocks_new_directory():
 
 @pytest.mark.asyncio
 async def test_security_guard_allows_approved_folder():
-    """广告报告目录下的操作应通过安全守卫。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context()
@@ -238,7 +263,6 @@ async def test_security_guard_allows_approved_folder():
 
 @pytest.mark.asyncio
 async def test_security_guard_allows_without_explicit_folder():
-    """未显式指定 business_folder 时不应阻断。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context()
@@ -253,7 +277,6 @@ async def test_security_guard_allows_without_explicit_folder():
 
 @pytest.mark.asyncio
 async def test_security_guard_blocks_destructive_node_op():
-    """安全守卫应阻止 delete_node / offline 等破坏性节点操作。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context()
@@ -268,7 +291,6 @@ async def test_security_guard_blocks_destructive_node_op():
 
 @pytest.mark.asyncio
 async def test_security_guard_blocks_disallowed_datasource():
-    """不在允许列表中的数据源类型应被拦截。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context(allowed_data_sources=["odps"])
@@ -283,7 +305,6 @@ async def test_security_guard_blocks_disallowed_datasource():
 
 @pytest.mark.asyncio
 async def test_security_guard_allows_allowed_datasource():
-    """在允许列表中的数据源类型应放行。"""
     from dataworks_agent.agent.autonomous.security_guard import AutonomousSecurityGuard
 
     context = _make_context(allowed_data_sources=["odps", "mysql"])
@@ -296,34 +317,169 @@ async def test_security_guard_allows_allowed_datasource():
     assert result is True
 
 
-# ── Executor 测试 ──
+# ── Executor 测试（真实逻辑 + mock 客户端） ──
 
 
 @pytest.mark.asyncio
-async def test_executor_runs_placeholder_steps():
-    """Executor 应能顺序执行占位步骤并返回成功。"""
+async def test_executor_validate_params():
+    """validate_params 应调用 assert_safe_table_name 和 validate_table_name。"""
     from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
 
-    openapi_client = _mock_openapi_client()
-    modeling_engine = _mock_modeling_engine()
-    executor = AutonomousExecutor(openapi_client, modeling_engine)
-
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
     task = AutonomousTask(
-        task_type=TaskType.CREATE_ODS,
-        description="测试 ODS 创建",
-        params={"target_table": "ods_test"},
-        plan=[
-            {"step": "validate_params", "description": "校验参数"},
-            {"step": "generate_ddl", "description": "生成 DDL"},
-            {"step": "verify", "description": "验证"},
-        ],
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test_table"},
+        plan=[{"step": "validate_params"}],
     )
+    assert await executor.execute_step(task, {"step": "validate_params"}) is True
 
-    success = await executor.execute_task(task)
-    assert success is True
-    assert task.status == ExecutionStatus.EXECUTING
-    assert len(task.step_results) == 3
-    assert all(r.status == "completed" for r in task.step_results)
+
+@pytest.mark.asyncio
+async def test_executor_validate_params_missing_target():
+    """validate_params 缺少 target_table 应抛出 ValueError。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={},
+        plan=[{"step": "validate_params"}],
+    )
+    with pytest.raises(ValueError, match="缺少 target_table"):
+        await executor.execute_step(task, {"step": "validate_params"})
+
+
+@pytest.mark.asyncio
+async def test_executor_validate_params_injection_guard():
+    """validate_params 应拦截注入攻击（B3）。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test; DROP TABLE"},
+        plan=[{"step": "validate_params"}],
+    )
+    with pytest.raises(ValueError):
+        await executor.execute_step(task, {"step": "validate_params"})
+
+
+@pytest.mark.asyncio
+async def test_executor_generate_ddl():
+    """generate_ddl 应生成 DDL 并存入 task.params['_ddl']。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test_table", "source_type": "mysql", "source_table": "test_src"},
+        plan=[{"step": "generate_ddl"}],
+    )
+    assert await executor.execute_step(task, {"step": "generate_ddl"}) is True
+    assert "_ddl" in task.params
+    assert "CREATE TABLE" in task.params["_ddl"]
+    assert "ods_test_table" in task.params["_ddl"]
+
+
+@pytest.mark.asyncio
+async def test_executor_create_table(mock_app_state):
+    """create_table 应调用 MaxComputeClient.execute_ddl。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "_ddl": "CREATE TABLE test (id BIGINT)"},
+        plan=[{"step": "create_table"}],
+    )
+    assert await executor.execute_step(task, {"step": "create_table"}) is True
+    assert task.params.get("_table_created") is True
+    mock_app_state["mc"].execute_ddl.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_create_table_no_client():
+    """create_table 无 MaxComputeClient 应抛出 RuntimeError。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    with patch("dataworks_agent.agent.autonomous.executor._get_maxcompute_client", return_value=None):
+        executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+        task = AutonomousTask(
+            task_type=TaskType.CREATE_ODS, description="test",
+            params={"target_table": "ods_test", "_ddl": "CREATE TABLE test (id BIGINT)"},
+            plan=[{"step": "create_table"}],
+        )
+        with pytest.raises(RuntimeError, match="MaxComputeClient 未初始化"):
+            await executor.execute_step(task, {"step": "create_table"})
+
+
+@pytest.mark.asyncio
+async def test_executor_create_node(mock_app_state):
+    """create_node 应调用 OpenAPINodeAdapter.create_node。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "business_folder": "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"},
+        plan=[{"step": "create_node"}],
+    )
+    assert await executor.execute_step(task, {"step": "create_node"}) is True
+    assert task.params.get("_node_id") == "node_uuid_001"
+    mock_app_state["nc"].create_node.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_create_node_reuses_existing(mock_app_state):
+    """create_node 路径已存在时应复用 UUID。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    mock_app_state["nc"].get_node_uuid_by_path = AsyncMock(return_value="existing_uuid")
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "business_folder": "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"},
+        plan=[{"step": "create_node"}],
+    )
+    assert await executor.execute_step(task, {"step": "create_node"}) is True
+    assert task.params.get("_node_id") == "existing_uuid"
+    mock_app_state["nc"].create_node.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_executor_configure_schedule(mock_app_state):
+    """configure_schedule 应调用 update_vertex 配置 cron。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "_node_id": "node_001", "granularity": "day"},
+        plan=[{"step": "configure_schedule"}],
+    )
+    assert await executor.execute_step(task, {"step": "configure_schedule"}) is True
+    assert task.params.get("_schedule_configured") is True
+    mock_app_state["nc"].update_vertex.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_configure_dependencies(mock_app_state):
+    """configure_dependencies 应读取 spec 并添加上游依赖。"""
+    from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
+
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_DWD, description="test",
+        params={
+            "target_table": "dwd_test",
+            "_node_id": "node_001",
+            "_upstream_tables": ["ods_source_a", "ods_source_b"],
+        },
+        plan=[{"step": "configure_dependencies"}],
+    )
+    assert await executor.execute_step(task, {"step": "configure_dependencies"}) is True
+    assert task.params.get("_dependencies_configured") is True
+    mock_app_state["nc"]._save_spec.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -331,51 +487,39 @@ async def test_executor_stops_on_failed_step():
     """当某一步骤返回 False 时，executor 应停止后续执行并标记失败。"""
     from dataworks_agent.agent.autonomous.executor import AutonomousExecutor
 
-    openapi_client = _mock_openapi_client()
-    modeling_engine = _mock_modeling_engine()
-    executor = AutonomousExecutor(openapi_client, modeling_engine)
-
+    executor = AutonomousExecutor(_mock_openapi_client(), _mock_modeling_engine())
     call_count = {"n": 0}
 
     async def failing_step(task: AutonomousTask, step: dict[str, Any]) -> bool:
         call_count["n"] += 1
         return False
 
-    # 用 mock 替换 execute_step 以注入失败
-    original_execute_step = executor.execute_step
     executor.execute_step = failing_step  # type: ignore[assignment]
 
     task = AutonomousTask(
-        task_type=TaskType.CREATE_ODS,
-        description="测试失败",
+        task_type=TaskType.CREATE_ODS, description="test",
         params={"target_table": "ods_test"},
-        plan=[
-            {"step": "step1"},
-            {"step": "step2"},
-            {"step": "step3"},
-        ],
+        plan=[{"step": "step1"}, {"step": "step2"}, {"step": "step3"}],
     )
 
     success = await executor.execute_task(task)
     assert success is False
     assert task.status == ExecutionStatus.FAILED
-    assert call_count["n"] == 1  # 应在第一步后停止
+    assert call_count["n"] == 1
 
 
-# ── Verifier 测试 ──
+# ── Verifier 测试（真实逻辑 + mock 客户端） ──
 
 
 @pytest.mark.asyncio
-async def test_verifier_ods_creation():
-    """ODS 创建验证应返回 success=True 且包含 table_exists/node_exists/schedule_configured。"""
+async def test_verifier_ods_creation_all_present(mock_app_state):
+    """ODS 创建验证：表存在、节点存在、调度已配置 → 全部通过。"""
     from dataworks_agent.agent.autonomous.verifier import AutonomousVerifier
 
     verifier = AutonomousVerifier(_mock_openapi_client())
-
     task = AutonomousTask(
-        task_type=TaskType.CREATE_ODS,
-        description="测试 ODS 验证",
-        params={"target_table": "ods_test"},
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "_node_id": "node_001"},
     )
 
     result = await verifier.verify_task(task)
@@ -388,16 +532,32 @@ async def test_verifier_ods_creation():
 
 
 @pytest.mark.asyncio
-async def test_verifier_dwd_creation():
-    """DWD 创建验证应额外检查 dependencies_configured。"""
+async def test_verifier_ods_creation_table_missing(mock_app_state):
+    """ODS 创建验证：表不存在 → 失败。"""
+    from dataworks_agent.agent.autonomous.verifier import AutonomousVerifier
+
+    mock_app_state["mc"].table_exists = AsyncMock(return_value=False)
+    verifier = AutonomousVerifier(_mock_openapi_client())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test", "_node_id": "node_001"},
+    )
+
+    result = await verifier.verify_task(task)
+    assert result.success is False
+    table_check = next(c for c in result.checks if c["name"] == "table_exists")
+    assert table_check["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_verifier_dwd_creation(mock_app_state):
+    """DWD 创建验证应包含 dependencies_configured。"""
     from dataworks_agent.agent.autonomous.verifier import AutonomousVerifier
 
     verifier = AutonomousVerifier(_mock_openapi_client())
-
     task = AutonomousTask(
-        task_type=TaskType.CREATE_DWD,
-        description="测试 DWD 验证",
-        params={"target_table": "dwd_test"},
+        task_type=TaskType.CREATE_DWD, description="test",
+        params={"target_table": "dwd_test", "_node_id": "node_001"},
     )
 
     result = await verifier.verify_task(task)
@@ -407,11 +567,27 @@ async def test_verifier_dwd_creation():
     assert "schedule_configured" in check_names
 
 
+@pytest.mark.asyncio
+async def test_verifier_no_node_id():
+    """无 node_id 时验证应标记 node_exists 为失败。"""
+    from dataworks_agent.agent.autonomous.verifier import AutonomousVerifier
+
+    verifier = AutonomousVerifier(_mock_openapi_client())
+    task = AutonomousTask(
+        task_type=TaskType.CREATE_ODS, description="test",
+        params={"target_table": "ods_test"},
+    )
+
+    result = await verifier.verify_task(task)
+    node_check = next(c for c in result.checks if c["name"] == "node_exists")
+    assert node_check["passed"] is False
+
+
 # ── AutonomousAgent 主流程测试 ──
 
 
 @pytest.mark.asyncio
-async def test_autonomous_agent_process_ods_request():
+async def test_autonomous_agent_process_ods_request(mock_app_state):
     """完整流程：ODS 请求应经过规划→安全预检→执行→验证。"""
     agent = AutonomousAgent(
         context=_make_context(),
@@ -436,8 +612,8 @@ async def test_autonomous_agent_process_ods_request():
 
 
 @pytest.mark.asyncio
-async def test_autonomous_agent_process_dwd_request():
-    """完整流程：DWD 请求应包含 discover_source_tables 和 configure_dependencies 步骤。"""
+async def test_autonomous_agent_process_dwd_request(mock_app_state):
+    """完整流程：DWD 请求应包含 discover_source_tables 和 configure_dependencies。"""
     agent = AutonomousAgent(
         context=_make_context(),
         openapi_client=_mock_openapi_client(),
@@ -479,7 +655,7 @@ async def test_autonomous_agent_security_violation_returns_failed_task():
 
 
 @pytest.mark.asyncio
-async def test_autonomous_agent_retry_failed_task():
+async def test_autonomous_agent_retry_failed_task(mock_app_state):
     """重试失败任务应重新执行步骤并尝试验证。"""
     agent = AutonomousAgent(
         context=_make_context(),
@@ -493,7 +669,6 @@ async def test_autonomous_agent_retry_failed_task():
     )
     assert task.status == ExecutionStatus.VERIFIED
 
-    # 手动标记失败以测试重试路径
     task.mark_failed("模拟失败")
     retried = await agent.retry_task(task)
 
