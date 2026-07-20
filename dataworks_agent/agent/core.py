@@ -24,6 +24,7 @@ from dataworks_agent.agent.executor.task_executor import ExecutionResult, TaskEx
 from dataworks_agent.agent.interaction import (
     InteractionAnswer,
     InteractionExpiredError,
+    PendingInteraction,
 )
 from dataworks_agent.agent.nlu.intent_parser import Intent, IntentParser
 from dataworks_agent.agent.planner.task_planner import TaskPlan, TaskPlanner
@@ -193,6 +194,10 @@ class ChatAgent:
             )
 
         bounded_context = await self._conversation_graph.context(conversation_id)
+        bounded_context = await self._recover_read_only_unknown(
+            conversation_id,
+            bounded_context,
+        )
         if self._use_bounded_runtime(message, interaction_answer, bounded_context):
             self._emit_conversation_event(
                 "context_loaded",
@@ -793,6 +798,106 @@ class ChatAgent:
         }:
             return True
         return DecisionProvider.handles_message(message)
+
+    async def _recover_read_only_unknown(
+        self,
+        conversation_id: str | None,
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Migrate only legacy uncertainty that is proven to be read-only."""
+        if not conversation_id or context.get("task_status") != "execution_unknown":
+            return context
+        objective = str(context.get("objective") or "").strip()
+        if not DecisionProvider.is_table_discovery(objective):
+            return context
+        try:
+            events = self._conversation_events.events(conversation_id=conversation_id)
+        except Exception:
+            logger.exception("Failed to inspect conversation evidence for recovery")
+            return context
+        workflow_actions = [
+            str(event.get("action") or "")
+            for event in events
+            if event.get("event") == "workflow_started"
+        ]
+        if not workflow_actions or workflow_actions[-1] not in {"find_table", "ask_data"}:
+            return context
+        if any(event.get("write_boundary_crossed") is True for event in events):
+            return context
+        dangerous_actions = {
+            "forward_modeling",
+            "ods_dwd_modeling",
+            "any_ods_modeling",
+            "create_node",
+            "update_node",
+            "delete_node",
+            "deploy_nodes",
+            "execute_ddl",
+            "publish",
+        }
+        if any(
+            str(event.get("action") or event.get("tool") or "") in dangerous_actions
+            for event in events
+        ):
+            return context
+        failure_types = {
+            str(event.get("error_type") or "")
+            for event in events
+            if event.get("event") == "turn_failed"
+        }
+        if not failure_types.intersection(
+            {
+                "LLMError",
+                "ProviderAuthenticationError",
+                "ProviderUnavailableError",
+                "TimeoutError",
+            }
+        ):
+            return context
+
+        version = int(context.get("state_version") or 0)
+        message = (
+            "上一轮只读搜表没有完成，已恢复为可重试状态。"
+            "请输入新的关键词、完整 project.table，或开始新目标。"
+        )
+        interaction = PendingInteraction(
+            interaction_id=f"recover_{conversation_id[:8]}_{version + 1}",
+            type="free_text",
+            purpose="refine_table_search",
+            prompt=message,
+            options=[],
+            custom_input_placeholder="例如：订单 DWD 表，或 project.table",
+            state_version=version + 1,
+        )
+        try:
+            recovered = await self._conversation_graph.remember(
+                conversation_id,
+                objective,
+                needs_clarification=True,
+                action="find_table",
+                pending_interaction=interaction.model_dump(),
+                selected_resources=dict(context.get("selected_resources") or {}),
+                last_result={
+                    "success": False,
+                    "error": "table_search_unavailable",
+                    "agent_mode": "recoverable_error",
+                    "recovered_from": "execution_unknown",
+                },
+                last_assistant_turn={"content": message},
+                task_status="recoverable_error",
+                expected_version=version,
+            )
+        except Exception:
+            logger.exception("Failed to recover legacy read-only unknown state")
+            return await self._conversation_graph.context(conversation_id)
+        self._emit_conversation_event(
+            "state_recovered",
+            previous_status="execution_unknown",
+            task_status="recoverable_error",
+            recovery_reason="proven_read_only_table_search",
+            state_version=int(recovered.get("state_version") or 0),
+        )
+        return recovered
 
     def _start_turn_trace(self, conversation_id: str | None, message: str) -> TurnTrace | None:
         try:

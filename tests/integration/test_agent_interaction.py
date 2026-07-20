@@ -1085,6 +1085,89 @@ async def test_execution_unknown_survives_greeting_or_explanation(tmp_path, inte
 
 
 @pytest.mark.asyncio
+async def test_legacy_find_table_llm_failure_recovers_from_execution_unknown(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._run_coordinator.conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    recorder = MagicMock()
+    recorder.events.return_value = [
+        {
+            "event": "workflow_started",
+            "action": "ask_data",
+            "write_workflow_started": True,
+        },
+        {
+            "event": "turn_failed",
+            "error_type": "LLMError",
+            "write_boundary_crossed": False,
+        },
+    ]
+    agent._conversation_events = recorder
+    try:
+        await graph.remember(
+            "legacy-read",
+            "查找数据表",
+            needs_clarification=False,
+            action="",
+            task_status="execution_unknown",
+            last_result={"error": "LLMError", "agent_mode": "execution_unknown"},
+        )
+
+        response = await agent.chat("你好", conversation_id="legacy-read")
+        restored = await graph.context("legacy-read")
+
+        assert response.error != "execution_unknown"
+        assert restored["task_status"] == "recoverable_error"
+        assert restored["action"] == "find_table"
+        assert restored["pending_interaction"]["purpose"] == "refine_table_search"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unknown_with_write_boundary_remains_blocked(tmp_path) -> None:
+    from dataworks_agent.agent.conversation_graph import ConversationGraph
+    from dataworks_agent.agent.core import ChatAgent
+
+    graph = ConversationGraph(str(tmp_path / "conversation.db"))
+    agent = ChatAgent()
+    agent._conversation_graph = graph
+    agent._run_coordinator.conversation_graph = graph
+    agent._save_conversation_message = MagicMock()
+    recorder = MagicMock()
+    recorder.events.return_value = [
+        {"event": "workflow_started", "action": "forward_modeling"},
+        {
+            "event": "tool.completed",
+            "tool": "create_node",
+            "write_boundary_crossed": True,
+        },
+        {"event": "turn_failed", "error_type": "TimeoutError"},
+    ]
+    agent._conversation_events = recorder
+    try:
+        await graph.remember(
+            "legacy-write",
+            "创建 DWD 节点",
+            needs_clarification=False,
+            action="forward_modeling",
+            task_status="execution_unknown",
+        )
+
+        response = await agent.chat("你好", conversation_id="legacy-write")
+
+        assert response.error == "execution_unknown"
+        assert (await graph.context("legacy-write"))["task_status"] == "execution_unknown"
+    finally:
+        await graph.aclose()
+
+
+@pytest.mark.asyncio
 async def test_duplicate_old_card_click_executes_workflow_once(tmp_path) -> None:
     from dataworks_agent.agent.conversation_graph import ConversationGraph
     from dataworks_agent.agent.core import ChatAgent

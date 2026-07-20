@@ -150,7 +150,7 @@ git commit -m "fix(agent): route table discovery by provider outcome"
 - Produces `ChatAgent._recover_read_only_unknown(conversation_id, context) -> dict[str, Any]`.
 - Recovery consumes persisted conversation events and never clears ambiguous/write-capable uncertainty.
 
-- [ ] **Step 1: Add failing poisoned-state tests**
+- [x] **Step 1: Add failing poisoned-state tests**
 
 ```python
 @pytest.mark.asyncio
@@ -171,19 +171,19 @@ async def test_unknown_with_write_boundary_remains_blocked(tmp_path):
     assert response.error == "execution_unknown"
 ```
 
-- [ ] **Step 2: Run tests and confirm read-only state remains blocked**
+- [x] **Step 2: Run tests and confirm read-only state remains blocked**
 
 Run: `uv run python -m pytest tests/integration/test_agent_interaction.py -q --tb=short`
 
-- [ ] **Step 3: Implement evidence-based recovery**
+- [x] **Step 3: Implement evidence-based recovery**
 
 Recover only `find_table` or legacy discovery `ask_data` with provider/model/auth error evidence and no write-boundary event. Persist `recoverable_error` plus a new free-text search interaction. Do not change any state lacking sufficient evidence.
 
-- [ ] **Step 4: Verify interaction and restart journeys**
+- [x] **Step 4: Verify interaction and restart journeys**
 
 Run: `uv run python -m pytest tests/integration/test_agent_interaction.py tests/integration/test_agent_runtime_journeys.py -q --tb=short`
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```powershell
 git add dataworks_agent/agent/core.py dataworks_agent/agent/conversation_graph.py tests/integration/test_agent_interaction.py
