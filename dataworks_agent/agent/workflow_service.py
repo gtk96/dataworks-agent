@@ -270,6 +270,8 @@ class AgentWorkflowService:
             return await self._reverse_model(message, params, mode)
         if routed == "diagnose_issue":
             return await self._diagnose(message, params, mode)
+        if routed in ("any_ods_modeling", "ods_dwd_modeling"):
+            return await self._execute_autonomous(message, routed, params, mode)
         return await self._forward_model(
             message,
             params,
@@ -278,6 +280,76 @@ class AgentWorkflowService:
             publish=publish,
             client_ip=client_ip,
         )
+
+    async def _execute_autonomous(
+        self,
+        message: str,
+        action: str,
+        params: dict[str, Any],
+        mode: ExecutionMode,
+    ) -> WorkflowResult:
+        """路由到 AutonomousAgent 执行 ODS/DWD 建模任务。"""
+        from dataworks_agent.agent.autonomous.agent import AutonomousAgent
+        from dataworks_agent.agent.autonomous.state import AutonomousContext
+
+        # 从消息中提取 target_table（NLU 可能未提取）
+        if "target_table" not in params:
+            import re as _re
+
+            table_match = _re.search(
+                r"(ods|dwd|dim|dws|dmr)_[A-Za-z0-9_]+", message, _re.IGNORECASE
+            )
+            if table_match:
+                params["target_table"] = table_match.group(0).lower()
+
+        # 确保 business_folder 在 params 中（executor 需要它来建节点路径）
+        if "business_folder" not in params:
+            params["business_folder"] = "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS"
+
+        context = AutonomousContext(
+            project_id=str(settings.dataworks_project_id),
+            business_folder=params.get("business_folder", "")
+            or "业务流程/106_广告报告/MaxCompute/数据开发/00_ODS",
+            allowed_data_sources=["odps", "mysql", "hologres"],
+            user_id=params.get("user_id", "agent"),
+            session_id=params.get("session_id", str(uuid.uuid4())),
+        )
+
+        agent = AutonomousAgent(
+            context=context,
+            openapi_client=app_state._openapi_client,
+            modeling_engine=None,
+        )
+
+        try:
+            task = await agent.process_request(message, params)
+            success = task.status.value == "verified"
+            steps = [
+                {"step": r.step, "status": r.status, "error": r.error} for r in task.step_results
+            ]
+            return WorkflowResult(
+                success=success,
+                message=task.error_message or "AutonomousAgent 执行完成",
+                workflow_type="autonomous_modeling",
+                mode=mode,
+                steps=steps,
+                data={
+                    "task_id": task.id,
+                    "task_type": task.task_type.value,
+                    "verification": task.verification_result,
+                    "node_id": task.params.get("_node_id"),
+                    "target_table": task.params.get("target_table"),
+                },
+            )
+        except Exception as exc:
+            logger.exception("AutonomousAgent 执行异常: %s", exc)
+            return WorkflowResult(
+                success=False,
+                message=f"AutonomousAgent 异常: {exc}",
+                workflow_type="autonomous_modeling",
+                mode=mode,
+                errors=[str(exc)],
+            )
 
     @staticmethod
     def _loop_policy(workflow_type: str, mode: ExecutionMode) -> LoopPolicy:
@@ -683,6 +755,12 @@ class AgentWorkflowService:
         lower = message.lower()
         if action == "cookie_manage" or "cookie" in lower or "9222" in lower or "登录态" in message:
             return "cookie_manage"
+        # 建表类消息优先走 autonomous 路径，不走 ask_data
+        is_modeling = bool(
+            re.search(r"(建|创建|新建|同步).*?(ods|dwd|dim|dws|表|节点)", message, re.I)
+        ) or bool(re.search(r"(ods|dwd|dim|dws|dmr)_[A-Za-z0-9_]+", message, re.I))
+        if is_modeling and action in ("any_ods_modeling", "ods_dwd_modeling", "ask_data"):
+            return "any_ods_modeling"
         business_query = any(
             re.search(pattern, message, re.I) for pattern in BUSINESS_QUERY_PATTERNS
         )

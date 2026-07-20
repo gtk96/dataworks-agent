@@ -207,6 +207,8 @@ INTENT_TEMPLATES: dict[str, dict[str, Any]] = {
             r"(ods|dwd|dim|dws).*?(全链路|端到端|完整链路|建模)",
             r"(oss|hologres|mysql|polardb|postgres).*?(全链路|端到端|完整链路|入仓)",
             r"(全链路|端到端|完整链路).*?(oss|hologres|mysql|polardb|postgres)",
+            r"(建|创建|新建).*?(ods|dwd|dim|dws).*?(表|节点)",
+            r"(ods|dwd|dim|dws).*?(表|节点).*?(建|创建|新建)",
         ],
         "required_params": [],
         "optional_params": [
