@@ -56,7 +56,7 @@ async def test_greeting_find_table_and_explain_survive_read_failure(runtime) -> 
     context = await graph.context("conv")
 
     assert greeting.data["interaction"]["purpose"] == "choose_entry"
-    assert find.data["agent_mode"] == "recoverable_error"
+    assert find.data["agent_mode"] == "waiting_user"
     assert find.data["conversation"]["status"] != "execution_unknown"
     assert explain.error != "execution_unknown"
     assert explain.data["interaction"]["purpose"] == "refine_table_search"
@@ -131,7 +131,9 @@ async def test_run_is_bounded_and_emits_one_completed_response(runtime) -> None:
         emit=events.append,
     )
 
-    assert response.error == "table_not_found"
+    assert response.success is True
+    assert response.error is None
+    assert response.data["agent_mode"] == "waiting_user"
     assert len([event for event in events if event.type == "response.completed"]) == 1
     assert len([event for event in events if event.type == "decision.started"]) <= 6
     assert [event.type for event in events] == [

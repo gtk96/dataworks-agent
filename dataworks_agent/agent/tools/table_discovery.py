@@ -7,8 +7,11 @@ from collections import Counter
 from typing import Any
 from uuid import uuid4
 
-from dataworks_agent.agent.context.metadata_provider import MetadataProvider
 from dataworks_agent.agent.interaction import InteractionOption, PendingInteraction
+from dataworks_agent.agent.table_discovery_service import (
+    DiscoveryStatus,
+    TableDiscoveryService,
+)
 from dataworks_agent.agent.tools.base import SideEffect, ToolContext, ToolResult
 
 
@@ -16,36 +19,60 @@ class TableDiscoveryTool:
     name = "find_table"
     side_effect = SideEffect.READ
 
-    def __init__(self, provider: MetadataProvider | None = None) -> None:
-        self._provider = provider or MetadataProvider()
+    def __init__(self, provider: Any | None = None, *, service: Any | None = None) -> None:
+        if service is not None:
+            self._service = service
+        elif provider is not None:
+            self._service = TableDiscoveryService(
+                metadata_provider=provider,
+                maxcompute=None,
+                projects=[],
+            )
+        else:
+            self._service = TableDiscoveryService()
 
     async def execute(self, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         raw_keyword = str(arguments.get("keyword") or "").strip()
         keyword = self._normalize_keyword(raw_keyword)
         state_version = int(context.state.get("state_version") or 0) + 1
         if not keyword:
-            return self._clarification(
+            return self._waiting(
                 "请告诉我想找哪类数据表，例如“订单”“退款”或完整英文表名。",
                 state_version,
-                error_code="table_keyword_required",
+                discovery_status="keyword_required",
             )
 
         layer = str(arguments.get("layer") or "").strip().lower()
-        result = await self._provider.search_table(keyword, raw_keyword or keyword)
-        candidates = list(result.candidates if result is not None else [])
+        result = await self._service.search(keyword, raw_keyword or keyword)
+        candidates = list(result.candidates)
         if layer:
             candidates = [item for item in candidates if self._layer(item) == layer]
+        if result.status is DiscoveryStatus.AUTH_REQUIRED:
+            return self._recoverable(
+                "当前表搜索鉴权不可用，请恢复 Cookie 登录后重试，或输入完整 project.table。",
+                state_version,
+                error_code="table_search_auth_required",
+                provider=result.provider,
+            )
+        if result.status is DiscoveryStatus.UNAVAILABLE:
+            return self._recoverable(
+                "当前表搜索依赖暂不可用。你可以稍后重试、输入完整 project.table，或开始新目标。",
+                state_version,
+                error_code="table_search_unavailable",
+                provider=result.provider,
+            )
         if not candidates:
-            return self._clarification(
+            return self._waiting(
                 f"没有找到“{keyword}”对应的可靠表候选。你可以补充业务域、分层或英文表名。",
                 state_version,
-                error_code="table_not_found",
+                discovery_status="not_found",
             )
         if len(candidates) > 8 and not layer:
             return ToolResult.ok(
                 f"找到 {len(candidates)} 张候选表，请先选择数据层。",
                 data={
                     "keyword": keyword,
+                    "provider": result.provider,
                     "interaction": self._layer_interaction(candidates, keyword, state_version),
                 },
             )
@@ -53,6 +80,7 @@ class TableDiscoveryTool:
             f"找到 {len(candidates[:8])} 张“{keyword}”候选表，请选择目标表。",
             data={
                 "keyword": keyword,
+                "provider": result.provider,
                 "candidates": candidates[:8],
                 "interaction": self._table_interaction(candidates[:8], keyword, state_version),
             },
@@ -141,7 +169,7 @@ class TableDiscoveryTool:
         ).model_dump()
 
     @staticmethod
-    def _clarification(message: str, state_version: int, *, error_code: str) -> ToolResult:
+    def _interaction(message: str, state_version: int) -> PendingInteraction:
         interaction = PendingInteraction(
             interaction_id=f"int_{uuid4().hex[:12]}",
             type="free_text",
@@ -151,8 +179,40 @@ class TableDiscoveryTool:
             custom_input_placeholder="例如：订单 DWD 表，或 project.table",
             state_version=state_version,
         )
+        return interaction
+
+    @classmethod
+    def _waiting(
+        cls,
+        message: str,
+        state_version: int,
+        *,
+        discovery_status: str,
+    ) -> ToolResult:
+        return ToolResult.ok(
+            message,
+            data={
+                "agent_mode": "waiting_user",
+                "discovery_status": discovery_status,
+                "interaction": cls._interaction(message, state_version).model_dump(),
+            },
+        )
+
+    @classmethod
+    def _recoverable(
+        cls,
+        message: str,
+        state_version: int,
+        *,
+        error_code: str,
+        provider: str,
+    ) -> ToolResult:
         return ToolResult.failure(
             message,
             error_code=error_code,
-            data={"interaction": interaction.model_dump()},
+            data={
+                "agent_mode": "recoverable_error",
+                "provider": provider,
+                "interaction": cls._interaction(message, state_version).model_dump(),
+            },
         )

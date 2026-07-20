@@ -90,7 +90,7 @@ git commit -m "fix(bff): preserve table-search authentication failures"
 - Produces `TableDiscoveryService.search(keyword: str, message: str) -> DiscoveryResult`.
 - `TableDiscoveryTool` maps `FOUND`, `NOT_FOUND`, `AUTH_REQUIRED`, and `UNAVAILABLE` to distinct conversational responses.
 
-- [ ] **Step 1: Add failing router tests**
+- [x] **Step 1: Add failing router tests**
 
 ```python
 @pytest.mark.asyncio
@@ -116,23 +116,23 @@ async def test_chinese_search_preserves_auth_required():
     assert result.status is DiscoveryStatus.AUTH_REQUIRED
 ```
 
-- [ ] **Step 2: Run tests and confirm missing service**
+- [x] **Step 2: Run tests and confirm missing service**
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py -q --tb=short`
 
-- [ ] **Step 3: Implement minimal provider router**
+- [x] **Step 3: Implement minimal provider router**
 
 Exact bare identifiers check configured MaxCompute projects. Chinese/descriptive search remains on `MetadataProvider`; typed BFF errors are preserved. OpenAPI/MCP are not used as unrestricted search substitutes unless an exact, verified contract exists.
 
-- [ ] **Step 4: Map outcomes to truthful dialogue**
+- [x] **Step 4: Map outcomes to truthful dialogue**
 
 Missing keyword and authenticated no-match produce successful `waiting_user` interactions. Auth failures produce `table_search_auth_required`; outages produce `table_search_unavailable`; both are recoverable and never uncertain writes.
 
-- [ ] **Step 5: Verify tool and coordinator tests**
+- [x] **Step 5: Verify tool and coordinator tests**
 
 Run: `uv run python -m pytest tests/integration/test_agent_run_tools.py tests/integration/test_agent_run_coordinator.py tests/integration/test_agent_runtime_journeys.py -q --tb=short`
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```powershell
 git add dataworks_agent/agent/table_discovery_service.py dataworks_agent/agent/context/metadata_provider.py dataworks_agent/agent/tools/table_discovery.py dataworks_agent/agent/core.py tests/integration/test_agent_run_tools.py
