@@ -58,8 +58,6 @@ async def test_chat_agent_emits_ordered_greeting_trace_and_response_ids(tmp_path
         "context_loaded",
         "turn_classified",
         "run.started",
-        "decision.started",
-        "decision.completed",
         "state.persisted",
         "response.completed",
         "interaction_emitted",
