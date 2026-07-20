@@ -57,6 +57,7 @@ describe('conversation interaction lifecycle', () => {
     expect(agentModeLabel('waiting_user')).toBe('等待补充')
     expect(agentModeLabel('recoverable_error')).toBe('依赖待恢复')
     expect(agentModeLabel('execution_unknown')).toBe('执行结果待确认')
+    expect(agentModeLabel('explain')).toBe('说明')
   })
 
   it('expires historical pending cards and installs the server-owned active card', () => {

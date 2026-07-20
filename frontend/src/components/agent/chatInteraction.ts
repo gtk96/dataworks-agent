@@ -39,6 +39,8 @@ export interface ConversationMeta {
 
 const agentModeLabels: Record<string, string> = {
   idle: '等待目标',
+  greeting: '开始对话',
+  explain: '说明',
   proposal: '计划完成',
   needs_context: '待确认',
   waiting_user: '等待补充',
@@ -47,6 +49,11 @@ const agentModeLabels: Record<string, string> = {
   rejected: '已拒绝',
   recoverable_error: '依赖待恢复',
   execution_unknown: '执行结果待确认',
+  tool_result: '查询完成',
+  table_selected: '已选表',
+  read_only: '只读结果',
+  bounded_stop: '已暂停',
+  cancelled: '已取消',
   executed: '开发完成',
 }
 

@@ -189,7 +189,9 @@ async def verify(
     transcript: list[dict[str, Any]] = []
     stream_events: list[dict[str, Any]] = []
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"), timeout=httpx.Timeout(timeout_seconds)
+        base_url=base_url.rstrip("/"),
+        timeout=httpx.Timeout(timeout_seconds),
+        trust_env=False,
     ) as client:
         health = await _json(client, "/api/health")
         capabilities = await _json(client, "/agent/capabilities?force=true")
