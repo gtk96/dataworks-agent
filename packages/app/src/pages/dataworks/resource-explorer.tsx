@@ -79,6 +79,7 @@ export function ResourceExplorer(props: {
       partition: table.partition,
       columns: [],
       incomplete: true,
+      state: "loading",
     }
     props.onSelectTable(table, fallback)
     const result = await dataworks.describeTable(requested.connectionID, requested.projectID, table.name, {

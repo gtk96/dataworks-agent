@@ -4,6 +4,7 @@ import {
   clampAgentWidth,
   clampResourceWidth,
   createResultPreview,
+  createSqlRequest,
   editSqlDocument,
   nextTabAfterRun,
   openSqlArtifact,
@@ -70,5 +71,19 @@ describe("workbench state", () => {
   test("a successful scoped result requests the Results tab", () => {
     expect(nextTabAfterRun({ ok: true })).toBe("results")
     expect(nextTabAfterRun({ ok: false })).toBe("sql")
+  })
+
+  test("builds one bounded read-only SQL request only for a complete scope", () => {
+    const document = openSqlArtifact(undefined, { sql: "SELECT 1" })
+    expect(createSqlRequest(document, scope)).toEqual({
+      connectionID: "conn-1",
+      projectID: "100",
+      projectName: "analytics",
+      region: "cn-hangzhou",
+      sql: "SELECT 1",
+      maxRows: 1000,
+      timeoutMs: 30_000,
+    })
+    expect(createSqlRequest(document, { ...scope, projectName: undefined })).toBeUndefined()
   })
 })

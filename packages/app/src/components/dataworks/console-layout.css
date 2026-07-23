@@ -10,6 +10,63 @@
   color: #1f2329;
 }
 
+[data-component="dataworks-console"][data-surface="workbench"] {
+  --dwa-sidebar-width: 56px;
+  background: #0c1118;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-sidebar"] {
+  background: #101720;
+  border-right-color: #263445;
+  box-shadow: none;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-brand"] {
+  justify-content: center;
+  min-height: 48px;
+  padding: 0;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-brand"] > span:last-child,
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-nav-item"] > span,
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-account"] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-nav"] {
+  gap: 5px;
+  padding: 10px 7px;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-nav-item"] {
+  justify-content: center;
+  width: 42px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 7px;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-account"] {
+  align-items: center;
+  padding: 8px 4px;
+}
+
+[data-component="dataworks-console"][data-surface="workbench"] [data-slot="console-logout"] {
+  width: 42px;
+  padding: 5px 0;
+  text-align: center;
+  color: #8da1b2;
+  font-size: 10px;
+}
+
 /* ── Dark sidebar (New API / Semi console) ─────────── */
 [data-slot="console-sidebar"] {
   display: flex;

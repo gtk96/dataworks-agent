@@ -56,6 +56,30 @@ export function nextTabAfterRun(result: { ok: boolean }): WorkbenchTab {
   return result.ok ? "results" : "sql"
 }
 
+export function createSqlRequest(document: SqlDocument, scope: WorkbenchScope) {
+  const sql = document.sql.trim()
+  if (!sql || !scope.connectionID || !scope.projectID || !scope.projectName) return
+  return {
+    connectionID: scope.connectionID,
+    projectID: scope.projectID,
+    projectName: scope.projectName,
+    region: scope.region,
+    sql,
+    maxRows: 1000,
+    timeoutMs: 30_000,
+  }
+}
+
 export const clampResourceWidth = (width: number) => Math.min(360, Math.max(200, width))
 export const clampAgentWidth = (width: number) => Math.min(600, Math.max(320, width))
+export const resizeResourceWidth = (width: number, key: string) => resizeWidth(width, key, 200, 360)
+export const resizeAgentWidth = (width: number, key: string) => resizeWidth(width, key, 320, 600)
 export const responsiveWorkbench = (width: number) => ({ resourceOverlay: width < 960, agentOverlay: width < 960 })
+
+function resizeWidth(width: number, key: string, min: number, max: number) {
+  if (key === "Home") return min
+  if (key === "End") return max
+  if (key === "ArrowLeft") return Math.max(min, width - 16)
+  if (key === "ArrowRight") return Math.min(max, width + 16)
+  return width
+}
