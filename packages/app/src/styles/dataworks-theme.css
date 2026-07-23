@@ -1,0 +1,151 @@
+/* DataWorks theme tokens — light by default, dark when [data-theme="dark"] / .dark
+ *
+ * v10 reverts v9's "always dark canvas" decision based on user feedback.
+ * Light page (#fafafa), neutral surfaces, primary stays indigo-violet for
+ * brand continuity. Dark theme keeps the late-night engineering tone
+ * via .dark override. Glass composer still works in both because all
+ * surface tokens are translucent + blurred.
+ */
+
+:root {
+  --dwa-radius: 8px;
+  --dwa-radius-lg: 12px;
+  --dwa-radius-xl: 16px;
+  --dwa-primary: #5b6cff;
+  --dwa-primary-hover: #4858f0;
+  --dwa-primary-soft: rgba(91, 108, 255, 0.10);
+  --dwa-primary-text: #5b6cff;
+  --dwa-on-primary: #ffffff;
+  --dwa-brand-from: #5b6cff;
+  --dwa-brand-to: #8b6cf6;
+  --dwa-brand-glow: rgba(91, 108, 255, 0.32);
+  --dwa-page: #fafafa;
+  --dwa-page-glow: rgba(99, 102, 241, 0.10);
+  --dwa-grid-line: rgba(15, 23, 42, 0.045);
+  --dwa-surface: #ffffff;
+  --dwa-surface-translucent: rgba(255, 255, 255, 0.78);
+  --dwa-sidebar: #ffffff;
+  --dwa-border: rgba(15, 23, 42, 0.08);
+  --dwa-border-strong: rgba(15, 23, 42, 0.14);
+  --dwa-text: #0f172a;
+  --dwa-text-secondary: #475569;
+  --dwa-text-tertiary: #64748b;
+  --dwa-font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono", monospace;
+  --dwa-inset-highlight: rgba(255, 255, 255, 0.55);
+  --dwa-inset-highlight-strong: rgba(255, 255, 255, 0.75);
+  --dwa-shadow-deep: rgba(15, 23, 42, 0.10);
+  --dwa-shadow-deeper: rgba(15, 23, 42, 0.16);
+  --dwa-success: #16a34a;
+  --dwa-success-soft: rgba(22, 163, 74, 0.10);
+  --dwa-warning: #d97706;
+  --dwa-warning-soft: rgba(217, 119, 6, 0.10);
+  --dwa-danger: #dc2626;
+  --dwa-danger-soft: rgba(220, 38, 38, 0.10);
+  --dwa-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --dwa-shadow: 0 1px 3px rgba(15, 23, 42, 0.07), 0 4px 16px rgba(15, 23, 42, 0.04);
+  --dwa-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --dwa-shadow-focus: 0 0 0 4px rgba(91, 108, 255, 0.18);
+  --dwa-shadow-focus-color: rgba(91, 108, 255, 0.18);
+  --dwa-space-1: 4px;
+  --dwa-space-2: 8px;
+  --dwa-space-3: 12px;
+  --dwa-space-4: 16px;
+  --dwa-space-5: 24px;
+  --dwa-space-6: 32px;
+  --dwa-space-7: 48px;
+  --dwa-text-xs: 11px;
+  --dwa-text-sm: 12.5px;
+  --dwa-text-md: 13.5px;
+  --dwa-text-base: 15.5px;
+  --dwa-text-lg: 22px;
+  --dwa-text-xl: 34px;
+  --dwa-motion-fast: 120ms;
+  --dwa-motion-base: 180ms;
+  --dwa-motion-slow: 280ms;
+  --dwa-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dwa-focus-ring: color-mix(in oklab, var(--dwa-primary) 40%, transparent);
+}
+
+.dark {
+  --dwa-page: #0a0d12;
+  --dwa-page-glow: rgba(124, 108, 255, 0.16);
+  --dwa-grid-line: rgba(255, 255, 255, 0.04);
+  --dwa-surface: #14181f;
+  --dwa-surface-translucent: rgba(20, 24, 31, 0.7);
+  --dwa-border: rgba(255, 255, 255, 0.08);
+  --dwa-border-strong: rgba(255, 255, 255, 0.16);
+  --dwa-text: #e8eaed;
+  --dwa-text-secondary: #a8b0bd;
+  --dwa-text-tertiary: #8b94a3;
+  --dwa-primary: #8aa3ff;
+  --dwa-primary-hover: #a3b6ff;
+  --dwa-primary-soft: rgba(138, 163, 255, 0.16);
+  --dwa-primary-text: #8aa3ff;
+  --dwa-on-primary: #0a0d12;
+  --dwa-brand-from: #8aa3ff;
+  --dwa-brand-to: #a78bfa;
+  --dwa-brand-glow: rgba(138, 163, 255, 0.42);
+  --dwa-inset-highlight: rgba(255, 255, 255, 0.06);
+  --dwa-inset-highlight-strong: rgba(255, 255, 255, 0.18);
+  --dwa-shadow-deep: rgba(0, 0, 0, 0.35);
+  --dwa-shadow-deeper: rgba(0, 0, 0, 0.4);
+  --dwa-success: #4ade80;
+  --dwa-success-soft: rgba(74, 222, 128, 0.14);
+  --dwa-warning: #fbbf24;
+  --dwa-warning-soft: rgba(251, 191, 36, 0.14);
+  --dwa-danger: #f87171;
+  --dwa-danger-soft: rgba(248, 113, 113, 0.14);
+  --dwa-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --dwa-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.4);
+  --dwa-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --dwa-shadow-focus: 0 0 0 4px rgba(138, 163, 255, 0.22);
+  --dwa-shadow-focus-color: rgba(138, 163, 255, 0.22);
+}
+
+[data-component="dataworks-console"],
+[data-component="dataworks-shell"] {
+  color: var(--dwa-text);
+  font-family: var(--font-family-text, "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
+}
+
+[data-component="dataworks-console"] a:focus-visible,
+[data-component="dataworks-console"] button:focus-visible,
+[data-component="dataworks-console"] input:focus-visible,
+[data-component="dataworks-console"] select:focus-visible,
+[data-component="dataworks-console"] textarea:focus-visible,
+[data-component="dataworks-shell"] a:focus-visible,
+[data-component="dataworks-shell"] button:focus-visible,
+[data-component="dataworks-shell"] input:focus-visible,
+[data-component="dataworks-shell"] select:focus-visible,
+[data-component="dataworks-shell"] textarea:focus-visible,
+[data-component="dataworks-dashboard"] a:focus-visible,
+[data-component="dataworks-dashboard"] button:focus-visible,
+[data-component="dataworks-dashboard"] input:focus-visible,
+[data-component="dataworks-dashboard"] select:focus-visible,
+[data-component="dataworks-dashboard"] textarea:focus-visible {
+  outline: 2px solid var(--dwa-focus-ring);
+  outline-offset: 1px;
+}
+
+.dwa-card {
+  border: 1px solid var(--dwa-border);
+  border-radius: var(--dwa-radius-lg);
+  background: var(--dwa-surface);
+  box-shadow: var(--dwa-shadow-sm);
+}
+
+.dwa-btn-primary {
+  background: var(--dwa-primary);
+  color: var(--dwa-on-primary);
+  border-radius: 6px;
+}
+
+.dwa-status-success {
+  color: var(--dwa-success);
+}
+.dwa-status-warning {
+  color: var(--dwa-warning);
+}
+.dwa-status-danger {
+  color: var(--dwa-danger);
+}

@@ -1,0 +1,277 @@
+[data-component="dataworks-console"] {
+  --dwa-sidebar-width: 240px;
+  --dwa-topbar-height: 52px;
+  display: grid;
+  grid-template-columns: var(--dwa-sidebar-width) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #f0f2f5;
+  color: #1f2329;
+}
+
+/* ── Dark sidebar (New API / Semi console) ─────────── */
+[data-slot="console-sidebar"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: linear-gradient(180deg, #1b2332 0%, #151c28 100%);
+  border-right: 1px solid rgb(255 255 255 / 6%);
+  color: #c9d1d9;
+  box-shadow: 4px 0 24px rgb(15 23 42 / 12%);
+}
+
+[data-slot="console-brand"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 0 18px;
+  color: #f3f4f6;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.dwa-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #6366f1 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  box-shadow: 0 4px 14px rgb(59 130 246 / 45%);
+}
+
+[data-slot="console-nav"] {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 12px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+[data-slot="console-nav-item"] {
+  position: relative;
+  min-height: 42px;
+  border-radius: 10px;
+  color: #9aa4b2;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 12px;
+  text-align: left;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+[data-slot="console-nav-item"]:hover {
+  background: rgb(255 255 255 / 6%);
+  color: #e8edf5;
+}
+
+[data-slot="console-nav-item"][data-active="true"] {
+  color: #fff;
+  background: linear-gradient(90deg, rgb(59 130 246 / 28%) 0%, rgb(99 102 241 / 18%) 100%);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgb(96 165 250 / 25%);
+}
+
+[data-slot="console-nav-item"][data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #60a5fa, #818cf8);
+  box-shadow: 0 0 8px rgb(96 165 250 / 60%);
+}
+
+[data-slot="console-nav-item"] svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+[data-slot="console-nav-item"][data-active="true"] svg {
+  opacity: 1;
+  color: #93c5fd;
+}
+
+[data-slot="console-account"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding: 14px 16px 16px;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(0 0 0 / 18%);
+}
+
+[data-slot="console-account"] .text-12-regular,
+[data-slot="console-account"] span {
+  font-size: 12px !important;
+  color: #8b95a5 !important;
+}
+
+[data-slot="console-logout"] {
+  text-align: left;
+  color: #a0aec0;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+[data-slot="console-logout"]:hover {
+  color: #fca5a5;
+}
+
+/* ── Main / Topbar ─────────────────────────────────── */
+[data-slot="console-main"] {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(1200px 400px at 10% -10%, rgb(59 130 246 / 8%), transparent 55%),
+    radial-gradient(900px 360px at 90% 0%, rgb(99 102 241 / 7%), transparent 50%),
+    #f0f2f5;
+}
+
+[data-slot="console-topbar"] {
+  height: var(--dwa-topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 0 22px;
+  background: rgb(255 255 255 / 86%);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 0 rgb(15 23 42 / 3%);
+}
+
+[data-slot="console-crumb"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+[data-slot="console-crumb"] .text-12-regular,
+[data-slot="console-crumb"] span {
+  color: #8f959e;
+  font-size: 12.5px;
+}
+
+[data-slot="console-topbar"] h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: #1f2329;
+}
+
+[data-slot="console-menu"] {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #4b5563;
+}
+
+[data-slot="console-content"] {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 22px 24px 32px;
+}
+
+[data-slot="console-backdrop"] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  [data-component="dataworks-console"] {
+    grid-template-columns: 1fr;
+  }
+
+  [data-slot="console-sidebar"] {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(280px, 86vw);
+    transform: translateX(-100%);
+    z-index: 40;
+    transition: transform 160ms ease;
+    box-shadow: 0 10px 40px rgb(15 23 42 / 35%);
+  }
+
+  [data-component="dataworks-console"][data-mobile-open="true"] [data-slot="console-sidebar"] {
+    transform: translateX(0);
+  }
+
+  [data-slot="console-menu"] {
+    display: inline-flex;
+  }
+
+  [data-slot="console-backdrop"] {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgb(15 23 42 / 45%);
+    border: 0;
+    z-index: 30;
+  }
+
+  [data-slot="console-content"] {
+    padding: 14px;
+  }
+}
+
+/* Light overrides for dark mode host */
+.dark [data-component="dataworks-console"] {
+  background: #0f1419;
+}
+
+.dark [data-slot="console-main"] {
+  background:
+    radial-gradient(1000px 360px at 10% -10%, rgb(59 130 246 / 12%), transparent 55%),
+    #0f1419;
+}
+
+.dark [data-slot="console-topbar"] {
+  background: rgb(26 31 38 / 90%);
+  border-bottom-color: #2b313a;
+}
+
+.dark [data-slot="console-topbar"] h1 {
+  color: #f3f4f6;
+}

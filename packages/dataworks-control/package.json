@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@dataworks-agent/control",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "dataworks-control": "./src/cli/start.ts",
+    "dataworks-create-admin": "./src/cli/create-admin.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test --timeout 30000",
+    "start": "bun run src/cli/start.ts",
+    "create-admin": "bun run src/cli/create-admin.ts",
+    "db:generate": "bun drizzle-kit generate",
+    "db:verify": "bun run src/cli/verify-db.ts"
+  },
+  "dependencies": {
+    "@alicloud/credentials": "2.4.5",
+    "@alicloud/dataworks-public20200518": "10.0.0",
+    "@alicloud/openapi-client": "0.4.15",
+    "@dataworks-agent/core": "workspace:*",
+    "@lancedb/lancedb": "0.31.0",
+    "@napi-rs/keyring": "1.3.0",
+    "@node-rs/argon2": "2.0.2",
+    "@opencode-ai/core": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:",
+    "fastembed": "2.1.0",
+    "hono": "catalog:",
+    "mammoth": "1.12.0",
+    "pdf-parse": "2.4.5"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "drizzle-kit": "catalog:"
+  }
+}

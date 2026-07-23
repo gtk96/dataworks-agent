@@ -1,0 +1,10 @@
+# web + desktop packages
+packages/app/      @Hona @Brendonovich
+packages/desktop/  @Hona @Brendonovich
+
+# sensitive dataworks-agent paths
+/packages/opencode/src/tool/       @gtk96
+/packages/opencode/src/permission/ @gtk96
+/packages/opencode/src/plugin/     @gtk96
+/packages/dataworks-core/src/secret/  @gtk96
+/packages/dataworks-core/src/worker/  @gtk96

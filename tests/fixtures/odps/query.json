@@ -1,0 +1,17 @@
+{
+  "table": {
+    "name": "dw_synthetic_table_for_staging_dry_run",
+    "project": "dwa_synthetic",
+    "columns": [
+      { "name": "id", "type": "BIGINT" },
+      { "name": "label", "type": "STRING" },
+      { "name": "recorded_at", "type": "DATETIME" }
+    ],
+    "max_rows": 25,
+    "max_bytes": 4096
+  },
+  "queries": {
+    "smoke": "SELECT 1",
+    "bounded": "SELECT id, label, recorded_at FROM dw_synthetic_table_for_staging_dry_run WHERE id <= 25 ORDER BY id LIMIT 25"
+  }
+}
