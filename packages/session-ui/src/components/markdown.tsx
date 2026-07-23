@@ -32,6 +32,7 @@ import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-s
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { emitSqlArtifact } from "./sql-artifact-event"
+import { shouldShowSqlArtifactButton } from "./markdown-sql-artifact"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -174,7 +175,6 @@ function disposeCopyButtons(root: Element) {
 }
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
-const sqlLanguages = new Set(["sql", "odps", "maxcompute"])
 
 function codeKind(language: string | undefined) {
   const value = language?.toLowerCase()
@@ -214,12 +214,12 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels, complete =
     parent.replaceChild(wrapper, block)
     wrapper.appendChild(block)
     wrapper.appendChild(createCopyButton(labels))
-    ensureSqlArtifactButton(wrapper, complete)
+    ensureSqlArtifactButton(wrapper, codeLanguage(block), complete)
     return
   }
 
   applyCodeMetadata(parent, codeLanguage(block))
-  ensureSqlArtifactButton(parent, complete)
+  ensureSqlArtifactButton(parent, codeLanguage(block), complete)
 
   const buttons = Array.from(parent.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
     (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
@@ -236,11 +236,11 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels, complete =
   }
 }
 
-function ensureSqlArtifactButton(wrapper: HTMLElement, complete: boolean) {
+function ensureSqlArtifactButton(wrapper: HTMLElement, language: string | undefined, complete: boolean) {
   const buttons = Array.from(wrapper.querySelectorAll('[data-slot="markdown-open-sql"]')).filter(
     (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
   )
-  if (!complete || !sqlLanguages.has(wrapper.dataset.language ?? "")) {
+  if (!shouldShowSqlArtifactButton(language, complete)) {
     buttons.forEach((button) => button.remove())
     return
   }
@@ -648,7 +648,7 @@ function updateCodeBlock(
     const wrapper = code.closest('[data-component="markdown-code"]')
     if (wrapper instanceof HTMLElement) {
       applyCodeMetadata(wrapper, block.artifactLanguage)
-      ensureSqlArtifactButton(wrapper, block.complete)
+      ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete)
     }
     code.className = `language-${block.language}`
     const previous = renderedCodeTokens.get(next)
@@ -689,7 +689,7 @@ function updateCodeBlock(
   pre.appendChild(codeElement)
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))
-  ensureSqlArtifactButton(wrapper, block.complete)
+  ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete)
   next.appendChild(wrapper)
   renderedCodeTokens.set(next, {
     language: block.language,
