@@ -165,6 +165,68 @@
   font-family: var(--font-family-text, "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
 }
 
+[data-component="studio-workbench"] [data-slot="agent-panel"],
+[data-component="studio-workbench"] [data-slot="agent-panel"] * {
+  --background-base: #101720;
+  --background-stronger: #151e29;
+  --color-background-stronger: #151e29;
+  --surface-base: rgb(255 255 255 / 4%);
+  --surface-raised-base: #1b2633;
+  --surface-raised-base-hover: #202d3b;
+  --surface-raised-stronger-non-alpha: #151e29;
+  --text-base: #edf6fb;
+  --text-strong: #edf6fb;
+  --text-weak: #8da1b2;
+  --text-weaker: #6f8292;
+  --border-weak-base: #263445;
+  --border-weaker-base: #1d2a38;
+  --v2-background-bg-base: #101720;
+  --v2-background-bg-layer-01: #151e29;
+  --v2-background-bg-layer-02: #1b2633;
+  --v2-text-text-base: #edf6fb;
+  --v2-text-text-muted: #8da1b2;
+  --v2-text-text-faint: #6f8292;
+  --v2-border-border-base: #263445;
+  --v2-border-border-strong: #34485d;
+  --color-background-base: #101720;
+  --color-background-stronger: #151e29;
+  --color-surface-base: rgb(255 255 255 / 4%);
+  --color-surface-raised-base: #1b2633;
+  --color-surface-raised-base-hover: #202d3b;
+  --color-surface-raised-stronger-non-alpha: #151e29;
+  --color-text-base: #edf6fb;
+  --color-text-strong: #edf6fb;
+  --color-text-weak: #8da1b2;
+  --color-text-weaker: #6f8292;
+  --color-border-weak-base: #263445;
+  --color-border-weaker-base: #1d2a38;
+  --color-v2-background-bg-base: #101720;
+  --color-v2-background-bg-layer-01: #151e29;
+  --color-v2-background-bg-layer-02: #1b2633;
+  --color-v2-text-text-base: #edf6fb;
+  --color-v2-text-text-muted: #8da1b2;
+  --color-v2-text-text-faint: #6f8292;
+  --color-v2-border-border-base: #263445;
+  --color-v2-border-border-strong: #34485d;
+}
+
+[data-component="studio-workbench"] [data-slot="agent-panel"] {
+  background: var(--studio-panel);
+  color: var(--studio-text);
+}
+
+[data-component="studio-workbench"] [data-slot="agent-panel"] [data-component="dataworks-scope-bar"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-component="studio-workbench"]
+  [data-slot="agent-panel"]
+  [data-component="dataworks-scope-bar"]
+  > div:last-child {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+
 [data-component="studio-workbench"] :focus-visible {
   outline: 2px solid var(--studio-context);
   outline-offset: 1px;

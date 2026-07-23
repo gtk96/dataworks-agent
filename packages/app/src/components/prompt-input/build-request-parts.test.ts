@@ -3,6 +3,30 @@ import type { Prompt } from "@/context/prompt"
 import { buildRequestParts } from "./build-request-parts"
 
 describe("buildRequestParts", () => {
+  test("adds ephemeral Studio context as a hidden model-visible part", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "explain", start: 0, end: 7 }],
+      context: [],
+      images: [],
+      text: "explain",
+      syntheticContext: "[DataWorks result preview]\n{\"rows\":[[1]]}",
+      messageID: "msg_studio",
+      sessionID: "ses_studio",
+      sessionDirectory: "/repo",
+    })
+
+    expect(result.requestParts).toContainEqual(
+      expect.objectContaining({
+        type: "text",
+        text: "[DataWorks result preview]\n{\"rows\":[[1]]}",
+        synthetic: true,
+      }),
+    )
+    expect(result.optimisticParts).toContainEqual(
+      expect.objectContaining({ type: "text", synthetic: true, sessionID: "ses_studio" }),
+    )
+  })
+
   test("builds typed request and optimistic parts without cast path", () => {
     const prompt: Prompt = [
       { type: "text", content: "hello", start: 0, end: 5 },

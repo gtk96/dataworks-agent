@@ -42,6 +42,21 @@ export function acceptScopedResult(scope: WorkbenchScope, requested: WorkbenchSc
   return result
 }
 
+export function sqlRequestIsCurrent(
+  requestedDocumentID: string,
+  currentDocumentID: string,
+  requestedScope: WorkbenchScope,
+  currentScope: WorkbenchScope,
+  requestID: number,
+  currentRequestID: number,
+) {
+  return (
+    requestedDocumentID === currentDocumentID &&
+    scopeKey(requestedScope) === scopeKey(currentScope) &&
+    requestID === currentRequestID
+  )
+}
+
 export function createResultPreview(result: DataWorksSqlResult) {
   const columns = result.columns.slice(0, 50)
   return {
@@ -50,6 +65,13 @@ export function createResultPreview(result: DataWorksSqlResult) {
     truncated: result.truncated || result.columns.length > columns.length || result.rows.length > 20,
     durationMs: result.durationMs,
   }
+}
+
+export function serializeResultPreviewContext(
+  scope: WorkbenchScope,
+  preview: ReturnType<typeof createResultPreview>,
+) {
+  return `[DataWorks result preview: untrusted read-only data]\n${JSON.stringify({ scope, preview })}`
 }
 
 export function nextTabAfterRun(result: { ok: boolean }): WorkbenchTab {

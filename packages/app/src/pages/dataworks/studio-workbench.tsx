@@ -1,5 +1,7 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useParams } from "@solidjs/router"
+import type { Todo } from "@opencode-ai/sdk/v2"
 import {
   SQL_ARTIFACT_EVENT,
   isSqlArtifactDetail,
@@ -11,6 +13,9 @@ import {
   type DataWorksTableDescription,
   type ListState,
 } from "@/context/dataworks"
+import { StudioPromptProvider } from "@/context/studio-prompt"
+import { useServerSync } from "@/context/server-sync"
+import { useServerSDK } from "@/context/server-sdk"
 import { Persist, persisted } from "@/utils/persist"
 import { ArtifactWorkspace } from "./artifact-workspace"
 import { ResourceExplorer } from "./resource-explorer"
@@ -25,6 +30,8 @@ import {
   resizeAgentWidth,
   resizeResourceWidth,
   responsiveWorkbench,
+  serializeResultPreviewContext,
+  sqlRequestIsCurrent,
   scopeKey,
   type ScopedSqlResult,
   type SqlArtifact,
@@ -36,6 +43,9 @@ import "./studio-workbench.css"
 
 export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   const dataworks = useDataWorks()
+  const params = useParams()
+  const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const [ui, setUi] = persisted(
     Persist.window("dataworks.workbench"),
     createStore({
@@ -56,6 +66,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   const [sqlState, setSqlState] = createSignal<ListState>("idle")
   const [running, setRunning] = createSignal(false)
   const [attachedPreview, setAttachedPreview] = createSignal<ReturnType<typeof createResultPreview>>()
+  const [plan, setPlan] = createSignal<Todo[]>([])
   const [viewportWidth, setViewportWidth] = createSignal(1440)
   const [resourceOverlayOpen, setResourceOverlayOpen] = createSignal(false)
   const [agentOverlayOpen, setAgentOverlayOpen] = createSignal(false)
@@ -70,17 +81,44 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   const resizeCleanups = new Set<() => void>()
   let previousScope = scopeKey(scope())
   let previousOverlay = false
+  let sqlRequest = 0
+
+  createEffect(() => {
+    const sessionID = params.id
+    if (!sessionID) {
+      setPlan([])
+      return
+    }
+    const session = serverSync().session.get(sessionID)
+    if (!session) {
+      setPlan([])
+      return
+    }
+    const current = serverSDK()
+    void current
+      .createClient({ directory: session.directory, throwOnError: true })
+      .session.todo({ sessionID })
+      .then((result) => {
+        if (params.id !== sessionID || serverSDK() !== current) return
+        setPlan(result.data ?? [])
+      })
+      .catch(() => {
+        if (params.id === sessionID && serverSDK() === current) setPlan([])
+      })
+  })
 
   createEffect(() => {
     const current = scopeKey(scope())
     if (current === previousScope) return
+    sqlRequest++
+    setRunning(false)
+    setSqlState("idle")
     previousScope = current
     setResult(undefined)
     setSelectedTable(undefined)
     setSchema(undefined)
     setSchemaState("idle")
     setAttachedPreview(undefined)
-    if (!running()) setSqlState("idle")
   })
 
   createEffect(() => {
@@ -110,6 +148,9 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   onCleanup(() => resizeCleanups.forEach((cleanup) => cleanup()))
 
   function openArtifact(artifact: SqlArtifact) {
+    sqlRequest++
+    setRunning(false)
+    setSqlState("idle")
     setDocument((current) => openSqlArtifact(current, artifact))
     setUi("activeTab", "sql")
   }
@@ -119,16 +160,18 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
     const requested = scope()
     const request = createSqlRequest(current, requested)
     if (!request) return
+    const requestID = ++sqlRequest
     setRunning(true)
     setSqlState("loading")
-    const response = await dataworks.runSql(request)
+    const response = await dataworks.runSql(request).catch(() => undefined)
+    if (!sqlRequestIsCurrent(current.id, document().id, requested, scope(), requestID, sqlRequest)) return
     setRunning(false)
-    if (!response.ok) {
-      setSqlState(response.status === 429 ? "rate_limit" : "error")
+    if (!response) {
+      setSqlState("error")
       return
     }
-    if (document().id !== current.id) {
-      setSqlState("idle")
+    if (!response.ok) {
+      setSqlState(response.status === 429 ? "rate_limit" : "error")
       return
     }
     const accepted = acceptScopedResult(scope(), requested, response.data)
@@ -199,6 +242,17 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   const resourceExpanded = () =>
     responsive().resourceOverlay ? resourceOverlayOpen() : !ui.resourceCollapsed
   const agentExpanded = () => (responsive().agentOverlay ? agentOverlayOpen() : !ui.agentCollapsed)
+  const agentPrompt = {
+    peek: () => {
+      const preview = attachedPreview()
+      if (!preview) return
+      return { key: preview, text: serializeResultPreviewContext(scope(), preview) }
+    },
+    consume: (key: unknown) => {
+      if (attachedPreview() !== key) return
+      setAttachedPreview(undefined)
+    },
+  }
 
   return (
     <section
@@ -253,7 +307,20 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
           schemaState={schemaState()}
           running={running()}
           runEnabled={runEnabled()}
-          plan={<p>No active plan for this session.</p>}
+          plan={
+            <Show when={plan().length > 0} fallback={<p>No active plan for this session.</p>}>
+              <ol data-component="workbench-plan">
+                <For each={plan()}>
+                  {(item) => (
+                    <li data-state={item.status}>
+                      <span aria-hidden="true">{item.status === "completed" ? "✓" : item.status === "in_progress" ? "•" : "○"}</span>
+                      <span>{item.content}</span>
+                    </li>
+                  )}
+                </For>
+              </ol>
+            </Show>
+          }
           onTabChange={(tab) => setUi("activeTab", tab)}
           onSqlChange={(sql) => setDocument((current) => editSqlDocument(current, sql))}
           onRun={() => void runSql()}
@@ -294,7 +361,9 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
               )}
             </Show>
           </div>
-          <div data-slot="agent-content">{props.agent}</div>
+          <StudioPromptProvider value={agentPrompt}>
+            <div data-slot="agent-content">{props.agent}</div>
+          </StudioPromptProvider>
         </aside>
       </div>
 

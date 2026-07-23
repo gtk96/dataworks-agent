@@ -9,6 +9,7 @@ import type {
   Part,
   Session,
   SessionStatus,
+  Todo,
   ToolPart,
   ToolState,
   UserMessage,
@@ -97,6 +98,7 @@ export async function setupTimeline(
     locale?: string
     deviceScaleFactor?: number
     seedHistory?: boolean
+    todos?: Todo[]
   } = {},
 ) {
   const sessions = input.sessions ?? [session()]
@@ -119,6 +121,7 @@ export async function setupTimeline(
     provider: provider(),
     sessions,
     sessionStatus: { [sessionID]: initialStatus },
+    todos: () => input.todos ?? [],
     pageMessages: () => ({
       items: messages,
     }),

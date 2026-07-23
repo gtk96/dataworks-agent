@@ -122,6 +122,27 @@
   padding: 10px;
 }
 
+[data-component="workbench-plan"] {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-component="workbench-plan"] li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--studio-divider);
+  color: var(--studio-text);
+}
+
+[data-component="workbench-plan"] li[data-state="completed"] {
+  color: var(--studio-muted);
+}
+
 [data-slot="sql-toolbar"],
 [data-slot="result-meta"] {
   display: flex;

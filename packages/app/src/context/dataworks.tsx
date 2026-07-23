@@ -141,6 +141,15 @@ export function validProjectID(
   return first ? String(first.projectId ?? first.id) : undefined
 }
 
+export function projectRequestIsCurrent(
+  connectionID: string,
+  selectedConnectionID: string | undefined,
+  requestID: number,
+  currentRequestID: number,
+) {
+  return connectionID === selectedConnectionID && requestID === currentRequestID
+}
+
 export type KnowledgeDocument = {
   id: string
   name: string
@@ -210,6 +219,7 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
     const [projects, setProjects] = createSignal<DataWorksProject[]>([])
     const [projectState, setProjectState] = createSignal<ListState>("idle")
     const [selectedProjectID, setSelectedProjectID] = createSignal<string | undefined>()
+    let projectRequest = 0
     const [savedScope, setSavedScope, , scopeReady] = persisted(
       Persist.window("dataworks.scope"),
       createStore<{ connectionID?: string; projectID?: string }>({}),
@@ -289,6 +299,7 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
     }
 
     async function refreshProjects() {
+      const requestID = ++projectRequest
       const connectionID = selectedConnectionID()
       if (!connectionID) {
         setProjects([])
@@ -298,6 +309,7 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
       }
       setProjectState("loading")
       const result = await listProjects(connectionID, selectedConnection()?.region)
+      if (!projectRequestIsCurrent(connectionID, selectedConnectionID(), requestID, projectRequest)) return result
       if (!result.ok) {
         setProjects([])
         setSelectedProjectID(undefined)
@@ -305,10 +317,11 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
         return result
       }
       const items = result.data
+      if (scopeReady.promise) await scopeReady.promise
+      if (!projectRequestIsCurrent(connectionID, selectedConnectionID(), requestID, projectRequest)) return result
+      const savedProjectID = savedScope.connectionID === connectionID ? savedScope.projectID : undefined
       setProjects(items)
       setProjectState(items.length ? "ready" : "empty")
-      if (scopeReady.promise) await scopeReady.promise
-      const savedProjectID = savedScope.connectionID === connectionID ? savedScope.projectID : undefined
       setSelectedProjectID(validProjectID(selectedProjectID() ?? savedProjectID, items))
       return result
     }

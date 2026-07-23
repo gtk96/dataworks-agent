@@ -41,6 +41,13 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
               aria-selected={props.activeTab === tab}
               tabindex={props.activeTab === tab ? 0 : -1}
               onClick={() => props.onTabChange(tab)}
+              onKeyDown={(event) => {
+                const next = keyboardTab(tab, event.key)
+                if (!next) return
+                event.preventDefault()
+                props.onTabChange(next)
+                queueMicrotask(() => document.getElementById(`workbench-tab-${next}`)?.focus())
+              }}
             >
               {tab}
             </button>
@@ -161,4 +168,12 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
       </section>
     </main>
   )
+}
+
+function keyboardTab(tab: WorkbenchTab, key: string) {
+  if (key === "Home") return WORKBENCH_TABS[0]
+  if (key === "End") return WORKBENCH_TABS.at(-1)
+  const index = WORKBENCH_TABS.indexOf(tab)
+  if (key === "ArrowLeft") return WORKBENCH_TABS[(index - 1 + WORKBENCH_TABS.length) % WORKBENCH_TABS.length]
+  if (key === "ArrowRight") return WORKBENCH_TABS[(index + 1) % WORKBENCH_TABS.length]
 }

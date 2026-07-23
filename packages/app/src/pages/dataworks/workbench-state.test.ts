@@ -9,6 +9,8 @@ import {
   nextTabAfterRun,
   openSqlArtifact,
   responsiveWorkbench,
+  serializeResultPreviewContext,
+  sqlRequestIsCurrent,
   scopeKey,
 } from "./workbench-state"
 
@@ -37,6 +39,13 @@ describe("workbench state", () => {
     expect(acceptScopedResult(scope, { ...scope, projectID: "200" }, { columns: [], rows: [], truncated: false })).toBeUndefined()
   })
 
+  test("rejects stale SQL completions across document and scope changes", () => {
+    expect(sqlRequestIsCurrent("doc-1", "doc-1", scope, scope, 1, 1)).toBe(true)
+    expect(sqlRequestIsCurrent("doc-1", "doc-2", scope, scope, 1, 1)).toBe(false)
+    expect(sqlRequestIsCurrent("doc-1", "doc-1", scope, { ...scope, projectID: "200" }, 1, 1)).toBe(false)
+    expect(sqlRequestIsCurrent("doc-1", "doc-1", scope, scope, 1, 2)).toBe(false)
+  })
+
   test("limits Agent preview to twenty rows and fifty columns", () => {
     const result = {
       columns: Array.from({ length: 60 }, (_, index) => ({ name: `c${index}`, type: "string" })),
@@ -46,6 +55,14 @@ describe("workbench state", () => {
     expect(createResultPreview(result).columns).toHaveLength(50)
     expect(createResultPreview(result).rows).toHaveLength(20)
     expect(createResultPreview(result).rows[0]).toHaveLength(50)
+  })
+
+  test("serializes a bounded preview as explicitly untrusted Agent context", () => {
+    const preview = createResultPreview({ columns: [{ name: "value", type: "bigint" }], rows: [[1]], truncated: false })
+    const context = serializeResultPreviewContext(scope, preview)
+    expect(context).toContain("untrusted read-only data")
+    expect(context).toContain('"projectName":"analytics"')
+    expect(context).toContain('"rows":[[1]]')
   })
 
   test("uses deterministic scope identity and bounded panel widths", () => {

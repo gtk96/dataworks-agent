@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { validConnectionID, validProjectID } from "@/context/dataworks"
+import { projectRequestIsCurrent, validConnectionID, validProjectID } from "@/context/dataworks"
 import { scopeRequestIsCurrent, tableSqlArtifact } from "./resource-explorer"
 import { normalizeResultColumns, visibleResultRows } from "./results-grid"
 
@@ -9,6 +9,12 @@ describe("workbench scope restore", () => {
     expect(validConnectionID("stale", [{ id: "conn-1" }])).toBe("conn-1")
     expect(validProjectID("2", [{ projectId: 1 }, { projectId: 2 }])).toBe("2")
     expect(validProjectID("stale", [])).toBeUndefined()
+  })
+
+  test("rejects stale project responses across connection changes", () => {
+    expect(projectRequestIsCurrent("conn-a", "conn-a", 1, 1)).toBe(true)
+    expect(projectRequestIsCurrent("conn-a", "conn-b", 1, 1)).toBe(false)
+    expect(projectRequestIsCurrent("conn-a", "conn-a", 1, 2)).toBe(false)
   })
 })
 
