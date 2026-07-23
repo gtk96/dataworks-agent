@@ -14,8 +14,15 @@ export function tableSqlArtifact(table: Pick<DataWorksTable, "name">): SqlArtifa
   return { sql: `SELECT * FROM ${table.name} LIMIT 100`, title: table.name }
 }
 
-export function scopeRequestIsCurrent(requested: string, current: WorkbenchScope) {
-  return requested === scopeKey(current)
+export function scopeRequestIsCurrent(
+  requested: string,
+  current: WorkbenchScope,
+  requestID?: number,
+  currentRequestID?: number,
+) {
+  if (requested !== scopeKey(current)) return false
+  if (requestID === undefined) return true
+  return requestID === currentRequestID
 }
 
 export function ResourceExplorer(props: {
@@ -26,6 +33,7 @@ export function ResourceExplorer(props: {
   const dataworks = useDataWorks()
   const [tables, setTables] = createSignal<DataWorksTable[]>([])
   const [tableState, setTableState] = createSignal<ListState>("idle")
+  let schemaRequest = 0
   const scope = createMemo<WorkbenchScope>(() => ({
     connectionID: dataworks.selectedConnectionID(),
     projectID: dataworks.selectedProjectID(),
@@ -35,6 +43,7 @@ export function ResourceExplorer(props: {
 
   createEffect(() => {
     const requested = scope()
+    schemaRequest += 1
     setTables([])
     if (!requested.connectionID || !requested.projectID || !requested.projectName) {
       setTableState("empty")
@@ -61,6 +70,7 @@ export function ResourceExplorer(props: {
   async function selectTable(table: DataWorksTable) {
     const requested = scope()
     if (!requested.connectionID || !requested.projectID) return
+    const requestID = ++schemaRequest
     const fallback: DataWorksTableDescription = {
       name: table.name,
       schema: table.schema,
@@ -75,7 +85,7 @@ export function ResourceExplorer(props: {
       projectName: requested.projectName,
       region: requested.region,
     })
-    if (!scopeRequestIsCurrent(scopeKey(requested), scope())) return
+    if (!scopeRequestIsCurrent(scopeKey(requested), scope(), requestID, schemaRequest)) return
     if (!result.ok) {
       props.onSelectTable(table, { ...fallback, state: result.status === 429 ? "rate_limit" : "incomplete" })
       return

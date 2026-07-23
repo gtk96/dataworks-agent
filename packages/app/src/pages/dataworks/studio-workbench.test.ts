@@ -30,4 +30,9 @@ describe("resource explorer", () => {
     expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope)).toBe(true)
     expect(scopeRequestIsCurrent("conn-1\n200\nanalytics\ncn-hangzhou", scope)).toBe(false)
   })
+
+  test("rejects an older table request within the same scope", () => {
+    expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope, 1, 2)).toBe(false)
+    expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope, 2, 2)).toBe(true)
+  })
 })
