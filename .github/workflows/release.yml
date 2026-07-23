@@ -1,0 +1,131 @@
+name: release
+
+# Publishes distribution artifacts only from a signed tag / release-please PR merge.
+# Never publish from a feature branch.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type publish to confirm release from an approved tag"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: branch-and-tag-guard
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Forbid feature-branch publish
+        run: |
+          set -euo pipefail
+          REF="${{ github.ref }}"
+          if [[ "$REF" == refs/heads/* ]]; then
+            BRANCH="${REF#refs/heads/}"
+            case "$BRANCH" in
+              main|dev|release-* ) echo "branch $BRANCH allowed for dispatch only" ;;
+              * )
+                echo "ERROR: refuse to publish from feature branch: $BRANCH"
+                exit 1
+                ;;
+            esac
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.confirm }}" != "publish" ]]; then
+              echo "ERROR: workflow_dispatch requires confirm=publish"
+              exit 1
+            fi
+          fi
+          if [[ "$REF" == refs/tags/* ]]; then
+            echo "tag release: $REF"
+          fi
+
+  dry-run-acceptance:
+    name: dry-run-acceptance
+    needs: guard
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Upstream baseline
+        run: bun run verify:upstream
+
+      - name: Dry-run acceptance
+        run: bun run acceptance:dry-run
+
+  staging-acceptance:
+    name: staging-acceptance
+    needs: dry-run-acceptance
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment:
+      name: dataworks-staging
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Staging acceptance (hard fail without secrets)
+        env:
+          DATAWORKS_AGENT_ENV: staging
+          DATAWORKS_AGENT_DRY_RUN: "0"
+          DATAWORKS_AGENT_MODE: staging
+          DATAWORKS_STAGING_AK: ${{ secrets.DATAWORKS_STAGING_AK }}
+          DATAWORKS_STAGING_SK: ${{ secrets.DATAWORKS_STAGING_SK }}
+          DATAWORKS_STAGING_REGION: ${{ secrets.DATAWORKS_STAGING_REGION }}
+          DATAWORKS_STAGING_PROJECT_ID: ${{ secrets.DATAWORKS_STAGING_PROJECT_ID }}
+          DATAWORKS_ODPS_STAGING_AK: ${{ secrets.DATAWORKS_ODPS_STAGING_AK }}
+          DATAWORKS_ODPS_STAGING_SK: ${{ secrets.DATAWORKS_ODPS_STAGING_SK }}
+          DATAWORKS_ODPS_STAGING_ENDPOINT: ${{ secrets.DATAWORKS_ODPS_STAGING_ENDPOINT }}
+          DATAWORKS_ODPS_STAGING_PROJECT: ${{ secrets.DATAWORKS_ODPS_STAGING_PROJECT }}
+          DWA_STAGING_WRITE_TEST: ${{ vars.DWA_STAGING_WRITE_TEST }}
+        run: bun run acceptance:staging
+
+  package:
+    name: package-artifacts
+    needs: staging-acceptance
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build package layout + SBOM + checksums
+        env:
+          DATAWORKS_AGENT_DRY_RUN: "0"
+          DATAWORKS_AGENT_VERSION: ${{ github.ref_name }}
+        run: |
+          bun scripts/package-dataworks-agent.ts
+          ls -la artifacts/dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dataworks-agent-dist
+          path: artifacts/dist/**
+
+  release-please:
+    name: release-please
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}

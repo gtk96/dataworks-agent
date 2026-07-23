@@ -1,0 +1,24 @@
+[project]
+name = "dwa-pyodps"
+version = "0.1.0"
+description = "Supervised JSON-RPC sidecar for pyodps queries"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+
+[project.optional-dependencies]
+real = ["pyodps==0.13.0"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+dwa-pyodps = "dwa_pyodps.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dwa_pyodps"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,68 @@
+name: staging
+
+on:
+  push:
+    branches:
+      - main
+      - "release-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: staging-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: staging deploy
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment:
+      name: dataworks-staging
+      url: https://staging.dataworks.example.com
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "${{ secrets.ALIYUN_ACCESS_KEY_ID }}" ] || \
+             [ -z "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" ] || \
+             [ -z "${{ secrets.ALIYUN_DATAWORKS_REGION }}" ] || \
+             [ -z "${{ secrets.ALIYUN_DATAWORKS_PROJECT_ID }}" ] || \
+             [ -z "${{ secrets.ODPS_PROJECT }}" ] || \
+             [ -z "${{ secrets.ODPS_ENDPOINT }}" ]; then
+            echo "ERROR: Missing required staging secrets"
+            exit 1
+          fi
+          echo "All required secrets are configured"
+
+      - name: Run full verification suite
+        run: |
+          bun run verify:upstream
+          bun run lint
+          bun run --cwd packages/dataworks-core typecheck
+          bun run --cwd packages/opencode typecheck
+          bun run --cwd packages/app typecheck
+          bun test --cwd packages/dataworks-core ./test
+          DATAWORKS_AGENT_DRY_RUN=1 bun test ./tests/integration/dry-run
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Staging deployment steps would go here
+          # Using secrets for authentication
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_DATAWORKS_REGION: ${{ secrets.ALIYUN_DATAWORKS_REGION }}
+          ALIYUN_DATAWORKS_PROJECT_ID: ${{ secrets.ALIYUN_DATAWORKS_PROJECT_ID }}
+          ODPS_PROJECT: ${{ secrets.ODPS_PROJECT }}
+          ODPS_ENDPOINT: ${{ secrets.ODPS_ENDPOINT }}
+          DATAWORKS_AGENT_DRY_RUN: "0"
+          DATAWORKS_AGENT_ENV: "staging"

@@ -1,0 +1,19 @@
+{
+  "jobs": [
+    {
+      "id": 20001,
+      "instanceId": 20001,
+      "nodeId": 30001,
+      "name": "dw_job_synthetic_read_only",
+      "projectId": 10001,
+      "status": "SUCCESS"
+    }
+  ],
+  "jobStatus": {
+    "20001": {
+      "id": 20001,
+      "status": "SUCCESS",
+      "lastRunTime": 1700000000000
+    }
+  }
+}

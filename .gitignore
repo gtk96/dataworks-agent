@@ -1,0 +1,63 @@
+# Secrets and local configuration
+.env
+.env.local
+.env.*.local
+secrets.dat
+*.dat
+.keyring
+
+# Runtime data and databases
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.db
+*.lance/
+*.lancedb/
+
+# Logs and acceptance artifacts
+*.log
+log/
+logs/
+artifacts/
+playwright-report/
+test-results/
+
+# Bun / Node
+node_modules/
+dist/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# Python / uv sidecar
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Worktrees and build outputs
+.worktrees/
+bin/
+*.exe
+*.test
+*.out
+coverage/
+coverage.txt
+
+# Subagent-driven-development scratch state (reports, plans, etc.)
+.superpowers/
+
+# Embedding model binaries (manifest.json holds integrity hashes; run scripts/fetch-embedding-model.ts)
+packages/dataworks-control/assets/embeddings/*.tar.gz
+packages/dataworks-control/assets/embeddings/fast-multilingual-e5-large/
+packages/dataworks-control/assets/embeddings/**/model.onnx*

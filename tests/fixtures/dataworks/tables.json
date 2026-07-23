@@ -1,0 +1,74 @@
+{
+  "tables": [
+    {
+      "name": "test_table",
+      "schema": "default",
+      "projectId": 10001,
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.test_table",
+      "type": "table",
+      "partition": "ds=20260101"
+    },
+    {
+      "name": "raw_events",
+      "schema": "default",
+      "projectId": 10001,
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.raw_events",
+      "type": "table",
+      "partition": "ds=20260101"
+    },
+    {
+      "name": "report_daily",
+      "schema": "default",
+      "projectId": 10001,
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.report_daily",
+      "type": "table",
+      "partition": "ds=20260101"
+    }
+  ],
+  "descriptions": {
+    "test_table": {
+      "name": "test_table",
+      "schema": "default",
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.test_table",
+      "comment": "fixture table for dry-run",
+      "isPartitionTable": true,
+      "partition": "ds",
+      "columns": [
+        { "name": "id", "type": "BIGINT", "comment": "primary key", "isPartition": false, "isPrimaryKey": true },
+        { "name": "label", "type": "STRING", "comment": "label", "isPartition": false, "isPrimaryKey": false },
+        { "name": "ds", "type": "STRING", "comment": "partition day", "isPartition": true, "isPrimaryKey": false }
+      ]
+    },
+    "raw_events": {
+      "name": "raw_events",
+      "schema": "default",
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.raw_events",
+      "comment": "raw events fixture",
+      "isPartitionTable": true,
+      "partition": "ds",
+      "columns": [
+        { "name": "event_id", "type": "STRING", "isPartition": false, "isPrimaryKey": true },
+        { "name": "ds", "type": "STRING", "isPartition": true, "isPrimaryKey": false }
+      ]
+    },
+    "report_daily": {
+      "name": "report_daily",
+      "schema": "default",
+      "projectName": "dwa_staging",
+      "tableGuid": "odps.dwa_staging.report_daily",
+      "comment": "daily report fixture",
+      "isPartitionTable": true,
+      "partition": "ds",
+      "columns": [
+        { "name": "metric", "type": "STRING", "isPartition": false, "isPrimaryKey": false },
+        { "name": "value", "type": "DOUBLE", "isPartition": false, "isPrimaryKey": false },
+        { "name": "ds", "type": "STRING", "isPartition": true, "isPrimaryKey": false }
+      ]
+    }
+  }
+}
