@@ -1,0 +1,153 @@
+/* SQL result card — chat-first v2 surface */
+
+[data-component="sql-result-card"] {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-body"] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  padding: 4px 2px 0;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-sql"] {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--v2-background-bg-deep, canvas) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--dwa-border) 55%, transparent);
+  font-family: var(--font-family-mono, ui-monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--v2-text-text-base);
+  overflow: auto;
+  max-height: 140px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--v2-background-bg-inverse) 5%, transparent);
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-toolbar"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-meta"] {
+  font-size: 12px;
+  color: var(--v2-text-text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-actions"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-action"] {
+  appearance: none;
+  border: 1px solid var(--dwa-border-soft);
+  background: var(--dwa-surface-base);
+  color: var(--v2-text-text-muted);
+  border-radius: var(--dwa-radius-pill);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-action"]:hover {
+  border-color: var(--dwa-primary);
+  color: var(--dwa-primary);
+  background: color-mix(in oklab, var(--dwa-primary) 8%, var(--dwa-surface-base));
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-action"][data-active="true"] {
+  color: var(--dwa-success);
+  border-color: color-mix(in oklab, var(--dwa-success) 36%, var(--dwa-border-soft));
+  background: color-mix(in oklab, var(--dwa-success) 12%, var(--dwa-surface-base));
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-scroll"] {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid color-mix(in oklab, var(--dwa-border) 50%, transparent);
+  border-radius: 10px;
+  outline: none;
+  background: var(--dwa-surface-base);
+  scrollbar-width: thin;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] th,
+[data-component="sql-result-card"] [data-slot="sql-result-table"] td {
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in oklab, var(--dwa-border) 30%, transparent);
+  text-align: left;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] tr:last-child td {
+  border-bottom: 0;
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--dwa-surface-base);
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--v2-text-text-faint);
+  border-bottom: 1px solid var(--dwa-border);
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--v2-background-bg-deep, canvas) 32%, transparent);
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-table"] tbody tr:hover td {
+  background: color-mix(in oklab, var(--dwa-primary) 10%, transparent);
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-empty"],
+[data-component="sql-result-card"] [data-slot="sql-result-truncated"] {
+  font-size: 12.5px;
+  color: var(--v2-text-text-muted);
+  padding: 12px 14px;
+  text-align: center;
+  border: 1px dashed color-mix(in oklab, var(--dwa-border) 60%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--dwa-background-bg-deep, canvas) 60%, transparent);
+}
+
+[data-component="sql-result-card"] [data-slot="sql-result-truncated"] {
+  color: var(--v2-text-text-faint);
+  text-align: left;
+  font-style: normal;
+}

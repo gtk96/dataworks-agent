@@ -1,89 +1,63 @@
+# Secrets and local configuration
 .env
-.venv*/
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.ruff_cache/
+.env.local
+.env.*.local
+secrets.dat
+*.dat
+.keyring
+
+# Runtime data and databases
 data/
-log/
-node_modules/
-frontend/dist/
-frontend/node_modules/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
 *.db
-*.db-shm
-*.db-wal
-*.bak
-.claude/
-.kiro/
-mcp.json
-mcp.local.json
-.coverage
-.coverage.*
-htmlcov/
-# 测试/CI 产物 xml（junit / coverage 等）：v9 评审 §6.4 修复，避免 stale 产物误导 reviewer
-reports/*.xml
-.pytest-basetmp/
-.pytest-tmp/
-.pytest-fresh*/
-.pytest-*.txt
-.test_*.db*
-.test_*.txt
-.tmp*/
-.tmp2/
-.tmp_test/
-.uv-cache/
-frontend/test-results/
-frontend/playwright-report/
-frontend/blob-report/
-frontend/reports/
-# 误入库的外部 README 解码副本（v9 §3.6）
-readme_decoded.md
-*decoded.md
-.mimocode/
-chk_*.py
-fix_*.py
-_py_recover.py
-apply_*.py
-final_*.py
-*.db-journal
-tmp/
-logs/
+*.lance/
+*.lancedb/
 
-# 一次性分区操作产物（gen_/run_add_partitions_*.py 的输出；保留 2026-07-02 那批作为历史）
-add_partitions_*.json
-add_partitions_*.sql
-remaining_partitions_*.sql
-
-# 含阿里云 AK 脱敏清单的本地敏感文件，禁止进入版本库
-replace-expressions.txt
-AGENTS.md
-
-# 私有知识库（含真实业务数据）
-semantic/metrics.json
-semantic/knowledge.json
-data/sql_archive/*.sql
-
-# IDE / 工具垃圾目录
-.agnes/
-.codex-logs/
-.idea/
-tmp_agent_api.txt
-tmp_reverse_*.json
-tmp_last_response.json
-
-CLAUDE.local.md
+# Logs and acceptance artifacts
 *.log
-*.out
-*.err
-.runtime/
-.playwright-mcp/
-
-frontend/screenshots/
+log/
+logs/
+artifacts/
 playwright-report/
 test-results/
-*.har
-trace.zip
 
-# Local isolated implementation worktrees
+# Bun / Node
+node_modules/
+dist/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# Python / uv sidecar
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Worktrees and build outputs
 .worktrees/
+bin/
+*.exe
+*.test
+*.out
+coverage/
+coverage.txt
+
+# Subagent-driven-development scratch state (reports, plans, etc.)
+.superpowers/
+
+# Embedding model binaries (manifest.json holds integrity hashes; run scripts/fetch-embedding-model.ts)
+packages/dataworks-control/assets/embeddings/*.tar.gz
+packages/dataworks-control/assets/embeddings/fast-multilingual-e5-large/
+packages/dataworks-control/assets/embeddings/**/model.onnx*

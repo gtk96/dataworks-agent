@@ -1,0 +1,32 @@
+# Gitleaks config for DataWorks Agent.
+# Extends defaults; allowlists known false positives from the monorepo
+# (public Stripe pk_test keys, OAuth client IDs, test fixtures, keybind strings).
+
+title = "dataworks-agent"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "False positives: public client IDs, test fixtures, docs, keybinds"
+paths = [
+  '''packages/http-recorder/test/''',
+  '''packages/docs/''',
+  '''packages/sdk/js/src/v2/gen/''',
+  '''packages/app/e2e/''',
+  '''packages/app/src/pages/layout\.tsx$''',
+  '''packages/console/app/package\.json$''',
+  '''packages/opencode/src/plugin/digitalocean\.ts$''',
+  '''\.gitleaksignore$''',
+  '''\.gitleaks\.toml$''',
+]
+regexes = [
+  # Keyboard shortcut bindings, not API keys
+  '''keybind:\s*"[^"]*"''',
+  '''shift\+alt\+arrow(up|down)''',
+  # Stripe publishable keys are public by design
+  '''pk_test_[A-Za-z0-9]+''',
+  '''pk_live_[A-Za-z0-9]+''',
+  # DigitalOcean OAuth public client id used by upstream opencode plugin
+  '''b1a6c5158156caac821fd1b30253ca8acb52454a48fa744420e41889cb589f82''',
+]

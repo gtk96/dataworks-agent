@@ -18,10 +18,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      # Scan the working tree, not a commit range. Unrelated-history / orphan
+      # merges make gitleaks-action's default `base^..head` range invalid
+      # (orphan commits have no parent), which fails the job without scanning.
+      - name: Install gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: "8.24.3"
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks on working tree
+        run: gitleaks detect --source . --no-git --redact -v --exit-code=1 --config=.gitleaks.toml
 
   pre-commit:
     name: Pre-commit hooks

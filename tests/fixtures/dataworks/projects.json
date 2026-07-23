@@ -1,0 +1,21 @@
+{
+  "projects": [
+    {
+      "id": 10001,
+      "name": "dwa_staging",
+      "envType": "DEV",
+      "region": "cn-hangzhou"
+    }
+  ],
+  "lineage": {
+    "test_table": {
+      "tableName": "test_table",
+      "upstream": [
+        { "name": "raw_events", "type": "ODPS_TABLE" }
+      ],
+      "downstream": [
+        { "name": "report_daily", "type": "ODPS_TABLE" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,167 @@
+name: upstream-sync
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Daily at midnight UTC
+  workflow_dispatch:
+  push:
+    branches:
+      - upstream-sync
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+env:
+  UPSTREAM_REMOTE: upstream
+  UPSTREAM_BRANCH: dev
+  SYNC_BRANCH: upstream-sync
+
+jobs:
+  prepare:
+    name: prepare sync
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      has_changes: ${{ steps.check-changes.outputs.has_changes }}
+      pr_number: ${{ steps.find-pr.outputs.pr_number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup git
+        run: |
+          git config --global user.email "bot@opencode.ai"
+          git config --global user.name "opencode"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git 2>/dev/null || \
+          git remote set-url upstream https://github.com/anomalyco/opencode.git
+          git fetch upstream ${{ env.UPSTREAM_BRANCH }}
+
+      - name: Create or update sync branch
+        run: |
+          git checkout ${{ env.SYNC_BRANCH }} 2>/dev/null || \
+          git checkout -b ${{ env.SYNC_BRANCH }}
+          git reset --hard upstream/${{ env.UPSTREAM_BRANCH }}
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          if git log --oneline -1 origin/${{ env.SYNC_BRANCH }} 2>/dev/null | grep -q .; then
+            CHANGES=$(git log origin/${{ env.SYNC_BRANCH }}..HEAD --oneline | wc -l)
+          else
+            CHANGES=1
+          fi
+          echo "has_changes=$([ "$CHANGES" -gt 0 ] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
+          echo "Changes: $CHANGES commits"
+
+      - name: Push sync branch
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: git push origin ${{ env.SYNC_BRANCH }} --force
+
+      - name: Find existing PR
+        id: find-pr
+        run: |
+          PR_NUMBER=$(gh pr list --head ${{ env.SYNC_BRANCH }} --repo ${{ github.repository }} --json number --jq '.[0].number // empty')
+          echo "pr_number=${PR_NUMBER:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR body file
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          cat > /tmp/pr_body.txt << 'EOF'
+          ## Upstream Sync
+          Automated sync from upstream/dev
+
+          **Automated PR - do not squash merge without coordination**
+
+          ### Changes
+          $(git log --oneline origin/${{ env.SYNC_BRANCH }}..HEAD 2>/dev/null | head -20 || echo 'Initial sync')
+
+          ### Verification
+          This PR runs the full verification suite before merge.
+
+          - [ ] All CI checks pass
+          - [ ] No conflicts with local changes
+          - [ ] Breaking changes reviewed
+          EOF
+
+      - name: Create or update PR
+        if: steps.check-changes.outputs.has_changes == 'true'
+        run: |
+          if [ -n "${{ steps.find-pr.outputs.pr_number }}" ]; then
+            gh pr edit ${{ steps.find-pr.outputs.pr_number }} --body-file /tmp/pr_body.txt || true
+          else
+            gh pr create \
+              --base main \
+              --head ${{ env.SYNC_BRANCH }} \
+              --title "chore: sync upstream/dev" \
+              --body-file /tmp/pr_body.txt
+          fi
+
+  verify:
+    name: verify (${{ matrix.job }})
+    needs: prepare
+    if: needs.prepare.outputs.has_changes == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - job: upstream
+          - job: lint
+          - job: typecheck-core
+          - job: typecheck-opencode
+          - job: typecheck-app
+          - job: typecheck-dataworks-core
+          - job: dataworks-tests
+          - job: dry-run-integration
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ env.SYNC_BRANCH }}
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run upstream verify
+        if: matrix.job == 'upstream'
+        run: bun run verify:upstream
+
+      - name: Run lint
+        if: matrix.job == 'lint'
+        run: bun run lint
+
+      - name: Typecheck core
+        if: matrix.job == 'typecheck-core'
+        run: bun run --cwd packages/core typecheck
+
+      - name: Typecheck opencode
+        if: matrix.job == 'typecheck-opencode'
+        run: bun run --cwd packages/opencode typecheck
+
+      - name: Typecheck app
+        if: matrix.job == 'typecheck-app'
+        run: bun run --cwd packages/app typecheck
+
+      - name: Typecheck dataworks-core
+        if: matrix.job == 'typecheck-dataworks-core'
+        run: bun run --cwd packages/dataworks-core typecheck
+
+      - name: Run dataworks tests
+        if: matrix.job == 'dataworks-tests'
+        run: bun test --cwd packages/dataworks-core ./test
+
+      - name: Run dry-run integration
+        if: matrix.job == 'dry-run-integration'
+        run: DATAWORKS_AGENT_DRY_RUN=1 bun test ./tests/integration/dry-run
+        env:
+          DATAWORKS_AGENT_DRY_RUN: "1"

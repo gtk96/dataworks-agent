@@ -1,0 +1,66 @@
+{
+  "modelId": "fast-multilingual-e5-large",
+  "dims": 1024,
+  "embeddingModelEnum": "EmbeddingModel.MLE5Large",
+  "archiveUrl": "https://storage.googleapis.com/qdrant-fastembed/fast-multilingual-e5-large.tar.gz",
+  "archiveSha256": "6de9742c12bc29e37a0ac49521eda668028424c8068df8ca4941861e504a9d40",
+  "license": "MIT (upstream multilingual-e5-large / FastEmbed packaging)",
+  "queryPrefix": "query: ",
+  "passagePrefix": "passage: ",
+  "extractedDir": "fast-multilingual-e5-large",
+  "extractedFiles": [
+    {
+      "path": "._fast-multilingual-e5-large",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._config.json",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._model.onnx",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._model.onnx_data",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._special_tokens_map.json",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._tokenizer.json",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/._tokenizer_config.json",
+      "sha256": "67f6c8a428ea0e5cd34ecc26a48e8197ab61e84088a3f7a95658fc622ce78696"
+    },
+    {
+      "path": "fast-multilingual-e5-large/config.json",
+      "sha256": "1de8c3be1f344c0eefa4962480a006f8639f416dfafaa95a770e3cf4bceae6a4"
+    },
+    {
+      "path": "fast-multilingual-e5-large/model.onnx",
+      "sha256": "1c09780c907c8a91a77a6ab1fd231f79e090d2907ca431223703dfebeed3d36c"
+    },
+    {
+      "path": "fast-multilingual-e5-large/model.onnx_data",
+      "sha256": "0cf1883fee81c63819a44e2ba0efa51d4043d9759685a4ebebbde97e0623d15c"
+    },
+    {
+      "path": "fast-multilingual-e5-large/special_tokens_map.json",
+      "sha256": "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835"
+    },
+    {
+      "path": "fast-multilingual-e5-large/tokenizer.json",
+      "sha256": "f59925fcb90c92b894cb93e51bb9b4a6105c5c249fe54ce1c704420ac39b81af"
+    },
+    {
+      "path": "fast-multilingual-e5-large/tokenizer_config.json",
+      "sha256": "f90024142df07163e5e6c5b9a6ad7c8c68b22a9112af11e3db4559a9ff90f737"
+    }
+  ],
+  "notes": "archiveSha256 filled by scripts/fetch-embedding-model.ts. Product/staging MLE5 refuses PENDING/empty hash (fail-closed). Hash embedder only when DWA_EMBEDDING_MODE=hash, DATAWORKS_AGENT_DRY_RUN=1, or forceHash. Large archive/extract are not committed; operators re-run the fetch script offline once."
+}
