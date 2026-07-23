@@ -17,11 +17,10 @@ export function tableSqlArtifact(table: Pick<DataWorksTable, "name">): SqlArtifa
 export function scopeRequestIsCurrent(
   requested: string,
   current: WorkbenchScope,
-  requestID?: number,
-  currentRequestID?: number,
+  requestID: number,
+  currentRequestID: number,
 ) {
   if (requested !== scopeKey(current)) return false
-  if (requestID === undefined) return true
   return requestID === currentRequestID
 }
 
@@ -33,6 +32,7 @@ export function ResourceExplorer(props: {
   const dataworks = useDataWorks()
   const [tables, setTables] = createSignal<DataWorksTable[]>([])
   const [tableState, setTableState] = createSignal<ListState>("idle")
+  let tableRequest = 0
   let schemaRequest = 0
   const scope = createMemo<WorkbenchScope>(() => ({
     connectionID: dataworks.selectedConnectionID(),
@@ -43,6 +43,7 @@ export function ResourceExplorer(props: {
 
   createEffect(() => {
     const requested = scope()
+    const requestID = ++tableRequest
     schemaRequest += 1
     setTables([])
     if (!requested.connectionID || !requested.projectID || !requested.projectName) {
@@ -50,15 +51,15 @@ export function ResourceExplorer(props: {
       return
     }
     setTableState("loading")
-    void loadTables(requested)
+    void loadTables(requested, requestID)
   })
 
-  async function loadTables(requested: WorkbenchScope) {
+  async function loadTables(requested: WorkbenchScope, requestID: number) {
     const result = await dataworks.listTables(requested.connectionID!, requested.projectID!, {
       projectName: requested.projectName,
       region: requested.region,
     })
-    if (!scopeRequestIsCurrent(scopeKey(requested), scope())) return
+    if (!scopeRequestIsCurrent(scopeKey(requested), scope(), requestID, tableRequest)) return
     if (!result.ok) {
       setTableState(result.status === 429 ? "rate_limit" : "error")
       return

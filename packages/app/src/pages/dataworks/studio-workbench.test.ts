@@ -28,8 +28,8 @@ describe("resource explorer", () => {
   })
 
   test("rejects an async completion from a stale scope", () => {
-    expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope)).toBe(true)
-    expect(scopeRequestIsCurrent("conn-1\n200\nanalytics\ncn-hangzhou", scope)).toBe(false)
+    expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope, 1, 1)).toBe(true)
+    expect(scopeRequestIsCurrent("conn-1\n200\nanalytics\ncn-hangzhou", scope, 1, 1)).toBe(false)
   })
 
   test("rejects an older table request within the same scope", () => {
