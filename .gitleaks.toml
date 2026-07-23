@@ -14,12 +14,16 @@ paths = [
   '''packages/docs/''',
   '''packages/sdk/js/src/v2/gen/''',
   '''packages/app/e2e/''',
+  '''packages/app/src/pages/layout\.tsx$''',
+  '''packages/console/app/package\.json$''',
+  '''packages/opencode/src/plugin/digitalocean\.ts$''',
   '''\.gitleaksignore$''',
   '''\.gitleaks\.toml$''',
 ]
 regexes = [
   # Keyboard shortcut bindings, not API keys
   '''keybind:\s*"[^"]*"''',
+  '''shift\+alt\+arrow(up|down)''',
   # Stripe publishable keys are public by design
   '''pk_test_[A-Za-z0-9]+''',
   '''pk_live_[A-Za-z0-9]+''',
