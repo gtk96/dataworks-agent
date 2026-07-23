@@ -5,6 +5,7 @@ export function isSqlArtifactDetail(value: unknown): value is SqlArtifactDetail 
   if (!value || typeof value !== "object") return false
   const detail = value as Record<string, unknown>
   if (typeof detail.sql !== "string" || !detail.sql.trim() || detail.sql.length > 4000) return false
+  if (detail.sourceMessageID !== undefined && typeof detail.sourceMessageID !== "string") return false
   return detail.source === "agent-markdown" || detail.source === "sql-tool"
 }
 

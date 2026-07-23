@@ -15,4 +15,5 @@ test("emits a bounded typed SQL artifact without execution", () => {
 test("rejects empty and oversized payloads", () => {
   expect(isSqlArtifactDetail({ sql: "", source: "agent-markdown" })).toBe(false)
   expect(isSqlArtifactDetail({ sql: "x".repeat(4001), source: "agent-markdown" })).toBe(false)
+  expect(isSqlArtifactDetail({ sql: "SELECT 1", source: "agent-markdown", sourceMessageID: 1 })).toBe(false)
 })
