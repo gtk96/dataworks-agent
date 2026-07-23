@@ -17,11 +17,12 @@ thread that sets the same event.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import Event, Thread
-from typing import List, Optional, Sequence
 
 
 @dataclass
@@ -38,7 +39,7 @@ class _TimeoutError(Exception):
     """Raised when a query exceeds its timeout."""
 
 
-def _dry_run_rows(sql: str) -> tuple[List[Column], List[List[object]], Optional[str]]:
+def _dry_run_rows(sql: str) -> tuple[list[Column], list[list[object]], str | None]:
     """Return a tiny synthetic result for dry-run mode.
 
     Real Aliyun ODPS columns and rows never appear here. The returned shape
@@ -49,7 +50,11 @@ def _dry_run_rows(sql: str) -> tuple[List[Column], List[List[object]], Optional[
     if normalised == "select 1":
         return [Column("_c0", "BIGINT")], [[1]], None
     if normalised.startswith("show"):
-        return [Column("name", "STRING"), Column("type", "STRING")], [["dry_run_table", "TABLE"]], None
+        return (
+            [Column("name", "STRING"), Column("type", "STRING")],
+            [["dry_run_table", "TABLE"]],
+            None,
+        )
     if normalised.startswith("desc") or normalised.startswith("describe"):
         return [Column("field", "STRING"), Column("type", "STRING")], [["id", "BIGINT"]], None
     # Default: one synthetic row carrying the parsed SQL fingerprint.
@@ -131,8 +136,8 @@ def execute_query(
     instance = None
     try:
         instance = client.execute_sql(sql)
-        columns: List[Column] = []
-        rows: List[List[object]] = []
+        columns: list[Column] = []
+        rows: list[list[object]] = []
         budget = max_bytes if max_bytes > 0 else 0
         with instance.open_reader() as reader:
             schema_records = getattr(reader, "_schema", None)
@@ -148,9 +153,8 @@ def execute_query(
                 if cancel_event.is_set():
                     raise _CancelledError()
                 row_values = list(record.values)
-                if budget:
-                    if len(json.dumps(row_values).encode("utf-8")) > budget:
-                        break
+                if budget and len(json.dumps(row_values).encode("utf-8")) > budget:
+                    break
                 rows.append(row_values)
                 if len(rows) >= max_rows and max_rows > 0:
                     break
@@ -163,10 +167,8 @@ def execute_query(
         }
     finally:
         if instance is not None and cancel_event.is_set():
-            try:
+            with contextlib.suppress(Exception):
                 instance.stop()
-            except Exception:
-                pass
 
 
 def cancel_query() -> None:

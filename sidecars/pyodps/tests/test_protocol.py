@@ -4,7 +4,6 @@ import json
 import math
 
 import pytest
-
 from dwa_pyodps.protocol import (
     ParseError,
     decode_request,
@@ -168,6 +167,8 @@ def test_decode_oversized_line_raises_parse_error() -> None:
 
 def test_truncate_numeric_and_floating_cells() -> None:
     rows = [[1, 2.5], [3, math.pi]]
-    out, truncated = truncate_rows(rows, [{"name": "a"}, {"name": "b"}], max_rows=10, max_bytes=1024)
+    out, truncated = truncate_rows(
+        rows, [{"name": "a"}, {"name": "b"}], max_rows=10, max_bytes=1024
+    )
     assert out == rows
     assert truncated is False

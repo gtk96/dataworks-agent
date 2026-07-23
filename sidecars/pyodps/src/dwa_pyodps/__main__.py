@@ -13,27 +13,24 @@ which the main loop translates into a typed protocol error.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
 import threading
 import time
 from threading import Event, Semaphore
-from typing import Optional
 
 from .protocol import (
     ParseError,
     RequestEnvelope,
     decode_request,
-    encode_error,
-    encode_result,
     truncate_rows,
 )
 
-try:  # pyodps is optional — only required in real mode.
-    from .query import _CancelledError, _TimeoutError  # noqa: F401
-except ImportError:  # pragma: no cover - module is always present
-    pass
+# pyodps is optional — only required in real mode.
+with contextlib.suppress(ImportError):  # pragma: no cover - module is always present
+    from .query import _CancelledError, _TimeoutError
 
 
 MAX_CONCURRENT = 4
@@ -93,9 +90,7 @@ class Sidecar:
     def _send_result(self, req_id: str, result: dict) -> None:
         self._write_line({"id": req_id, "result": result})
 
-    def _send_error(
-        self, req_id: Optional[str], code: str, message: str, retryable: bool
-    ) -> None:
+    def _send_error(self, req_id: str | None, code: str, message: str, retryable: bool) -> None:
         rid = req_id if isinstance(req_id, str) else ""
         self._write_line(
             {
@@ -125,9 +120,7 @@ class Sidecar:
                 ev.set()
                 self._send_result(envelope.id, {"ok": True, "cancelled": target})
             else:
-                self._send_result(
-                    envelope.id, {"ok": False, "reason": "no_inflight_query"}
-                )
+                self._send_result(envelope.id, {"ok": False, "reason": "no_inflight_query"})
             return
         if envelope.method == "query":
             self._dispatch_query(envelope)
@@ -199,7 +192,7 @@ class Sidecar:
             self._send_error(
                 envelope.id, "TIMEOUT", str(exc) or "query exceeded timeout", retryable=False
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._send_error(
                 envelope.id,
                 "QUERY_FAILED",
@@ -217,10 +210,7 @@ def _detect_dry_run() -> bool:
     env_value = os.environ.get("DWA_PYODPS_DRY_RUN")
     if env_value and env_value.lower() in {"1", "true", "yes"}:
         return True
-    for arg in sys.argv[1:]:
-        if arg == "--dry-run":
-            return True
-    return False
+    return any(arg == "--dry-run" for arg in sys.argv[1:])
 
 
 def main() -> int:

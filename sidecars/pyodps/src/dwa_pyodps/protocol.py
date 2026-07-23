@@ -9,9 +9,8 @@ responses.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence
-
 
 # 16 MB hard cap on a single line — matches the Bun supervisor requirement.
 MAX_LINE_BYTES = 16 * 1024 * 1024
@@ -91,9 +90,7 @@ def encode_result(req_id: str, result: dict) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n"
 
 
-def encode_error(
-    req_id: str, code: str, message: str, retryable: bool = False
-) -> bytes:
+def encode_error(req_id: str, code: str, message: str, retryable: bool = False) -> bytes:
     """Format an error response line and append a trailing newline.
 
     ``req_id`` is allowed to be the empty string when the upstream line could
@@ -129,7 +126,7 @@ def truncate_rows(
     _columns: Sequence[dict],
     max_rows: int,
     max_bytes: int,
-) -> tuple[List[Sequence[object]], bool]:
+) -> tuple[list[Sequence[object]], bool]:
     """Walk ``rows`` and emit the prefix that fits within the limits.
 
     The byte budget is computed from the JSON-serialised row including the
@@ -137,10 +134,9 @@ def truncate_rows(
     ``max_rows`` and ``max_bytes`` are upper bounds; pass any positive
     integer to disable a limit.
     """
-    out: List[Sequence[object]] = []
+    out: list[Sequence[object]] = []
     total = 2  # opening + closing bracket of the JSON array
-    used_rows = 0
-    for row in rows:
+    for used_rows, row in enumerate(rows):
         if used_rows >= max_rows:
             return out, True
         cell_bytes = sum(_cell_size(cell) + 1 for cell in row)  # +1 for comma
@@ -150,5 +146,4 @@ def truncate_rows(
             return out, True
         total = boundary + cell_bytes
         out.append(list(row))
-        used_rows += 1
     return out, False
