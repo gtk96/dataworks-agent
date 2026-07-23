@@ -1,14 +1,22 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
 import type { DataWorksTableDescription, ListState } from "@/context/dataworks"
+import { useLanguage } from "@/context/language"
 import { ResultsGrid } from "./results-grid"
 import {
   createResultPreview,
+  resultIsStale,
   type ScopedSqlResult,
   type SqlDocument,
   type WorkbenchTab,
 } from "./workbench-state"
 
 const WORKBENCH_TABS = ["plan", "sql", "results", "schema"] as const
+const WORKBENCH_TAB_LABELS = {
+  plan: "dataworks.workbench.tab.plan",
+  sql: "dataworks.workbench.tab.sql",
+  results: "dataworks.workbench.tab.results",
+  schema: "dataworks.workbench.tab.schema",
+} as const
 
 export type ArtifactWorkspaceProps = {
   activeTab: WorkbenchTab
@@ -26,11 +34,12 @@ export type ArtifactWorkspaceProps = {
 }
 
 export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
-  const stale = () => !!props.result && props.document.editedVersion !== props.result.sqlVersion
+  const language = useLanguage()
+  const stale = () => !!props.result && resultIsStale(props.document, props.result)
 
   return (
     <main data-component="artifact-workspace">
-      <div role="tablist" aria-label="Artifact workspace" data-slot="artifact-tabs">
+      <div role="tablist" aria-label={language.t("dataworks.workbench.workspace")} data-slot="artifact-tabs">
         <For each={WORKBENCH_TABS}>
           {(tab) => (
             <button
@@ -49,7 +58,7 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
                 queueMicrotask(() => document.getElementById(`workbench-tab-${next}`)?.focus())
               }}
             >
-              {tab}
+              {language.t(WORKBENCH_TAB_LABELS[tab])}
             </button>
           )}
         </For>
@@ -63,14 +72,14 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
       >
         <Switch>
           <Match when={props.activeTab === "plan"}>
-            <Show when={props.plan} fallback={<p>No active plan for this session.</p>}>
+            <Show when={props.plan} fallback={<p>{language.t("dataworks.workbench.noPlan")}</p>}>
               {props.plan}
             </Show>
           </Match>
 
           <Match when={props.activeTab === "sql"}>
             <div data-slot="sql-toolbar">
-              <span>{props.document.title ?? "SQL scratchpad"}</span>
+              <span>{props.document.title ?? language.t("dataworks.workbench.sqlScratchpad")}</span>
               <button
                 type="button"
                 data-action="run-sql"
@@ -78,11 +87,13 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
                 aria-busy={props.running}
                 onClick={() => props.onRun()}
               >
-                {props.running ? "Running..." : "Run"}
+                {props.running
+                  ? language.t("dataworks.workbench.running")
+                  : language.t("dataworks.workbench.run")}
               </button>
             </div>
             <textarea
-              aria-label="SQL editor"
+              aria-label={language.t("dataworks.workbench.sqlEditor")}
               spellcheck={false}
               value={props.document.sql}
               onInput={(event) => props.onSqlChange(event.currentTarget.value)}
@@ -90,7 +101,7 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
           </Match>
 
           <Match when={props.activeTab === "results"}>
-            <Show when={props.result} fallback={<p>Run a read-only query to see results.</p>}>
+            <Show when={props.result} fallback={<p>{language.t("dataworks.workbench.emptyResults")}</p>}>
               {(result) => (
                 <>
                   <ResultsGrid result={result().result} stale={stale()} />
@@ -99,7 +110,7 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
                     data-action="attach-result-preview"
                     onClick={() => props.onAttachPreview(createResultPreview(result().result))}
                   >
-                    Attach preview to Agent
+                    {language.t("dataworks.workbench.attachPreview")}
                   </button>
                 </>
               )}
@@ -124,9 +135,9 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
                       <table>
                         <thead>
                           <tr>
-                            <th scope="col">Column</th>
-                            <th scope="col">Type</th>
-                            <th scope="col">Comment</th>
+                            <th scope="col">{language.t("dataworks.workbench.column")}</th>
+                            <th scope="col">{language.t("dataworks.workbench.type")}</th>
+                            <th scope="col">{language.t("dataworks.workbench.comment")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -147,19 +158,19 @@ export function ArtifactWorkspace(props: ArtifactWorkspaceProps): JSX.Element {
               </Show>
               <Switch>
                 <Match when={props.schemaState === "loading"}>
-                  <p role="status">Loading Schema...</p>
+                  <p role="status">{language.t("dataworks.workbench.schemaLoading")}</p>
                 </Match>
                 <Match when={props.schemaState === "partial" || props.schema?.incomplete === true}>
-                  <p role="status">Schema details are incomplete.</p>
+                  <p role="status">{language.t("dataworks.workbench.schemaPartial")}</p>
                 </Match>
                 <Match when={props.schemaState === "rate_limit"}>
-                  <p role="status">Schema requests are rate limited.</p>
+                  <p role="status">{language.t("dataworks.workbench.schemaRateLimit")}</p>
                 </Match>
                 <Match when={props.schemaState === "error"}>
-                  <p role="alert">Schema could not be loaded.</p>
+                  <p role="alert">{language.t("dataworks.workbench.schemaError")}</p>
                 </Match>
                 <Match when={!props.schema && (props.schemaState === "idle" || props.schemaState === "empty")}>
-                  <p>Select a table to inspect its Schema.</p>
+                  <p>{language.t("dataworks.workbench.schemaEmpty")}</p>
                 </Match>
               </Switch>
             </section>

@@ -6,9 +6,12 @@ import {
   createResultPreview,
   createSqlRequest,
   editSqlDocument,
+  MAX_RESULT_PREVIEW_BYTES,
   nextTabAfterRun,
   openSqlArtifact,
+  requiresSqlOverwriteConfirmation,
   responsiveWorkbench,
+  resultIsStale,
   serializeResultPreviewContext,
   sqlRequestIsCurrent,
   scopeKey,
@@ -33,6 +36,8 @@ describe("workbench state", () => {
   test("does not overwrite a dirty SQL document", () => {
     const dirty = editSqlDocument(openSqlArtifact(undefined, { sql: "SELECT 1" }), "SELECT 2")
     expect(openSqlArtifact(dirty, { sql: "SELECT 3" }).id).not.toBe(dirty.id)
+    expect(requiresSqlOverwriteConfirmation(dirty, { sql: "SELECT 3" })).toBe(true)
+    expect(requiresSqlOverwriteConfirmation(dirty, { sql: "SELECT 2" })).toBe(false)
   })
 
   test("rejects results completed under an old scope", () => {
@@ -65,6 +70,18 @@ describe("workbench state", () => {
     expect(context).toContain('"rows":[[1]]')
   })
 
+  test("bounds individual values and the total Agent preview payload", () => {
+    const huge = "数据".repeat(20_000)
+    const preview = createResultPreview({
+      columns: Array.from({ length: 50 }, (_, index) => ({ name: `${index}-${huge}`, type: huge })),
+      rows: Array.from({ length: 20 }, () => Array.from({ length: 50 }, () => huge)),
+      truncated: false,
+    })
+    expect(new TextEncoder().encode(JSON.stringify(preview)).byteLength).toBeLessThanOrEqual(MAX_RESULT_PREVIEW_BYTES)
+    expect(preview.truncated).toBe(true)
+    expect(JSON.stringify(preview)).not.toContain(huge)
+  })
+
   test("uses deterministic scope identity and bounded panel widths", () => {
     expect(scopeKey(scope)).toBe("conn-1\n100\nanalytics\ncn-hangzhou")
     expect(clampResourceWidth(120)).toBe(200)
@@ -73,10 +90,18 @@ describe("workbench state", () => {
     expect(clampAgentWidth(900)).toBe(600)
   })
 
-  test("prioritizes the editor below 960px", () => {
+  test("prioritizes the editor from measured workbench width", () => {
     expect(responsiveWorkbench(1440)).toEqual({ resourceOverlay: false, agentOverlay: false })
-    expect(responsiveWorkbench(1024)).toEqual({ resourceOverlay: false, agentOverlay: false })
+    expect(responsiveWorkbench(1024)).toEqual({ resourceOverlay: false, agentOverlay: true })
     expect(responsiveWorkbench(768)).toEqual({ resourceOverlay: true, agentOverlay: true })
+  })
+
+  test("marks results stale when they belong to another SQL document", () => {
+    const first = openSqlArtifact(undefined, { sql: "SELECT 1" })
+    const second = openSqlArtifact(editSqlDocument(first, "SELECT 2"), { sql: "SELECT 3" })
+    const result = { documentID: first.id, scope, result: { columns: [], rows: [], truncated: false }, sqlVersion: 0 }
+    expect(resultIsStale(first, result)).toBe(false)
+    expect(resultIsStale(second, result)).toBe(true)
   })
 
   test("editing after a run marks the result stale", () => {

@@ -38,6 +38,7 @@ describe("dataworks i18n coverage", () => {
     "dataworks.chat.category.jobs",
     "dataworks.chat.category.orders",
     "dataworks.chat.category.ping",
+    "dataworks.workbench.untitledQuery",
   ]
 
   test.each(requiredKeys)("zh has %s", (key) => {

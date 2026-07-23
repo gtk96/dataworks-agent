@@ -88,6 +88,7 @@ async function code(text: string, language: string | undefined, key: string, com
 type CopyLabels = {
   copy: string
   copied: string
+  openSql: string
 }
 
 type CopyButtonState = {
@@ -214,12 +215,12 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels, complete =
     parent.replaceChild(wrapper, block)
     wrapper.appendChild(block)
     wrapper.appendChild(createCopyButton(labels))
-    ensureSqlArtifactButton(wrapper, codeLanguage(block), complete)
+    ensureSqlArtifactButton(wrapper, codeLanguage(block), complete, labels.openSql)
     return
   }
 
   applyCodeMetadata(parent, codeLanguage(block))
-  ensureSqlArtifactButton(parent, codeLanguage(block), complete)
+  ensureSqlArtifactButton(parent, codeLanguage(block), complete, labels.openSql)
 
   const buttons = Array.from(parent.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
     (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
@@ -236,11 +237,17 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels, complete =
   }
 }
 
-function ensureSqlArtifactButton(wrapper: HTMLElement, language: string | undefined, complete: boolean) {
+function ensureSqlArtifactButton(
+  wrapper: HTMLElement,
+  language: string | undefined,
+  complete: boolean,
+  label: string,
+) {
   const buttons = Array.from(wrapper.querySelectorAll('[data-slot="markdown-open-sql"]')).filter(
     (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
   )
-  if (!shouldShowSqlArtifactButton(language, complete)) {
+  const sql = wrapper.querySelector("code")?.textContent ?? ""
+  if (!shouldShowSqlArtifactButton(language, complete, sql)) {
     buttons.forEach((button) => button.remove())
     return
   }
@@ -248,11 +255,13 @@ function ensureSqlArtifactButton(wrapper: HTMLElement, language: string | undefi
     const button = document.createElement("button")
     button.type = "button"
     button.dataset.slot = "markdown-open-sql"
-    button.setAttribute("aria-label", "Open in SQL")
-    button.textContent = "Open in SQL"
+    button.setAttribute("aria-label", label)
+    button.textContent = label
     wrapper.appendChild(button)
     return
   }
+  buttons[0]!.setAttribute("aria-label", label)
+  buttons[0]!.textContent = label
   buttons.slice(1).forEach((button) => button.remove())
 }
 
@@ -506,6 +515,7 @@ export function Markdown(
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
+      openSql: i18n.t("ui.markdown.openInSql"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -527,6 +537,7 @@ export function Markdown(
       copyCleanup = setupCodeCopy(container, () => ({
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
+        openSql: i18n.t("ui.markdown.openInSql"),
       }))
   })
 
@@ -648,7 +659,7 @@ function updateCodeBlock(
     const wrapper = code.closest('[data-component="markdown-code"]')
     if (wrapper instanceof HTMLElement) {
       applyCodeMetadata(wrapper, block.artifactLanguage)
-      ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete)
+      ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete, labels.openSql)
     }
     code.className = `language-${block.language}`
     const previous = renderedCodeTokens.get(next)
@@ -689,7 +700,7 @@ function updateCodeBlock(
   pre.appendChild(codeElement)
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))
-  ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete)
+  ensureSqlArtifactButton(wrapper, block.artifactLanguage, block.complete, labels.openSql)
   next.appendChild(wrapper)
   renderedCodeTokens.set(next, {
     language: block.language,

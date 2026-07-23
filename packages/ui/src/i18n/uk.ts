@@ -1,4 +1,5 @@
 export const dict: Record<string, string> = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "Зміни сесії",
   "ui.sessionReview.title.git": "Зміни Git",
   "ui.sessionReview.title.branch": "Зміни гілки",

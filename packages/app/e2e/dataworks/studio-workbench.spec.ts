@@ -112,6 +112,15 @@ test("opens Agent SQL without execution, preserves safe preview context, and ada
   await expect(page.getByRole("tab", { name: "sql" })).toHaveAttribute("aria-selected", "true")
   expect(sqlCalls).toBe(0)
 
+  const editor = page.getByRole("textbox", { name: "SQL editor" })
+  await editor.fill("SELECT 2")
+  page.once("dialog", (dialog) => dialog.dismiss())
+  await page.getByRole("button", { name: "Open in SQL" }).click()
+  await expect(editor).toHaveValue("SELECT 2")
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.getByRole("button", { name: "Open in SQL" }).click()
+  await expect(editor).toHaveValue("SELECT * FROM orders LIMIT 100")
+
   await page.getByRole("button", { name: "Run" }).click()
   await expect.poll(() => sqlCalls).toBe(1)
   await expect(page.getByRole("tab", { name: "results" })).toHaveAttribute("aria-selected", "true")
@@ -163,9 +172,12 @@ test("opens Agent SQL without execution, preserves safe preview context, and ada
   await expect(page.getByRole("tab", { name: "results" })).toHaveAttribute("aria-selected", "true")
   releaseHeldSql()
   await expect(workbench.locator('[data-slot="workbench-status"]')).toHaveAttribute("data-state", "ready")
+  await page.getByRole("separator", { name: "Resize Agent" }).focus()
+  await expect(page.getByRole("separator", { name: "Resize Agent" })).toBeFocused()
 
   await page.setViewportSize({ width: 1024, height: 900 })
   await expect(workbench).toHaveAttribute("data-resource-overlay", "false")
+  await expect(workbench).toHaveAttribute("data-agent-overlay", "true")
   await page.getByRole("button", { name: "Resources" }).click()
   await expect(workbench).toHaveAttribute("data-resource-expanded", "false")
   await expect.poll(() => scopeActionsFollowProject(agentPanel)).toBe(true)
@@ -190,8 +202,6 @@ test("opens Agent SQL without execution, preserves safe preview context, and ada
   await expect(page.getByRole("button", { name: "Resources" })).toBeFocused()
   await page.getByRole("separator", { name: "Resize resources" }).focus()
   await expect(page.getByRole("separator", { name: "Resize resources" })).toBeFocused()
-  await page.getByRole("separator", { name: "Resize Agent" }).focus()
-  await expect(page.getByRole("separator", { name: "Resize Agent" })).toBeFocused()
 
   await page.setViewportSize({ width: 768, height: 900 })
   await expect(workbench).toHaveAttribute("data-agent-overlay", "true")
@@ -202,6 +212,12 @@ test("opens Agent SQL without execution, preserves safe preview context, and ada
   await expect.poll(() => scopeActionsFollowProject(agentPanel)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath("workbench-768.png") })
   await page.screenshot({ path: path.join(evidence, "studio-workbench-768.png"), fullPage: true })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole("button", { name: "Navigation" }).click()
+  await expect(page.locator('[data-component="dataworks-console"]')).toHaveAttribute("data-mobile-open", "true")
+  await expect(page.locator('[data-slot="console-nav"]')).toBeVisible()
+  await expect.poll(() => workbench.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 
   const storage = await page.evaluate(() =>
     JSON.stringify({

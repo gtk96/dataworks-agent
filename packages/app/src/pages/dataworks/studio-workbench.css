@@ -26,6 +26,10 @@
   border-bottom: 1px solid var(--studio-divider);
 }
 
+[data-slot="workbench-menu"] {
+  display: none;
+}
+
 [data-slot="workbench-toolbar"] button,
 [data-slot="artifact-tabs"] button,
 [data-component="studio-workbench"] [data-action] {
@@ -305,6 +309,59 @@
 [data-action="run-sql"] {
   color: #0c1118;
   background: var(--studio-action);
+}
+
+[data-component="studio-workbench"][data-agent-overlay="true"] [data-slot="workbench-body"] {
+  grid-template-columns: var(--studio-resource-width) 6px minmax(0, 1fr);
+}
+
+[data-component="studio-workbench"][data-agent-overlay="true"][data-resource-expanded="false"]
+  [data-slot="workbench-body"] {
+  grid-template-columns: 0 6px minmax(0, 1fr);
+}
+
+[data-component="studio-workbench"][data-agent-overlay="true"] [data-slot="agent-resizer"] {
+  display: none;
+}
+
+[data-component="studio-workbench"][data-agent-overlay="true"] [data-slot="agent-panel"] {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 20;
+  width: min(92%, var(--studio-agent-width));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+[data-component="studio-workbench"][data-agent-overlay="true"][data-agent-expanded="false"]
+  [data-slot="agent-panel"] {
+  display: none;
+}
+
+[data-component="studio-workbench"][data-resource-overlay="true"] [data-slot="workbench-body"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-component="studio-workbench"][data-resource-overlay="true"] [data-slot="resource-resizer"] {
+  display: none;
+}
+
+[data-component="studio-workbench"][data-resource-overlay="true"] [data-slot="resource-panel"] {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  z-index: 20;
+  width: min(86%, var(--studio-resource-width));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+[data-component="studio-workbench"][data-resource-overlay="true"][data-resource-expanded="false"]
+  [data-slot="resource-panel"] {
+  display: none;
+}
+
+[data-component="studio-workbench"][data-resource-overlay="true"] [data-slot="workbench-menu"] {
+  display: inline-flex;
 }
 
 @media (max-width: 959px) {

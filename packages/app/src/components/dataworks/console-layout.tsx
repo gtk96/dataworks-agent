@@ -179,7 +179,7 @@ export function DataWorksConsoleLayout(props: ParentProps): JSX.Element {
                   </section>
                 }
               >
-                <StudioWorkbench agent={props.children} />
+                <StudioWorkbench agent={props.children} onMenu={() => setMobileOpen((value) => !value)} />
               </Show>
             </div>
           )}

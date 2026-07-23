@@ -1,5 +1,6 @@
 import { For, Show, createMemo, type JSX } from "solid-js"
 import type { DataWorksSqlResult } from "@/context/dataworks"
+import { useLanguage } from "@/context/language"
 
 export function normalizeResultColumns(columns: DataWorksSqlResult["columns"]) {
   return columns.map((column, index) =>
@@ -14,6 +15,7 @@ export function visibleResultRows(rows: DataWorksSqlResult["rows"]) {
 }
 
 export function ResultsGrid(props: { result: DataWorksSqlResult; stale: boolean }): JSX.Element {
+  const language = useLanguage()
   const columns = createMemo(() => normalizeResultColumns(props.result.columns))
   const rows = createMemo(() => visibleResultRows(props.result.rows))
   const truncated = createMemo(() => props.result.truncated || props.result.rows.length > rows().length)
@@ -21,10 +23,10 @@ export function ResultsGrid(props: { result: DataWorksSqlResult; stale: boolean 
   return (
     <section data-component="workbench-results" data-stale={props.stale ? "true" : "false"}>
       <Show when={props.stale}>
-        <div role="status">Results are based on an older SQL revision.</div>
+        <div role="status">{language.t("dataworks.workbench.resultsStale")}</div>
       </Show>
       <div data-slot="result-meta">
-        <span>{props.result.rows.length} rows</span>
+        <span>{language.t("dataworks.workbench.rowCount", { count: props.result.rows.length })}</span>
         <Show when={props.result.durationMs !== undefined}>
           <span>{props.result.durationMs} ms</span>
         </Show>
@@ -32,7 +34,12 @@ export function ResultsGrid(props: { result: DataWorksSqlResult; stale: boolean 
           <span>{props.result.instanceId}</span>
         </Show>
       </div>
-      <div data-slot="result-scroll" role="region" aria-label="SQL results" tabindex="0">
+      <div
+        data-slot="result-scroll"
+        role="region"
+        aria-label={language.t("dataworks.workbench.sqlResults")}
+        tabindex="0"
+      >
         <table>
           <thead>
             <tr>
@@ -57,7 +64,7 @@ export function ResultsGrid(props: { result: DataWorksSqlResult; stale: boolean 
         </table>
       </div>
       <Show when={truncated()}>
-        <div role="status">Preview truncated.</div>
+        <div role="status">{language.t("dataworks.workbench.previewTruncated")}</div>
       </Show>
     </section>
   )

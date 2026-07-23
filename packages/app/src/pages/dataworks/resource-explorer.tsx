@@ -7,6 +7,7 @@ import {
   type DataWorksTableDescription,
   type ListState,
 } from "@/context/dataworks"
+import { useLanguage } from "@/context/language"
 import type { SqlArtifact, WorkbenchScope } from "./workbench-state"
 import { scopeKey } from "./workbench-state"
 
@@ -30,6 +31,7 @@ export function ResourceExplorer(props: {
   onOpenSql: (artifact: SqlArtifact) => void
 }): JSX.Element {
   const dataworks = useDataWorks()
+  const language = useLanguage()
   const [tables, setTables] = createSignal<DataWorksTable[]>([])
   const [tableState, setTableState] = createSignal<ListState>("idle")
   let tableRequest = 0
@@ -96,11 +98,11 @@ export function ResourceExplorer(props: {
   }
 
   return (
-    <aside data-component="workbench-resources" aria-label="DataWorks resources">
+    <aside data-component="workbench-resources" aria-label={language.t("dataworks.workbench.dataResources")}>
       <div data-slot="resource-scope">
         <ConnectionSelector compact />
         <label>
-          <span>Project</span>
+          <span>{language.t("dataworks.scope.project")}</span>
           <select
             data-component="dataworks-project-selector"
             disabled={dataworks.projectState() === "loading" || !dataworks.selectedConnectionID()}
@@ -108,7 +110,7 @@ export function ResourceExplorer(props: {
             onChange={(event) => dataworks.setSelectedProjectID(event.currentTarget.value || undefined)}
           >
             <Show when={dataworks.projects().length === 0}>
-              <option value="">No projects</option>
+              <option value="">{language.t("dataworks.scope.project.empty")}</option>
             </Show>
             <For each={dataworks.projects()}>
               {(project) => (
@@ -123,19 +125,19 @@ export function ResourceExplorer(props: {
 
       <div data-slot="resource-tree" data-state={tableState()}>
         <Show when={tableState() === "loading"}>
-          <p role="status">Loading tables...</p>
+          <p role="status">{language.t("dataworks.workbench.tablesLoading")}</p>
         </Show>
         <Show when={tableState() === "empty"}>
-          <p>No tables in this scope.</p>
+          <p>{language.t("dataworks.workbench.tablesEmpty")}</p>
         </Show>
         <Show when={tableState() === "rate_limit"}>
-          <p role="status">Table requests are rate limited.</p>
+          <p role="status">{language.t("dataworks.workbench.tablesRateLimit")}</p>
         </Show>
         <Show when={tableState() === "error"}>
-          <p role="alert">Could not load tables.</p>
+          <p role="alert">{language.t("dataworks.workbench.tablesError")}</p>
         </Show>
         <Show when={tableState() === "ready"}>
-          <ul aria-label="Tables">
+          <ul aria-label={language.t("dataworks.workbench.tables")}>
             <For each={tables()}>
               {(table) => (
                 <li>

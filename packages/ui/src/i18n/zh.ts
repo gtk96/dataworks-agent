@@ -171,6 +171,7 @@ export const dict = {
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",
   "ui.message.attachment.alt": "附件",
+  "ui.markdown.openInSql": "在 SQL 中打开",
 
   "ui.patch.action.deleted": "已删除",
   "ui.patch.action.created": "已创建",

@@ -4,6 +4,12 @@ import { scopeRequestIsCurrent, tableSqlArtifact } from "./resource-explorer"
 import { normalizeResultColumns, visibleResultRows } from "./results-grid"
 
 describe("workbench scope restore", () => {
+  test("keeps empty-plan copy in the localization dictionary", async () => {
+    expect(await Bun.file(new URL("./artifact-workspace.tsx", import.meta.url)).text()).not.toContain(
+      "No active plan for this session.",
+    )
+  })
+
   test("restores only IDs present in fresh server lists", () => {
     expect(validConnectionID("conn-2", [{ id: "conn-1" }, { id: "conn-2" }])).toBe("conn-2")
     expect(validConnectionID("stale", [{ id: "conn-1" }])).toBe("conn-1")

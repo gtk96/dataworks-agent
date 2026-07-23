@@ -13,6 +13,7 @@ import {
   type DataWorksTableDescription,
   type ListState,
 } from "@/context/dataworks"
+import { useLanguage } from "@/context/language"
 import { StudioPromptProvider } from "@/context/studio-prompt"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
@@ -27,6 +28,7 @@ import {
   createSqlRequest,
   editSqlDocument,
   openSqlArtifact,
+  requiresSqlOverwriteConfirmation,
   resizeAgentWidth,
   resizeResourceWidth,
   responsiveWorkbench,
@@ -41,8 +43,9 @@ import {
 } from "./workbench-state"
 import "./studio-workbench.css"
 
-export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
+export function StudioWorkbench(props: { agent: JSX.Element; onMenu?: () => void }): JSX.Element {
   const dataworks = useDataWorks()
+  const language = useLanguage()
   const params = useParams()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
@@ -57,7 +60,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
     }),
   )
   const [document, setDocument] = createSignal<SqlDocument>(
-    openSqlArtifact(undefined, { sql: "", title: "Untitled query" }),
+    openSqlArtifact(undefined, { sql: "", title: language.t("dataworks.workbench.untitledQuery") }),
   )
   const [result, setResult] = createSignal<ScopedSqlResult>()
   const [selectedTable, setSelectedTable] = createSignal<DataWorksTable>()
@@ -67,7 +70,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   const [running, setRunning] = createSignal(false)
   const [attachedPreview, setAttachedPreview] = createSignal<ReturnType<typeof createResultPreview>>()
   const [plan, setPlan] = createSignal<Todo[]>([])
-  const [viewportWidth, setViewportWidth] = createSignal(1440)
+  const [workbenchWidth, setWorkbenchWidth] = createSignal(1440)
   const [resourceOverlayOpen, setResourceOverlayOpen] = createSignal(false)
   const [agentOverlayOpen, setAgentOverlayOpen] = createSignal(false)
   const scope = createMemo<WorkbenchScope>(() => ({
@@ -76,12 +79,13 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
     projectName: selectedProjectName(dataworks.selectedProject()),
     region: dataworks.selectedConnection()?.region,
   }))
-  const responsive = createMemo(() => responsiveWorkbench(viewportWidth()))
+  const responsive = createMemo(() => responsiveWorkbench(workbenchWidth()))
   const runEnabled = createMemo(() => !!createSqlRequest(document(), scope()) && !running())
   const resizeCleanups = new Set<() => void>()
   let previousScope = scopeKey(scope())
   let previousOverlay = false
   let sqlRequest = 0
+  let workbench!: HTMLElement
 
   createEffect(() => {
     const sessionID = params.id
@@ -131,16 +135,19 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   })
 
   onMount(() => {
-    const resize = () => setViewportWidth(window.innerWidth)
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width) setWorkbenchWidth(width)
+    })
     const openSql = (event: Event) => {
       if (!(event instanceof CustomEvent) || !isSqlArtifactDetail(event.detail)) return
       openArtifact({ sql: event.detail.sql, sourceMessageID: event.detail.sourceMessageID })
     }
-    resize()
-    window.addEventListener("resize", resize)
+    setWorkbenchWidth(workbench.clientWidth || window.innerWidth)
+    observer.observe(workbench)
     window.addEventListener(SQL_ARTIFACT_EVENT, openSql)
     onCleanup(() => {
-      window.removeEventListener("resize", resize)
+      observer.disconnect()
       window.removeEventListener(SQL_ARTIFACT_EVENT, openSql)
     })
   })
@@ -148,10 +155,18 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
   onCleanup(() => resizeCleanups.forEach((cleanup) => cleanup()))
 
   function openArtifact(artifact: SqlArtifact) {
+    const current = document()
+    if (
+      requiresSqlOverwriteConfirmation(current, artifact) &&
+      !window.confirm(language.t("dataworks.workbench.overwriteConfirm"))
+    )
+      return
     sqlRequest++
     setRunning(false)
     setSqlState("idle")
-    setDocument((current) => openSqlArtifact(current, artifact))
+    setDocument(openSqlArtifact(current, artifact))
+    setResult(undefined)
+    setAttachedPreview(undefined)
     setUi("activeTab", "sql")
   }
 
@@ -179,7 +194,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
       setSqlState("idle")
       return
     }
-    setResult({ scope: requested, result: accepted, sqlVersion: current.editedVersion })
+    setResult({ documentID: current.id, scope: requested, result: accepted, sqlVersion: current.editedVersion })
     setDocument((value) => ({ ...value, executedVersion: current.editedVersion }))
     setUi("activeTab", "results")
     setSqlState("ready")
@@ -256,6 +271,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
 
   return (
     <section
+      ref={workbench}
       data-component="studio-workbench"
       data-resource-expanded={resourceExpanded() ? "true" : "false"}
       data-agent-expanded={agentExpanded() ? "true" : "false"}
@@ -264,16 +280,26 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
       style={`--studio-resource-width:${ui.resourceWidth}px;--studio-agent-width:${ui.agentWidth}px`}
     >
       <header data-slot="workbench-toolbar">
+        <Show when={props.onMenu}>
+          <button
+            type="button"
+            data-slot="workbench-menu"
+            aria-label={language.t("dataworks.workbench.navigation")}
+            onClick={() => props.onMenu?.()}
+          >
+            {language.t("dataworks.workbench.menu")}
+          </button>
+        </Show>
         <button type="button" aria-expanded={resourceExpanded()} onClick={toggleResource}>
-          Resources
+          {language.t("dataworks.workbench.resources")}
         </button>
         <div data-slot="workbench-scope">
-          <span>{dataworks.selectedConnection()?.name ?? "No connection"}</span>
-          <span>{scope().projectName ?? "No project"}</span>
-          <span>{scope().region ?? "No region"}</span>
+          <span>{dataworks.selectedConnection()?.name ?? language.t("dataworks.workbench.noConnection")}</span>
+          <span>{scope().projectName ?? language.t("dataworks.workbench.noProject")}</span>
+          <span>{scope().region ?? language.t("dataworks.workbench.noRegion")}</span>
         </div>
         <button type="button" aria-expanded={agentExpanded()} onClick={toggleAgent}>
-          Agent
+          {language.t("dataworks.workbench.agent")}
         </button>
       </header>
 
@@ -284,7 +310,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
         <div
           data-slot="resource-resizer"
           role="separator"
-          aria-label="Resize resources"
+          aria-label={language.t("dataworks.workbench.resizeResources")}
           aria-orientation="vertical"
           aria-valuemin="200"
           aria-valuemax="360"
@@ -308,7 +334,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
           running={running()}
           runEnabled={runEnabled()}
           plan={
-            <Show when={plan().length > 0} fallback={<p>No active plan for this session.</p>}>
+            <Show when={plan().length > 0} fallback={<p>{language.t("dataworks.workbench.noPlan")}</p>}>
               <ol data-component="workbench-plan">
                 <For each={plan()}>
                   {(item) => (
@@ -330,7 +356,7 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
         <div
           data-slot="agent-resizer"
           role="separator"
-          aria-label="Resize Agent"
+          aria-label={language.t("dataworks.workbench.resizeAgent")}
           aria-orientation="vertical"
           aria-valuemin="320"
           aria-valuemax="600"
@@ -344,9 +370,9 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
             setUi("agentWidth", width)
           }}
         />
-        <aside data-slot="agent-panel" aria-label="Agent">
+        <aside data-slot="agent-panel" aria-label={language.t("dataworks.workbench.agent")}>
           <div data-slot="agent-context">
-            <span>{scope().projectName ?? "No project selected"}</span>
+            <span>{scope().projectName ?? language.t("dataworks.workbench.noProjectSelected")}</span>
             <Show when={attachedPreview()}>
               {(preview) => (
                 <button
@@ -356,7 +382,10 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
                   data-columns={preview().columns.length}
                   onClick={() => setAttachedPreview(undefined)}
                 >
-                  Result preview · {preview().rows.length} rows · {preview().columns.length} columns
+                  {language.t("dataworks.workbench.resultPreview", {
+                    rows: preview().rows.length,
+                    columns: preview().columns.length,
+                  })}
                 </button>
               )}
             </Show>
@@ -368,8 +397,12 @@ export function StudioWorkbench(props: { agent: JSX.Element }): JSX.Element {
       </div>
 
       <footer data-slot="workbench-status" data-state={sqlState()}>
-        <span>{scope().connectionID ? "Connected scope" : "Select a connection"}</span>
-        <span>{sqlState() === "loading" ? "Running read-only SQL" : sqlState()}</span>
+        <span>
+          {scope().connectionID
+            ? language.t("dataworks.workbench.connectedScope")
+            : language.t("dataworks.workbench.selectConnection")}
+        </span>
+        <span>{language.t(`dataworks.workbench.status.${sqlState()}` as "dataworks.workbench.status.idle")}</span>
       </footer>
     </section>
   )
