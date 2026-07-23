@@ -52,6 +52,10 @@ export function createResultPreview(result: DataWorksSqlResult) {
   }
 }
 
+export function nextTabAfterRun(result: { ok: boolean }): WorkbenchTab {
+  return result.ok ? "results" : "sql"
+}
+
 export const clampResourceWidth = (width: number) => Math.min(360, Math.max(200, width))
 export const clampAgentWidth = (width: number) => Math.min(600, Math.max(320, width))
 export const responsiveWorkbench = (width: number) => ({ resourceOverlay: width < 960, agentOverlay: width < 960 })

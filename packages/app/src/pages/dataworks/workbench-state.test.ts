@@ -5,6 +5,7 @@ import {
   clampResourceWidth,
   createResultPreview,
   editSqlDocument,
+  nextTabAfterRun,
   openSqlArtifact,
   responsiveWorkbench,
   scopeKey,
@@ -58,5 +59,16 @@ describe("workbench state", () => {
     expect(responsiveWorkbench(1440)).toEqual({ resourceOverlay: false, agentOverlay: false })
     expect(responsiveWorkbench(1024)).toEqual({ resourceOverlay: false, agentOverlay: false })
     expect(responsiveWorkbench(768)).toEqual({ resourceOverlay: true, agentOverlay: true })
+  })
+
+  test("editing after a run marks the result stale", () => {
+    const opened = openSqlArtifact(undefined, { sql: "SELECT 1" })
+    const executed = { ...opened, executedVersion: opened.editedVersion }
+    expect(editSqlDocument(executed, "SELECT 2").editedVersion).toBeGreaterThan(executed.executedVersion)
+  })
+
+  test("a successful scoped result requests the Results tab", () => {
+    expect(nextTabAfterRun({ ok: true })).toBe("results")
+    expect(nextTabAfterRun({ ok: false })).toBe("sql")
   })
 })

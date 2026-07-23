@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { validConnectionID, validProjectID } from "@/context/dataworks"
 import { scopeRequestIsCurrent, tableSqlArtifact } from "./resource-explorer"
+import { normalizeResultColumns, visibleResultRows } from "./results-grid"
 
 describe("workbench scope restore", () => {
   test("restores only IDs present in fresh server lists", () => {
@@ -34,5 +35,15 @@ describe("resource explorer", () => {
   test("rejects an older table request within the same scope", () => {
     expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope, 1, 2)).toBe(false)
     expect(scopeRequestIsCurrent("conn-1\n100\nanalytics\ncn-hangzhou", scope, 2, 2)).toBe(true)
+  })
+})
+
+describe("results grid", () => {
+  test("normalizes result columns and bounds visible rows", () => {
+    expect(normalizeResultColumns(["raw", { name: "", type: "bigint" }])).toEqual([
+      { name: "raw", type: "" },
+      { name: "col_2", type: "bigint" },
+    ])
+    expect(visibleResultRows(Array.from({ length: 1001 }, (_, index) => [index]))).toHaveLength(1000)
   })
 })
