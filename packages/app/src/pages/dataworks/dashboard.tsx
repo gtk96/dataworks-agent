@@ -9,6 +9,7 @@ import { ServerConnection } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import { ChatHero, type EnvTone } from "./dashboard-chat-hero"
 import { ChatError, type ChatError as ChatErrorState } from "./dashboard-chat-error"
+import { serverModelLabel } from "./dashboard-utils"
 import "./dashboard.css"
 
 function deriveEnvTone(projectName: string, envType?: string): EnvTone {
@@ -55,7 +56,7 @@ export function DataWorksDashboard(): JSX.Element {
 
   const modelLabel = createMemo(() => {
     const serverEntry = globalCtx.servers.list()[0]
-    return serverEntry?.name ? serverEntry.name : language.t("dataworks.chat.model.default")
+    return serverModelLabel(serverEntry, language.t("dataworks.chat.model.default"))
   })
 
   const visibleError = createMemo<ChatErrorState | undefined>(() => {
@@ -127,6 +128,7 @@ export function DataWorksDashboard(): JSX.Element {
   return (
     <main class="dwa-page-stack" data-component="dataworks-dashboard">
       <ChatHero
+        mode="panel"
         onSubmit={submit}
         disabled={sending()}
         scopeLabel={scopeLabel()}

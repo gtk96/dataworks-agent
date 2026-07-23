@@ -1,13 +1,4 @@
 [data-component="studio-workbench"] {
-  --studio-background: #0c1118;
-  --studio-panel: #101720;
-  --studio-elevated: #151e29;
-  --studio-divider: #263445;
-  --studio-text: #edf6fb;
-  --studio-muted: #8da1b2;
-  --studio-context: #5fc9d5;
-  --studio-action: #e8ad46;
-  --studio-error: #f07878;
   position: relative;
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr) 28px;

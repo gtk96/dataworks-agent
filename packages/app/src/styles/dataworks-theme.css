@@ -149,3 +149,34 @@
 .dwa-status-danger {
   color: var(--dwa-danger);
 }
+
+[data-component="studio-workbench"] {
+  --studio-background: #0c1118;
+  --studio-panel: #101720;
+  --studio-elevated: #151e29;
+  --studio-divider: #263445;
+  --studio-text: #edf6fb;
+  --studio-muted: #8da1b2;
+  --studio-context: #5fc9d5;
+  --studio-action: #e8ad46;
+  --studio-error: #f07878;
+  background: var(--studio-background);
+  color: var(--studio-text);
+  font-family: var(--font-family-text, "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
+}
+
+[data-component="studio-workbench"] :focus-visible {
+  outline: 2px solid var(--studio-context);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="studio-workbench"] *,
+  [data-component="studio-workbench"] *::before,
+  [data-component="studio-workbench"] *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
