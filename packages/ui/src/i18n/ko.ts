@@ -1,4 +1,5 @@
 export const dict = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "세션 변경 사항",
   "ui.sessionReview.title.lastTurn": "마지막 턴 변경 사항",
   "ui.sessionReview.diffStyle.unified": "통합 보기",

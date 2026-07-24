@@ -93,6 +93,7 @@ beforeAll(async () => {
   const rootClient = clientFor("/repo/main")
 
   mock.module("@solidjs/router", () => ({
+    A: (props: { children?: unknown }) => props.children,
     useNavigate: () => () => undefined,
     useParams: () => params,
     useLocation: () => ({}),

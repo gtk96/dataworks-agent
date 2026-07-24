@@ -1,3 +1,5 @@
+import { workbenchFallback } from "./workbench-fallback"
+
 export const dict = {
   "command.category.suggested": "Suggested",
   "command.category.view": "View",
@@ -1284,4 +1286,5 @@ export const dict = {
   "dataworks.chat.env.dev.full": "Development",
   "dataworks.chat.env.unknown.full": "Environment not recognized",
   "dataworks.chat.subtitle": "Search tables · Run jobs · Diagnose anomalies · Test connectivity",
+  ...workbenchFallback,
 }

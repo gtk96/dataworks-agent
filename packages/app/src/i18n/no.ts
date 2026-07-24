@@ -1,7 +1,10 @@
 import { dict as en } from "./en"
 type Keys = keyof typeof en
 
+import { workbenchFallback } from "./workbench-fallback"
+
 export const dict = {
+  ...workbenchFallback,
   "command.category.suggested": "Foreslått",
   "command.category.view": "Visning",
   "command.category.project": "Prosjekt",

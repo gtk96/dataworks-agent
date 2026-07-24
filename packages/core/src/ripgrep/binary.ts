@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Effect, Layer, Stream } from "effect"
+import { Context, Effect, Layer, Semaphore, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -11,6 +11,7 @@ import { Global } from "../global"
 import { which } from "../util/which"
 
 export namespace RipgrepBinary {
+  const installSemaphore = Semaphore.makeUnsafe(1)
   const VERSION = "15.1.0"
   const PLATFORM = {
     "arm64-darwin": { platform: "aarch64-apple-darwin", extension: "tar.gz" },
@@ -56,13 +57,10 @@ export namespace RipgrepBinary {
         const dir = yield* fs.makeTempDirectoryScoped({ directory: Global.Path.bin, prefix: "ripgrep-" })
 
         if (config.extension === "zip") {
-          const shell = (yield* Effect.sync(() => which("powershell.exe") ?? which("pwsh.exe"))) ?? "powershell.exe"
-          const result = yield* run(shell, [
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            `$global:ProgressPreference = 'SilentlyContinue'; Expand-Archive -LiteralPath '${archive.replaceAll("'", "''")}' -DestinationPath '${dir.replaceAll("'", "''")}' -Force`,
-          ])
+          const result = yield* run(
+            path.join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "tar.exe"),
+            ["-xf", archive, "-C", dir],
+          )
           if (result.code !== 0)
             throw new Error(
               result.stderr.trim() || result.stdout.trim() || `ripgrep extraction failed with code ${result.code}`,
@@ -118,7 +116,7 @@ export namespace RipgrepBinary {
             yield* extract(archive, config, target)
             yield* fs.remove(archive, { force: true }).pipe(Effect.ignore)
             return target
-          }),
+          }).pipe(installSemaphore.withPermit),
         ),
       })
     }),

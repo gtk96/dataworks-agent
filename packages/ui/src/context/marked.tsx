@@ -4,6 +4,7 @@ import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { markedCodeSpanBoundary } from "./marked-code-span"
+import { preserveHighlightedCodeLanguage } from "./marked-code-language"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
 
 export const OpenCodeTheme = {
@@ -497,19 +498,19 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
-    let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
-    }
+    const language = lang && lang in bundledLanguages ? lang : "text"
     if (!highlighter.getLoadedLanguages().includes(language)) {
       await highlighter.loadLanguage(language as BundledLanguage)
     }
 
-    const highlighted = highlighter.codeToHtml(code, {
-      lang: language,
-      theme: "OpenCode",
-      tabindex: false,
-    })
+    const highlighted = preserveHighlightedCodeLanguage(
+      highlighter.codeToHtml(code, {
+        lang: language,
+        theme: "OpenCode",
+        tabindex: false,
+      }),
+      lang,
+    )
     result = result.replace(fullMatch, () => highlighted)
   }
 
@@ -539,17 +540,18 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
             langs: [],
             preferredHighlighter: "shiki-wasm",
           })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
+          const language = lang in bundledLanguages ? lang : "text"
+          if (!highlighter.getLoadedLanguages().includes(language)) {
+            await highlighter.loadLanguage(language as BundledLanguage)
           }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
-          }
-          return highlighter.codeToHtml(code, {
-            lang: lang || "text",
-            theme: "OpenCode",
-            tabindex: false,
-          })
+          return preserveHighlightedCodeLanguage(
+            highlighter.codeToHtml(code, {
+              lang: language,
+              theme: "OpenCode",
+              tabindex: false,
+            }),
+            lang,
+          )
         },
       }),
     )

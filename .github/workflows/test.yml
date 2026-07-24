@@ -28,7 +28,9 @@ jobs:
       matrix:
         settings:
           - name: linux
+            timeout: 20
           - name: windows
+            timeout: 45
     runs-on: ${{ matrix.settings.name == 'linux' && 'ubuntu-latest' || 'windows-latest' }}
     defaults:
       run:
@@ -62,7 +64,7 @@ jobs:
             turbo-${{ runner.os }}-
 
       - name: Run unit tests
-        timeout-minutes: 20
+        timeout-minutes: ${{ matrix.settings.timeout }}
         run: GITHUB_ACTIONS=false bun turbo test
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}

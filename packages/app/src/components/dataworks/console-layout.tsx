@@ -10,6 +10,7 @@ import {
   isDataWorksProtectedPath,
   type DataWorksConsoleIcon,
 } from "@/pages/dataworks/route"
+import { StudioWorkbench } from "@/pages/dataworks/studio-workbench"
 import "./console-layout.css"
 
 export type Translator = ReturnType<typeof useLanguage>["t"]
@@ -20,6 +21,12 @@ export function shouldUseConsoleShell(pathname: string): boolean {
 
 export function consolePageKey(pathname: string) {
   return activeDataWorksNavItem(pathname).key
+}
+
+export function consoleSurface(pathname: string) {
+  if (!shouldUseConsoleShell(pathname)) return "none" as const
+  if (activeDataWorksNavItem(pathname).key === "chat") return "workbench" as const
+  return "management" as const
 }
 
 const ICON_MAP: Record<DataWorksConsoleIcon, "status" | "folder" | "grid-plus" | "monitor" | "branch" | "edit" | "check" | "settings-gear" | "help"> = {
@@ -50,6 +57,7 @@ export function DataWorksConsoleLayout(props: ParentProps): JSX.Element {
   const pathname = createMemo(() => location.pathname)
   const useShell = createMemo(() => shouldUseConsoleShell(pathname()))
   const active = createMemo(() => activeDataWorksNavItem(pathname()))
+  const surface = createMemo(() => consoleSurface(pathname()))
   const pageTitle = createMemo(() => consolePageTitle(pathname(), language.t))
 
   createEffect(() => {
@@ -87,7 +95,11 @@ export function DataWorksConsoleLayout(props: ParentProps): JSX.Element {
           }
         >
           {(user) => (
-            <div data-component="dataworks-console" data-mobile-open={mobileOpen() ? "true" : "false"}>
+            <div
+              data-component="dataworks-console"
+              data-surface={surface()}
+              data-mobile-open={mobileOpen() ? "true" : "false"}
+            >
               <Show when={mobileOpen()}>
                 <button
                   type="button"
@@ -144,24 +156,31 @@ export function DataWorksConsoleLayout(props: ParentProps): JSX.Element {
                   </button>
                 </div>
               </aside>
-              <section data-slot="console-main">
-                <header data-slot="console-topbar">
-                  <button
-                    type="button"
-                    data-slot="console-menu"
-                    aria-label={language.t("dataworks.shell.nav")}
-                    onClick={() => setMobileOpen((value) => !value)}
-                  >
-                    <Icon name="menu" size="small" />
-                  </button>
-                  <div data-slot="console-crumb">
-                    <span class="text-12-regular text-text-weak">{language.t("dataworks.shell.console")}</span>
-                    <span class="text-12-regular text-text-weak">/</span>
-                    <h1>{pageTitle()}</h1>
-                  </div>
-                </header>
-                <main data-slot="console-content">{props.children}</main>
-              </section>
+              <Show
+                when={surface() === "workbench"}
+                fallback={
+                  <section data-slot="console-main">
+                    <header data-slot="console-topbar">
+                      <button
+                        type="button"
+                        data-slot="console-menu"
+                        aria-label={language.t("dataworks.shell.nav")}
+                        onClick={() => setMobileOpen((value) => !value)}
+                      >
+                        <Icon name="menu" size="small" />
+                      </button>
+                      <div data-slot="console-crumb">
+                        <span class="text-12-regular text-text-weak">{language.t("dataworks.shell.console")}</span>
+                        <span class="text-12-regular text-text-weak">/</span>
+                        <h1>{pageTitle()}</h1>
+                      </div>
+                    </header>
+                    <main data-slot="console-content">{props.children}</main>
+                  </section>
+                }
+              >
+                <StudioWorkbench agent={props.children} onMenu={() => setMobileOpen((value) => !value)} />
+              </Show>
             </div>
           )}
         </Show>

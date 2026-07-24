@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
-  QUICK_ACTION_KEYS,
   normalizeDataWorksProject,
   queryChatReadiness,
-  quickActionI18nKey,
+  serverModelLabel,
 } from "./dashboard-utils"
 
 describe("dataworks dashboard", () => {
@@ -16,14 +15,6 @@ describe("dataworks dashboard", () => {
     expect(queryChatReadiness({ prompt: "" })).toEqual({ ready: false, reason: "prompt" })
     expect(queryChatReadiness({ prompt: " " })).toEqual({ ready: false, reason: "prompt" })
     expect(queryChatReadiness({ prompt: "\n\t  " })).toEqual({ ready: false, reason: "prompt" })
-  })
-
-  test("exposes i18n keys for quick actions rather than hardcoded strings", () => {
-    expect(QUICK_ACTION_KEYS).toEqual(["tables", "jobs", "orders", "ping"])
-    expect(quickActionI18nKey("tables", "prompt")).toBe("dataworks.chat.prompt.tables")
-    expect(quickActionI18nKey("jobs", "label")).toBe("dataworks.chat.label.jobs")
-    expect(quickActionI18nKey("orders", "category")).toBe("dataworks.chat.category.orders")
-    expect(quickActionI18nKey("ping", "hint")).toBe("dataworks.chat.hint.ping")
   })
 
   test("normalizes backend project shape id/name to projectId/projectName", () => {
@@ -40,5 +31,11 @@ describe("dataworks dashboard", () => {
       envType: undefined,
     })
     expect(normalizeDataWorksProject({ name: "orphan" })).toBeNull()
+  })
+
+  test("uses the supported server display label", () => {
+    expect(serverModelLabel({ type: "http", http: { url: "http://localhost:4096" } }, "DataWorks AI")).toBe(
+      "localhost:4096",
+    )
   })
 })

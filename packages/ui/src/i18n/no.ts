@@ -2,6 +2,7 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict: Record<Keys, string> = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "Sesjonsendringer",
   "ui.sessionReview.title.lastTurn": "Endringer i siste tur",
   "ui.sessionReview.diffStyle.unified": "Samlet",

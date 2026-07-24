@@ -1,4 +1,5 @@
 export const dict = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "Modifications de la session",
   "ui.sessionReview.title.git": "Modifications Git",
   "ui.sessionReview.title.branch": "Modifications de la branche",

@@ -79,5 +79,5 @@ test("matches the rounded panel corners to the dark new-session background", asy
     },
   )
 
-  expect(corners.every(([red, green, blue, alpha]) => red <= 8 && green <= 8 && blue <= 8 && alpha === 255)).toBe(true)
+  expect(corners).toEqual(Array.from({ length: 4 }, () => [16, 23, 32, 255]))
 })

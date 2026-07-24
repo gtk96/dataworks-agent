@@ -3,6 +3,7 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "工作階段變更",
   "ui.sessionReview.title.git": "Git 變更",
   "ui.sessionReview.title.branch": "分支變更",

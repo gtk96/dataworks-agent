@@ -1,4 +1,7 @@
+import { workbenchFallback } from "./workbench-fallback"
+
 export const dict = {
+  ...workbenchFallback,
   "command.category.suggested": "Suggéré",
   "command.category.view": "Affichage",
   "command.category.project": "Projet",

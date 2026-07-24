@@ -1,4 +1,5 @@
 export const dict = {
+  "ui.markdown.openInSql": "Open in SQL",
   "ui.sessionReview.title": "セッションの変更",
   "ui.sessionReview.title.git": "Gitの変更",
   "ui.sessionReview.title.branch": "ブランチの変更",

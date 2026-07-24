@@ -182,6 +182,7 @@ export const dict: Record<string, string> = {
   "ui.message.interrupted": "Interrupted",
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
+  "ui.markdown.openInSql": "Open in SQL",
 
   "ui.patch.action.deleted": "Deleted",
   "ui.patch.action.created": "Created",

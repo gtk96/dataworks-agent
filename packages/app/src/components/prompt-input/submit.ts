@@ -13,6 +13,7 @@ import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
 import { useSDK, type DirectorySDK } from "@/context/sdk"
 import { useSync, type DirectorySync } from "@/context/sync"
+import { useStudioPromptContext } from "@/context/studio-prompt"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
@@ -36,6 +37,7 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  syntheticContext?: string
 }
 
 type FollowupSendInput = {
@@ -109,6 +111,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     context: input.draft.context,
     images,
     text,
+    syntheticContext: input.draft.syntheticContext,
     sessionID: input.draft.sessionID,
     messageID,
     sessionDirectory: input.draft.sessionDirectory,
@@ -207,6 +210,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
   const tabs = useTabs()
+  const studioPrompt = useStudioPromptContext()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
 
   const errorMessage = (err: unknown) => {
@@ -293,6 +297,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const mode = input.mode()
+    const studioArtifact = mode === "normal" && !text.startsWith("/") ? studioPrompt?.peek() : undefined
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
       if (input.working()) void abort()
@@ -414,6 +419,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      syntheticContext: studioArtifact?.text,
     }
 
     const clearInput = () => {
@@ -441,6 +447,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
       input.onQueue?.(draft)
+      if (studioArtifact) studioPrompt?.consume(studioArtifact.key)
       clearContext(submission.target())
       clearInput()
       return
@@ -580,18 +587,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
-    }).catch((err) => {
-      pending.delete(pendingKey(session.id))
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
     })
+      .then((sent) => {
+        if (sent && studioArtifact) studioPrompt?.consume(studioArtifact.key)
+      })
+      .catch((err) => {
+        pending.delete(pendingKey(session.id))
+        if (sessionDirectory === projectDirectory) {
+          sync().set("session_status", session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        removeOptimisticMessage()
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      })
   }
 
   return {

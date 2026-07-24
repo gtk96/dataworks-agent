@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { mockDataWorksRequest } from "../utils/mock-server"
 
 const server = "http://127.0.0.1:4096"
 const sessionA = session("ses_tab_a", "Tab A session")
@@ -55,6 +56,8 @@ async function mockServer(page: Page) {
   const sessions = [sessionA, sessionB]
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    const dataworks = mockDataWorksRequest(route)
+    if (dataworks) return dataworks
     if (url.origin !== server) return route.fallback()
     if (url.pathname === "/global/event" || url.pathname === "/event") return sse(route)
     if (url.pathname === "/global/health") return json(route, { healthy: true })

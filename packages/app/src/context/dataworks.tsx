@@ -6,8 +6,10 @@ import {
   onCleanup,
   type ParentProps,
 } from "solid-js"
+import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { DataWorksUser } from "@/pages/dataworks/route"
+import { Persist, persisted } from "@/utils/persist"
 
 export type ListState = "idle" | "loading" | "ready" | "empty" | "partial" | "rate_limit" | "error"
 
@@ -125,6 +127,29 @@ export type DataWorksSqlResult = {
   durationMs?: number
 }
 
+export function validConnectionID(saved: string | undefined, connections: Array<Pick<DataConnection, "id">>) {
+  if (saved && connections.some((item) => item.id === saved)) return saved
+  return connections[0]?.id
+}
+
+export function validProjectID(
+  saved: string | undefined,
+  projects: Array<Pick<DataWorksProject, "projectId" | "id">>,
+) {
+  if (saved && projects.some((item) => String(item.projectId ?? item.id) === saved)) return saved
+  const first = projects[0]
+  return first ? String(first.projectId ?? first.id) : undefined
+}
+
+export function projectRequestIsCurrent(
+  connectionID: string,
+  selectedConnectionID: string | undefined,
+  requestID: number,
+  currentRequestID: number,
+) {
+  return connectionID === selectedConnectionID && requestID === currentRequestID
+}
+
 export type KnowledgeDocument = {
   id: string
   name: string
@@ -194,6 +219,11 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
     const [projects, setProjects] = createSignal<DataWorksProject[]>([])
     const [projectState, setProjectState] = createSignal<ListState>("idle")
     const [selectedProjectID, setSelectedProjectID] = createSignal<string | undefined>()
+    let projectRequest = 0
+    const [savedScope, setSavedScope, , scopeReady] = persisted(
+      Persist.window("dataworks.scope"),
+      createStore<{ connectionID?: string; projectID?: string }>({}),
+    )
 
     const selectedConnection = createMemo(() => {
       const id = selectedConnectionID()
@@ -261,16 +291,15 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
         setSelectedConnectionID(undefined)
       } else {
         setConnectionState("ready")
-        const current = selectedConnectionID()
-        if (!current || !result.data.some((item) => item.id === current)) {
-          setSelectedConnectionID(result.data[0]?.id)
-        }
+        if (scopeReady.promise) await scopeReady.promise
+        setSelectedConnectionID(validConnectionID(selectedConnectionID() ?? savedScope.connectionID, result.data))
       }
       await refreshProjects()
       return result
     }
 
     async function refreshProjects() {
+      const requestID = ++projectRequest
       const connectionID = selectedConnectionID()
       if (!connectionID) {
         setProjects([])
@@ -280,6 +309,7 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
       }
       setProjectState("loading")
       const result = await listProjects(connectionID, selectedConnection()?.region)
+      if (!projectRequestIsCurrent(connectionID, selectedConnectionID(), requestID, projectRequest)) return result
       if (!result.ok) {
         setProjects([])
         setSelectedProjectID(undefined)
@@ -287,20 +317,22 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
         return result
       }
       const items = result.data
+      if (scopeReady.promise) await scopeReady.promise
+      if (!projectRequestIsCurrent(connectionID, selectedConnectionID(), requestID, projectRequest)) return result
+      const savedProjectID = savedScope.connectionID === connectionID ? savedScope.projectID : undefined
       setProjects(items)
       setProjectState(items.length ? "ready" : "empty")
-      const current = selectedProjectID()
-      const stillValid =
-        current !== undefined &&
-        items.some((project) => {
-          const keys = [project.projectId, project.id]
-          return keys.some((key) => key !== undefined && key !== null && String(key) === current)
-        })
-      if (!stillValid) {
-        const first = items[0]
-        setSelectedProjectID(first ? String(first.projectId ?? first.id) : undefined)
-      }
+      setSelectedProjectID(validProjectID(selectedProjectID() ?? savedProjectID, items))
       return result
+    }
+
+    function selectConnectionID(id: string | undefined) {
+      if (id === selectedConnectionID()) return
+      setSelectedConnectionID(id)
+      setProjects([])
+      setSelectedProjectID(undefined)
+      setProjectState(id ? "loading" : "empty")
+      if (id) void refreshProjects()
     }
 
     async function createConnection(input: {
@@ -494,6 +526,17 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
       void user()
     })
 
+    createEffect(() => {
+      if (!scopeReady()) return
+      if (connectionState() !== "ready" && connectionState() !== "empty") return
+      if (projectState() !== "ready" && projectState() !== "empty") return
+      const connectionID = selectedConnectionID()
+      const projectID = selectedProjectID()
+      if (connectionID !== validConnectionID(connectionID, connections())) return
+      if (projectID !== validProjectID(projectID, projects())) return
+      setSavedScope({ connectionID, projectID })
+    })
+
     onCleanup(() => {
       // no timers by default
     })
@@ -506,7 +549,7 @@ export const { use: useDataWorks, provider: DataWorksProvider } = createSimpleCo
       connectionState,
       selectedConnectionID,
       selectedConnection,
-      setSelectedConnectionID,
+      setSelectedConnectionID: selectConnectionID,
       projects,
       projectState,
       selectedProjectID,

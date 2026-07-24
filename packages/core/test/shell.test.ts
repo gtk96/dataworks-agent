@@ -71,7 +71,11 @@ describe("shell", () => {
     })
 
     test("normalizes Git Bash shell paths from env", async () => {
-      const shell = "/cygdrive/c/Program Files/Git/bin/bash.exe"
+      const { tmpdir } = await import("./fixture/tmpdir")
+      await using tmp = await tmpdir()
+      const file = path.join(tmp.path, "bash.exe")
+      await Bun.write(file, "")
+      const shell = `/cygdrive/${file[0].toLowerCase()}${file.slice(2).replaceAll("\\", "/")}`
       await withShell(shell, async () => {
         expect(Shell.preferred()).toBe(FSUtil.windowsPath(shell))
       })

@@ -1,5 +1,6 @@
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { expect, test, type Page, type Route } from "@playwright/test"
+import { mockDataWorksRequest } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 
 const serverA = "http://127.0.0.1:4096"
@@ -163,6 +164,8 @@ async function configureServers(page: Page, tabs: { type: "session"; server: str
 async function mockServers(page: Page, permissionRequests: string[], permissionResponses: PermissionResponse[] = []) {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    const dataworks = mockDataWorksRequest(route)
+    if (dataworks) return dataworks
     if (url.origin !== serverA && url.origin !== serverB) return route.fallback()
     const remote = url.origin === serverB
     const directory = remote ? directoryB : directoryA

@@ -9,13 +9,14 @@ import type {
   Part,
   Session,
   SessionStatus,
+  Todo,
   ToolPart,
   ToolState,
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
 import { expect, type Page } from "@playwright/test"
 import { Schema } from "effect"
-import { mockOpenCodeServer } from "../../utils/mock-server"
+import { mockOpenCodeServer, type MockServerConfig } from "../../utils/mock-server"
 import { installSseTransport } from "../../utils/sse-transport"
 import { expectSessionTitle } from "../../utils/waits"
 
@@ -97,6 +98,8 @@ export async function setupTimeline(
     locale?: string
     deviceScaleFactor?: number
     seedHistory?: boolean
+    todos?: Todo[]
+    dataworks?: MockServerConfig["dataworks"]
   } = {},
 ) {
   const sessions = input.sessions ?? [session()]
@@ -117,8 +120,10 @@ export async function setupTimeline(
     directory,
     project: project(),
     provider: provider(),
+    dataworks: input.dataworks,
     sessions,
     sessionStatus: { [sessionID]: initialStatus },
+    todos: () => input.todos ?? [],
     pageMessages: () => ({
       items: messages,
     }),

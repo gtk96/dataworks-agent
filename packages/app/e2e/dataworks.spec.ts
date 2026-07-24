@@ -13,11 +13,17 @@
  * - Staging secrets are optional here; real staging browser gate is dataworks-staging.spec.ts.
  */
 import { expect, test } from "@playwright/test"
+import { mockDataWorksServer } from "./utils/mock-server"
 
 const liveBase =
   process.env.PLAYWRIGHT_BASE_URL?.trim() ||
   process.env.BASE_URL?.trim() ||
   ""
+
+test.beforeEach(async ({ page }) => {
+  if (liveBase) return
+  await mockDataWorksServer(page, { user: null })
+})
 
 test.describe("dataworks shell", () => {
   test("login page renders and is keyboard reachable", async ({ page }) => {
@@ -26,9 +32,9 @@ test.describe("dataworks shell", () => {
     const form = page.locator("[data-component='dataworks-login']")
     await expect(form).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading")).toBeVisible()
-    const email = page.locator('input[name="email"]')
-    await email.focus()
-    await expect(email).toBeFocused()
+    const username = page.locator('input[name="username"]')
+    await username.focus()
+    await expect(username).toBeFocused()
     await page.keyboard.press("Tab")
     await expect(page.locator('input[name="password"]')).toBeFocused()
   })
