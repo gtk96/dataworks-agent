@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Effect, Layer, Stream } from "effect"
+import { Context, Effect, Layer, Semaphore, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -11,6 +11,7 @@ import { Global } from "../global"
 import { which } from "../util/which"
 
 export namespace RipgrepBinary {
+  const installSemaphore = Semaphore.makeUnsafe(1)
   const VERSION = "15.1.0"
   const PLATFORM = {
     "arm64-darwin": { platform: "aarch64-apple-darwin", extension: "tar.gz" },
@@ -118,7 +119,7 @@ export namespace RipgrepBinary {
             yield* extract(archive, config, target)
             yield* fs.remove(archive, { force: true }).pipe(Effect.ignore)
             return target
-          }),
+          }).pipe(installSemaphore.withPermit),
         ),
       })
     }),
