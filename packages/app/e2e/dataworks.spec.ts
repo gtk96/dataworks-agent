@@ -13,11 +13,17 @@
  * - Staging secrets are optional here; real staging browser gate is dataworks-staging.spec.ts.
  */
 import { expect, test } from "@playwright/test"
+import { mockDataWorksServer } from "./utils/mock-server"
 
 const liveBase =
   process.env.PLAYWRIGHT_BASE_URL?.trim() ||
   process.env.BASE_URL?.trim() ||
   ""
+
+test.beforeEach(async ({ page }) => {
+  if (liveBase) return
+  await mockDataWorksServer(page, { user: null })
+})
 
 test.describe("dataworks shell", () => {
   test("login page renders and is keyboard reachable", async ({ page }) => {

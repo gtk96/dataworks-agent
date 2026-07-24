@@ -19,6 +19,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { mockDataWorksServer } from "./utils/mock-server"
 
 const liveBase =
   process.env.PLAYWRIGHT_BASE_URL?.trim() || process.env.BASE_URL?.trim() || ""
@@ -26,6 +27,11 @@ const liveBase =
 const e2eEmail = process.env.DWA_E2E_EMAIL?.trim() || ""
 const e2ePassword =
   process.env.DWA_E2E_PASSWORD?.trim() || process.env.DWA_BOOTSTRAP_PASSWORD?.trim() || ""
+
+test.beforeEach(async ({ page }) => {
+  if (liveBase) return
+  await mockDataWorksServer(page, { user: null })
+})
 
 function hasLiveControlPlane(): boolean {
   return liveBase.startsWith("http")

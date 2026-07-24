@@ -1,6 +1,29 @@
 import { expect, test } from "bun:test"
 import type { Page, Route } from "@playwright/test"
-import { mockDataWorksRequest, mockOpenCodeServer } from "../../utils/mock-server"
+import { mockDataWorksRequest, mockDataWorksServer, mockOpenCodeServer } from "../../utils/mock-server"
+
+test("installs standalone DataWorks control-plane routes", async () => {
+  let handler: ((route: Route) => Promise<void>) | undefined
+  const responses: Array<{ body: unknown; status?: number }> = []
+  const page = {
+    route: (url: string, callback: (route: Route) => Promise<void>) => {
+      expect(url).toBe("**/api/**")
+      handler = callback
+      return Promise.resolve()
+    },
+  } as unknown as Page
+
+  await mockDataWorksServer(page, { user: null })
+  await handler!({
+    request: () => ({ method: () => "GET", url: () => "http://127.0.0.1:3000/api/auth/me" }),
+    fulfill: (response: { body?: string; status?: number }) => {
+      responses.push({ body: JSON.parse(response.body ?? "null"), status: response.status })
+      return Promise.resolve()
+    },
+  } as unknown as Route)
+
+  expect(responses).toEqual([{ body: { error: "unauthorized" }, status: 401 }])
+})
 
 test("handles shared DataWorks control-plane routes", async () => {
   const responses: Array<{ body: unknown; status?: number }> = []

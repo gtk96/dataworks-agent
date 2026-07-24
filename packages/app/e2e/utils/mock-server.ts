@@ -46,6 +46,10 @@ export function mockDataWorksRequest(route: Route, config?: MockServerConfig["da
   return undefined
 }
 
+export async function mockDataWorksServer(page: Page, config?: MockServerConfig["dataworks"]) {
+  await page.route("**/api/**", (route) => mockDataWorksRequest(route, config) ?? route.fallback())
+}
+
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
   const cursors = new Map<string, string>()
   let nextCursor = 0
