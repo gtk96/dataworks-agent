@@ -14,7 +14,6 @@ export default function NewLayout(props: ParentProps) {
   const navigate = useNavigate()
   setNavigate(navigate)
   const [state, setState] = createStore({ debugTools: false })
-  const isDesktop = () => platform.platform === "desktop"
 
   createEffect(() => setV2Toast(true))
 
@@ -30,13 +29,10 @@ export default function NewLayout(props: ParentProps) {
 
   return (
     <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-      {/* Desktop keeps native window chrome; web console uses DataWorks sidebar only. */}
-      {isDesktop() && (
-        <Titlebar
-          update={update}
-          debugTools={import.meta.env.DEV ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) } : undefined}
-        />
-      )}
+      <Titlebar
+        update={update}
+        debugTools={import.meta.env.DEV ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) } : undefined}
+      />
       <main class="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col items-stretch contain-strict">
         <DataWorksConsoleLayout>{props.children}</DataWorksConsoleLayout>
       </main>

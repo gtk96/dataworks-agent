@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { mockDataWorksRequest } from "../utils/mock-server"
 
 const serverA = "http://127.0.0.1:4096"
 const serverB = "http://127.0.0.1:4097"
@@ -79,6 +80,8 @@ function session(id: string, directory: string, title: string) {
 async function mockServers(page: Page, requests: string[]) {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    const dataworks = mockDataWorksRequest(route)
+    if (dataworks) return dataworks
     if (url.origin !== serverA && url.origin !== serverB) return route.fallback()
     requests.push(url.toString())
     const current = url.origin === serverA ? sessionA : sessionB

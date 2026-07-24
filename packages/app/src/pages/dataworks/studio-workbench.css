@@ -32,7 +32,7 @@
 
 [data-slot="workbench-toolbar"] button,
 [data-slot="artifact-tabs"] button,
-[data-component="studio-workbench"] [data-action] {
+[data-component="artifact-workspace"] [data-action] {
   border: 1px solid var(--studio-divider);
   border-radius: 4px;
   padding: 5px 9px;
@@ -288,6 +288,17 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+[data-component="studio-workbench"]
+  [data-slot="agent-panel"]:has(:is([data-component="terminal"], #review-panel)) {
+  display: flex;
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 20;
+  width: min(92%, 960px);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
 }
 
 [data-component="agent-context-chip"] {

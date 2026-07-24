@@ -72,7 +72,7 @@ export function StudioWorkbench(props: { agent: JSX.Element; onMenu?: () => void
   const [plan, setPlan] = createSignal<Todo[]>([])
   const [workbenchWidth, setWorkbenchWidth] = createSignal(1440)
   const [resourceOverlayOpen, setResourceOverlayOpen] = createSignal(false)
-  const [agentOverlayOpen, setAgentOverlayOpen] = createSignal(false)
+  const [agentOverlayOpen, setAgentOverlayOpen] = createSignal(true)
   const scope = createMemo<WorkbenchScope>(() => ({
     connectionID: dataworks.selectedConnectionID(),
     projectID: dataworks.selectedProjectID(),
@@ -143,7 +143,9 @@ export function StudioWorkbench(props: { agent: JSX.Element; onMenu?: () => void
       if (!(event instanceof CustomEvent) || !isSqlArtifactDetail(event.detail)) return
       openArtifact({ sql: event.detail.sql, sourceMessageID: event.detail.sourceMessageID })
     }
-    setWorkbenchWidth(workbench.clientWidth || window.innerWidth)
+    const width = workbench.clientWidth || window.innerWidth
+    previousOverlay = responsiveWorkbench(width).agentOverlay
+    setWorkbenchWidth(width)
     observer.observe(workbench)
     window.addEventListener(SQL_ARTIFACT_EVENT, openSql)
     onCleanup(() => {

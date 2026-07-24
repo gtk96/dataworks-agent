@@ -1,6 +1,34 @@
 import { expect, test } from "bun:test"
 import type { Page, Route } from "@playwright/test"
-import { mockOpenCodeServer } from "../../utils/mock-server"
+import { mockDataWorksRequest, mockOpenCodeServer } from "../../utils/mock-server"
+
+test("handles shared DataWorks control-plane routes", async () => {
+  const responses: Array<{ body: unknown; status?: number }> = []
+  const route = (url: string, method = "GET") =>
+    ({
+      request: () => ({ method: () => method, url: () => url }),
+      fulfill: (response: { body?: string; status?: number }) => {
+        responses.push({ body: JSON.parse(response.body ?? "null"), status: response.status })
+        return Promise.resolve()
+      },
+    }) as unknown as Route
+
+  const auth = mockDataWorksRequest(route("http://127.0.0.1:3000/api/auth/me"))
+  const connections = mockDataWorksRequest(route("http://127.0.0.1:3000/api/data-connections"))
+  expect(auth).toBeInstanceOf(Promise)
+  expect(connections).toBeInstanceOf(Promise)
+  expect(mockDataWorksRequest(route("http://127.0.0.1:4096/session"))).toBeUndefined()
+  expect(mockDataWorksRequest(route("http://127.0.0.1:4096/api/auth/me"))).toBeUndefined()
+  expect(mockDataWorksRequest(route("http://127.0.0.1:3000/api/data-connections", "POST"))).toBeUndefined()
+  const unauthorized = mockDataWorksRequest(route("http://127.0.0.1:3000/api/auth/me"), { user: null })
+  expect(unauthorized).toBeInstanceOf(Promise)
+  await Promise.all([auth, connections])
+  expect(responses).toEqual([
+    { body: { id: "e2e-user", email: "e2e@example.test", role: "admin" }, status: 200 },
+    { body: [], status: 200 },
+    { body: { error: "unauthorized" }, status: 401 },
+  ])
+})
 
 test("applies message latency after a list response gate is released", async () => {
   const events: string[] = []

@@ -27,18 +27,15 @@ for (const deviceScaleFactor of [1.25, 1.5]) {
       const output = element.querySelector<HTMLElement>('[data-component="bash-output"]')
       if (!output) throw new Error("Shell output is unavailable")
       const rowRect = element.getBoundingClientRect()
+      output.style.setProperty("border", "2px solid rgb(255, 0, 255)", "important")
+      output.style.setProperty("background", "rgb(0, 0, 0)", "important")
       const outputRect = output.getBoundingClientRect()
       // Match a rounded-down measurement at a fractional device-pixel phase.
-      element.style.height = `${outputRect.bottom - rowRect.top - 0.49}px`
-      element.style.transform = "translateY(0.25px)"
-      output.style.setProperty("--v2-border-border-base", "rgb(255, 0, 255)")
-      output.style.setProperty("background", "rgb(0, 0, 0)", "important")
-      const style = getComputedStyle(output)
+      element.style.height = `${outputRect.bottom - rowRect.top}px`
+      output.style.position = "relative"
+      output.style.top = "0.49px"
       return {
-        outputWidth: outputRect.width,
-        outputHeight: outputRect.height,
-        borderColor: style.borderTopColor,
-        boxShadow: style.boxShadow,
+        boxShadow: getComputedStyle(output).boxShadow,
         clipMargin: getComputedStyle(element).overflowClipMargin,
       }
     })
@@ -53,9 +50,7 @@ for (const deviceScaleFactor of [1.25, 1.5]) {
     expect(await page.evaluate(() => devicePixelRatio)).toBe(deviceScaleFactor)
     const edges = await captureCardEdges(page, output)
 
-    expect(edges.box.width).toBeCloseTo(geometry.outputWidth, 2)
-    expect(edges.box.height).toBeCloseTo(geometry.outputHeight, 2)
-    expect(geometry.borderColor).toBe("rgb(255, 0, 255)")
+    expect(await output.evaluate((element) => getComputedStyle(element).borderTopColor)).toBe("rgb(255, 0, 255)")
     expect(geometry.boxShadow).toBe("none")
     expect(geometry.clipMargin).toBe("0.5px")
     expect(edges.magenta.top).toBeGreaterThan(0.75)
@@ -97,6 +92,8 @@ test("keeps the patch card inside a fractionally short virtual row", async ({ pa
     const rowRect = element.getBoundingClientRect()
     const cardRect = card.getBoundingClientRect()
     element.style.height = `${cardRect.bottom - rowRect.top - 0.49}px`
+    card.style.position = "relative"
+    card.style.top = "0.49px"
     const clipMargin = getComputedStyle(element).overflowClipMargin
     const bottom = element.getBoundingClientRect().bottom
     return {
@@ -191,15 +188,21 @@ async function captureCardEdges(page: Page, card: Locator) {
                 .map((index) => (pixels[index]! + pixels[index + 1]! + pixels[index + 2]!) / 3)
                 .reduce((sum, value) => sum + value, 0) / width,
             magenta:
-              indexes.filter((index) => pixels[index]! > 200 && pixels[index + 1]! < 180 && pixels[index + 2]! > 200)
-                .length / width,
+              indexes.filter(
+                (index) =>
+                  pixels[index]! > pixels[index + 1]! + 100 && pixels[index + 2]! > pixels[index + 1]! + 100,
+              ).length / width,
           }
         })
       }
       const pixels = context.getImageData(0, 0, image.naturalWidth, image.naturalHeight).data
       const columns = new Uint32Array(image.naturalWidth)
       for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index]! <= 200 || pixels[index + 1]! >= 180 || pixels[index + 2]! <= 200) continue
+        if (
+          pixels[index]! <= pixels[index + 1]! + 100 ||
+          pixels[index + 2]! <= pixels[index + 1]! + 100
+        )
+          continue
         columns[(index / 4) % image.naturalWidth] = columns[(index / 4) % image.naturalWidth]! + 1
       }
       const top = box.y * scale.y

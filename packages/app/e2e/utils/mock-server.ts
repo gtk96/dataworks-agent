@@ -7,6 +7,10 @@ export interface MockServerConfig {
   provider: unknown
   directory: string
   project: unknown
+  dataworks?: {
+    user?: unknown
+    connections?: unknown[]
+  }
   sessions: ({ id: string } & Record<string, unknown>)[]
   pageMessages: (sessionId: string, limit: number, before?: string) => { items: unknown[]; cursor?: string }
   vcsDiff?: unknown[]
@@ -24,6 +28,22 @@ export interface MockServerConfig {
   fileContent?: (path: string) => unknown | Promise<unknown>
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown
   sessionStatus?: unknown
+}
+
+export function mockDataWorksRequest(route: Route, config?: MockServerConfig["dataworks"]) {
+  const request = route.request()
+  const url = new URL(request.url())
+  const appOrigin = new URL(
+    process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3000"}`,
+  ).origin
+  if (url.origin !== appOrigin || request.method() !== "GET") return undefined
+  const path = url.pathname
+  if (path === "/api/auth/me")
+    return config?.user === null
+      ? json(route, { error: "unauthorized" }, undefined, 401)
+      : json(route, config?.user ?? { id: "e2e-user", email: "e2e@example.test", role: "admin" })
+  if (path === "/api/data-connections") return json(route, config?.connections ?? [])
+  return undefined
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -52,6 +72,8 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "3000"}`,
     ).port
     if (url.port !== targetPort && url.port !== appPort) return route.fallback()
+    const dataworks = mockDataWorksRequest(route, config.dataworks)
+    if (dataworks) return dataworks
 
     const path = url.pathname
     if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)

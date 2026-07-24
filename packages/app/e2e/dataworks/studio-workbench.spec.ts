@@ -59,6 +59,10 @@ test("opens Agent SQL without execution, preserves safe preview context, and ada
   await page.setViewportSize({ width: 1440, height: 900 })
   await setupTimeline(page, {
     settings: { newLayoutDesigns: true },
+    dataworks: {
+      user: { id: "user-acceptance", email: "acceptance@example.test", role: "admin" },
+      connections: [connection],
+    },
     todos: [{ id: "todo-workbench", content: "Inspect the generated SQL", status: "in_progress", priority: "high" }],
     messages: [
       userMessage(),
